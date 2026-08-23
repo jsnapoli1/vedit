@@ -13,6 +13,7 @@ import {
   IconTrash,
 } from '../icons'
 import { BoxSides, ColorRow, LengthRow, SegmentRow, SelectRow } from './rows'
+import { dragModeFor } from '../interactions'
 
 const FONT_STACKS = [
   { value: 'inherit', label: 'Inherit' },
@@ -93,6 +94,7 @@ export function Inspector() {
       </div>
 
       <div className="vedit-panel-body">
+        <Breadcrumb id={id} />
         <ContentSection id={id} kind={kind} />
         <LayoutSection id={id} />
         {kind !== 'image' ? <TypographySection id={id} /> : null}
@@ -104,6 +106,39 @@ export function Inspector() {
         </div>
       </div>
     </aside>
+  )
+}
+
+/** The path down to the selection — click a step to select that ancestor (or Esc). */
+function Breadcrumb({ id }: { id: string }) {
+  const store = useVeditStore()
+  const chain: Array<{ id: string; label: string }> = []
+  let current: string | null = id
+  while (current) {
+    const node = store.getNode(current)
+    if (!node) break
+    chain.unshift({ id: node.id, label: node.label })
+    current = node.parentId
+  }
+  if (chain.length < 2) return null
+
+  return (
+    <div className="vedit-breadcrumb">
+      {chain.map((entry, index) => (
+        <span key={entry.id}>
+          {index > 0 ? <span className="vedit-breadcrumb-sep">›</span> : null}
+          <button
+            type="button"
+            data-current={entry.id === id ? 'true' : 'false'}
+            onClick={() => store.select(entry.id)}
+            onMouseEnter={() => store.hover(entry.id)}
+            onMouseLeave={() => store.hover(null)}
+          >
+            {entry.label}
+          </button>
+        </span>
+      ))}
+    </div>
   )
 }
 
@@ -234,6 +269,7 @@ function LayoutSection({ id }: { id: string }) {
 
   return (
     <Section title="Layout">
+      <PositionControl id={id} />
       <SelectRow
         id={id}
         label="Display"
@@ -303,6 +339,80 @@ function SizeField({ id, property, label }: { id: string; property: string; labe
       onChange={style.set}
       defaultUnit={unitless ? '' : 'px'}
     />
+  )
+}
+
+/**
+ * How this element sits in the page, and therefore what dragging it does. Being
+ * explicit here matters: a free-moving element is a real layout decision, not a
+ * side effect of having dragged something.
+ */
+function PositionControl({ id }: { id: string }) {
+  const store = useVeditStore()
+  const override = useVeditState((state) => state.doc.nodes[id])
+  const node = store.getNode(id)
+  const free = override?.style?.position === 'absolute'
+  const offset = typeof override?.style?.transform === 'string' ? override.style.transform : ''
+  const nudged = /translate\(\s*(?!0px\s*,\s*0px)/.test(offset)
+  const mode = node ? dragModeFor(store, id, node.element) : 'nudge'
+
+  const setFree = (next: boolean) => {
+    const element = node?.element
+    if (!next) {
+      store.clearStyles(id, ['position', 'left', 'top', 'transform'])
+      return
+    }
+    if (!element) return
+    // Seed the current geometry so detaching it doesn't make it jump.
+    const rect = element.getBoundingClientRect()
+    store.clearStyles(id, ['transform'])
+    store.setStyle(id, {
+      position: 'absolute',
+      left: `${Math.round(element.offsetLeft)}px`,
+      top: `${Math.round(element.offsetTop)}px`,
+      width: `${Math.round(rect.width)}px`,
+    })
+  }
+
+  const explanation = free
+    ? 'Dragging moves it freely, positioned against its nearest positioned ancestor.'
+    : mode === 'reorder'
+      ? 'Dragging re-orders it among its siblings for real.'
+      : "Dragging nudges it visually — its parent isn't flex or grid, so re-ordering can't be expressed in CSS."
+
+  return (
+    <>
+      <Row label="Position">
+        <Segmented
+          value={free ? 'free' : 'flow'}
+          options={[
+            { value: 'flow', label: 'In flow' },
+            { value: 'free', label: 'Free' },
+          ]}
+          onChange={(next) => setFree(next === 'free')}
+        />
+      </Row>
+      {free ? (
+        <div className="vedit-grid2" style={{ marginBottom: 6 }}>
+          <SizeField id={id} property="left" label="X" />
+          <SizeField id={id} property="top" label="Y" />
+        </div>
+      ) : null}
+      {nudged ? (
+        <Row label="Offset">
+          <span className="vedit-hint" style={{ flex: 1 }}>{offset.replace('translate', '')}</span>
+          <button
+            type="button"
+            className="vedit-btn"
+            style={{ height: 22 }}
+            onClick={() => store.clearStyle(id, 'transform')}
+          >
+            Reset
+          </button>
+        </Row>
+      ) : null}
+      <div className="vedit-hint" style={{ marginBottom: 8 }}>{explanation}</div>
+    </>
   )
 }
 

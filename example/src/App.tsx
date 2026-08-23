@@ -21,8 +21,11 @@ const FEATURES = [
 ]
 
 export function App() {
+  // The demo can run either editing mode: `?mode=overlay` edits the page in
+  // place instead of loading it into the canvas.
+  const canvas = new URLSearchParams(window.location.search).get('mode') !== 'overlay'
   return (
-    <VeditProvider documentKey="marketing-home" auto>
+    <VeditProvider documentKey="marketing-home" auto canvas={canvas}>
       <Site />
     </VeditProvider>
   )

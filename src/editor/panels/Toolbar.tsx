@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useVeditContext, useVeditState, useVeditStore } from '../../core/context'
 import { BREAKPOINT_ORDER, type Breakpoint, type EditorTool } from '../../core/types'
 import {
   IconClose,
   IconCursor,
+  IconHand,
   IconDesktop,
   IconImage,
   IconPanel,
@@ -17,6 +18,7 @@ import {
 
 const TOOLS: Array<{ tool: EditorTool; icon: JSX.Element; title: string }> = [
   { tool: 'select', icon: <IconCursor />, title: 'Select — V' },
+  { tool: 'hand', icon: <IconHand />, title: 'Pan — H, or hold Space' },
   { tool: 'text', icon: <IconType />, title: 'Add text — T' },
   { tool: 'image', icon: <IconImage />, title: 'Add image — I' },
   { tool: 'box', icon: <IconSquare />, title: 'Add box — R' },
@@ -31,9 +33,12 @@ function BreakpointIcon({ breakpoint }: { breakpoint: Breakpoint }) {
 export function Toolbar({
   collapsed,
   onToggleCollapsed,
+  extras,
 }: {
   collapsed: boolean
   onToggleCollapsed: () => void
+  /** Rendered between the tools and the breakpoints — the canvas puts zoom here. */
+  extras?: ReactNode
 }) {
   const store = useVeditStore()
   const { config } = useVeditContext()
@@ -71,6 +76,13 @@ export function Toolbar({
         </button>
       ))}
 
+      {extras ? (
+        <>
+          <span className="vedit-divider" />
+          {extras}
+        </>
+      ) : null}
+
       <span className="vedit-divider" />
 
       {BREAKPOINT_ORDER.map((entry) => {
@@ -81,6 +93,7 @@ export function Toolbar({
             key={entry}
             type="button"
             className="vedit-btn"
+            data-breakpoint={entry}
             data-active={breakpoint === entry ? 'true' : 'false'}
             title={
               entry === 'base'
@@ -88,10 +101,10 @@ export function Toolbar({
                 : `From ${minWidth}px up${live ? ' (active at this window size)' : ''}`
             }
             onClick={() => store.setBreakpoint(entry)}
-            style={{ gap: 4, opacity: live ? 1 : 0.55 }}
+            style={{ gap: 4, opacity: live ? 1 : 0.55, padding: breakpoint === entry ? '0 9px' : 0, width: breakpoint === entry ? undefined : 28 }}
           >
             <BreakpointIcon breakpoint={entry} />
-            {entry}
+            {breakpoint === entry ? entry : null}
           </button>
         )
       })}

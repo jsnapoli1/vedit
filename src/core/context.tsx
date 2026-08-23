@@ -22,6 +22,7 @@ import {
 } from './types'
 import { documentToCss } from '../runtime/css'
 import { AutoScanner } from '../auto/scanner'
+import { isCanvasChild, publishCanvasBridge } from './canvas'
 
 export interface VeditConfig {
   breakpoints: BreakpointWidths
@@ -35,7 +36,8 @@ export interface VeditContextValue {
   config: VeditConfig
 }
 
-const VeditContext = createContext<VeditContextValue | null>(null)
+/** Exported so the canvas can point the editor UI at the framed page's store. */
+export const VeditContext = createContext<VeditContextValue | null>(null)
 
 export function useVeditContext(): VeditContextValue {
   const context = useContext(VeditContext)
@@ -96,6 +98,12 @@ export interface VeditProviderProps {
   breakpoints?: BreakpointWidths
   /** Server-rendered overrides, so the first paint already includes them. */
   initialDocument?: VeditDocument | null
+  /**
+   * Edit on a zoomable canvas, with the page loaded into a same-origin frame.
+   * Turn it off to edit the page in place instead (the editor falls back to that
+   * automatically when the page refuses to be framed).
+   */
+  canvas?: boolean
   /** Save automatically this many ms after the last change. 0 disables it. */
   autosaveMs?: number
   onSave?: (doc: VeditDocument) => void
@@ -134,6 +142,7 @@ export function VeditProvider({
   autoSelector = DEFAULT_AUTO_SELECTOR,
   breakpoints = DEFAULT_BREAKPOINTS,
   initialDocument = null,
+  canvas = true,
   autosaveMs = 0,
   onSave,
 }: VeditProviderProps) {
@@ -142,6 +151,9 @@ export function VeditProvider({
     () => new VeditStore({ key, adapter: adapter ?? localStorageAdapter(), autosaveMs }),
   )
   const isEnabled = enabled ?? defaultEnabled()
+  // When this page is the artboard inside someone else's canvas it renders no
+  // chrome of its own; it just hands its store to the editor in the parent window.
+  const [framedByEditor] = useState(isCanvasChild)
 
   const config = useMemo<VeditConfig>(
     () => ({ breakpoints, auto, autoSelector, enabled: isEnabled }),
@@ -162,6 +174,10 @@ export function VeditProvider({
     if (defaultEditing && isEnabled) store.setEditing(true)
   }, [store, defaultEditing, isEnabled])
 
+  useEffect(() => {
+    if (framedByEditor) publishCanvasBridge({ store, breakpoints })
+  }, [framedByEditor, store, breakpoints])
+
   // Notify the host app after every successful save.
   const savedRef = useRef<VeditDocument | null>(null)
   useEffect(
@@ -181,7 +197,7 @@ export function VeditProvider({
       <OverrideStyles />
       {children}
       {auto ? <AutoScanner /> : null}
-      {isEnabled ? <EditorHost /> : null}
+      {isEnabled && !framedByEditor ? <EditorHost canvas={canvas} /> : null}
     </VeditContext.Provider>
   )
 }
@@ -199,16 +215,19 @@ function OverrideStyles() {
  * Loads the editor chrome only once someone actually opens it, so the bundle a
  * visitor downloads stays small.
  */
-function EditorHost() {
+function EditorHost({ canvas }: { canvas: boolean }) {
   const store = useVeditStore()
   const editing = useVeditState((state) => state.editing)
-  const [Editor, setEditor] = useState<ComponentType | null>(null)
+  const [Editor, setEditor] = useState<ComponentType<{ canvas: boolean }> | null>(null)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // Only opens. Closing goes through the editor itself, which knows to ask
+      // about unsaved changes first.
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'e') {
+        if (store.getState().editing) return
         event.preventDefault()
-        store.setEditing(!store.getState().editing)
+        store.setEditing(true)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -218,8 +237,8 @@ function EditorHost() {
   useEffect(() => {
     if (!editing || Editor) return
     let cancelled = false
-    void import('../editor/EditorRoot').then((module) => {
-      if (!cancelled) setEditor(() => module.EditorRoot as ComponentType)
+    void import('../editor/mount').then((module) => {
+      if (!cancelled) setEditor(() => module.EditorMount as ComponentType<{ canvas: boolean }>)
     })
     return () => {
       cancelled = true
@@ -227,5 +246,5 @@ function EditorHost() {
   }, [editing, Editor])
 
   if (!editing || !Editor) return null
-  return <Editor />
+  return <Editor canvas={canvas} />
 }

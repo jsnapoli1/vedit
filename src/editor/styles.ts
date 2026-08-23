@@ -81,6 +81,20 @@ export const EDITOR_CSS = `
 .vedit-layer-eye { opacity: 0; flex: none; }
 .vedit-layer:hover .vedit-layer-eye, .vedit-layer[data-hidden="true"] .vedit-layer-eye { opacity: .8; }
 
+/* ------------------------------------------------------------- breadcrumb */
+.vedit-breadcrumb {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
+  padding: 8px 12px; border-bottom: 1px solid var(--vedit-border); color: var(--vedit-muted);
+}
+.vedit-breadcrumb button {
+  border: 0; background: none; padding: 1px 3px; border-radius: 3px; cursor: pointer;
+  color: var(--vedit-muted); max-width: 108px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; vertical-align: bottom;
+}
+.vedit-breadcrumb button:hover { background: var(--vedit-panel-2); color: var(--vedit-text); }
+.vedit-breadcrumb button[data-current="true"] { color: var(--vedit-text); font-weight: 600; }
+.vedit-breadcrumb-sep { opacity: .5; }
+
 /* -------------------------------------------------------------- inspector */
 .vedit-section { border-bottom: 1px solid var(--vedit-border); padding: 10px 12px 12px; }
 .vedit-section-title {
@@ -163,6 +177,39 @@ export const EDITOR_CSS = `
   padding: 2px 6px; border-radius: 4px; font-size: 10px; white-space: nowrap; pointer-events: none;
 }
 .vedit-measure { position: fixed; background: rgba(13,153,255,.16); pointer-events: none; }
+
+/* ---------------------------------------------------------------- canvas */
+.vedit-canvas {
+  position: fixed; inset: 0; z-index: 2147482999; overflow: hidden;
+  background: #1a1a1a;
+  background-image: radial-gradient(circle at 1px 1px, #2b2b2b 1px, transparent 0);
+  background-size: 24px 24px;
+}
+.vedit-canvas[data-panning="true"] { cursor: grab; }
+.vedit-canvas[data-panning="true"]:active { cursor: grabbing; }
+.vedit-artboard { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.vedit-artboard iframe {
+  display: block; border: 0; background: #fff;
+  box-shadow: 0 0 0 1px #3a3a3a, 0 30px 80px rgba(0, 0, 0, .55);
+}
+.vedit-artboard-label {
+  position: absolute; top: 0; left: 0; color: #8a8a8a; white-space: nowrap;
+  font-family: ui-sans-serif, system-ui, sans-serif; pointer-events: none;
+}
+.vedit-frame-handle {
+  position: absolute; top: 0; right: 0; height: 100%; transform: translateX(100%);
+  cursor: ew-resize;
+}
+.vedit-frame-handle:hover { background: rgba(13, 153, 255, .5); }
+.vedit-canvas-loading {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: #9b9b9b; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 12px;
+}
+.vedit-drop {
+  position: fixed; background: var(--vedit-accent); border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .5); pointer-events: none;
+}
+html.vedit-canvas-host, html.vedit-canvas-host body { overflow: hidden !important; }
 
 /* --------------------------------------------------------------- toasts */
 .vedit-toast {

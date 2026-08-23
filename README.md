@@ -2,10 +2,11 @@
 
 A Figma-like visual editor you drop into any React site.
 
-Import one provider, open the editor with `⌘E`, and click straight into the page:
-rewrite copy, swap images, drag handles to resize, tune type and spacing per
-breakpoint, add new elements. Changes are saved as a small JSON document of
-**overrides** — your components stay exactly as you wrote them.
+Import one provider, open the editor with `⌘E`, and your page becomes an artboard
+on a zoomable canvas: click straight into it to rewrite copy, swap images, drag
+handles to resize, re-order sections, tune type and spacing per breakpoint, add
+new elements. Changes are saved as a small JSON document of **overrides** — your
+components stay exactly as you wrote them.
 
 ```bash
 npm install vedit
@@ -38,6 +39,27 @@ export default function App() {
 Press `⌘E` (or `Ctrl+E`) to open the editor. That's the whole integration —
 by default overrides go to `localStorage` so you can try it before wiring a backend.
 
+## The canvas
+
+Opening the editor loads your page into a same-origin frame and puts it on a
+canvas you can zoom and pan, with the panels floating around it rather than on
+top of it.
+
+- **Zoom** — `⌘`/`Ctrl` + scroll, trackpad pinch, or the toolbar's `−` `100%` `+`.
+  `⇧1` fits the artboard to the screen.
+- **Pan** — scroll, or hold `Space` and drag (or pick the hand tool, `H`).
+- **The whole page is one artboard**, not a scrolling window, so zooming out shows
+  the footer and the hero at the same time.
+- **Breakpoints are real.** The frame has its own viewport, so picking `sm` narrows
+  the artboard and *your own media queries fire*. Drag the artboard's right edge to
+  any width and the toolbar follows along to the breakpoint you've landed in.
+
+The frame is same-origin, so the editor talks to the page directly — no message
+passing, no proxy, no separate preview server. If a page can't be framed (a strict
+`X-Frame-Options`, say) the editor notices and falls back to editing it in place,
+with the panels floating over the page as before. `canvas={false}` picks that mode
+outright.
+
 ### Zero-markup mode
 
 You don't have to wrap anything. `VeditProvider` scans the DOM by default
@@ -61,26 +83,43 @@ An explicit `<Editable id="home.hero.title">` never does.
 | **Typography** | Font stack, size, weight, line height, letter spacing, alignment, transform, decoration, color |
 | **Appearance** | Fill, corner radius, border width / color / style, opacity, shadow presets |
 | **Escape hatch** | A raw CSS box per element, for anything the panels don't cover |
-| **Structure** | Hide/show any element, add text, images and boxes inside containers, drag to nudge, resize with handles |
+| **Position** | In flow or free; drag to re-order among siblings, drag freely when detached, resize with handles |
+| **Structure** | Hide/show any element, add text, images and boxes inside containers |
 
 Every one of those can be scoped to a breakpoint: pick `sm`/`md`/`lg`/`xl` in
 the toolbar and your next change only applies from that width up. Overrides are
 emitted as a real stylesheet with real media queries, so the result behaves the
 same for a visitor as it does in the editor.
 
+### Moving things
+
+Dragging does whatever is honest for where the element sits, and the inspector's
+**Position** row says which before you start:
+
+| The element | Dragging it |
+| --- | --- |
+| In flow, inside a flex or grid parent | **Re-orders** it among its siblings, with a drop indicator. Written as `order`, so the layout stays a layout. |
+| Switched to **Free** | Moves it by `left`/`top`. The editor seeds its current geometry when you detach it, so nothing jumps. |
+| In flow, inside a block parent | **Nudges** it with a `transform` offset — a visual tweak that leaves the surrounding layout untouched, because CSS has no way to re-order block children. The inspector says so, and offers a one-click reset. |
+
+Arrow keys nudge by 1px, `⇧`+arrows by 10px, and move a free element by its real
+position.
+
 ## Keyboard
 
 | | |
 | --- | --- |
 | `⌘E` | Open / close the editor |
-| `V` `T` `I` `R` | Select, add text, add image, add box |
+| `V` `H` `T` `I` `R` | Select, pan, add text, add image, add box |
+| `⌘`/`Ctrl` + scroll, `⇧1` | Zoom, fit to screen |
 | `Enter` / double-click | Edit text in place |
-| `Esc` | Cancel inline edit, then clear selection |
+| `Esc` | Cancel inline edit, then select the parent, then clear the selection |
 | `⌫` | Hide the selected element (delete, if you added it) |
 | Arrows / `⇧`+arrows | Nudge by 1px / 10px |
 | `⌘Z` / `⇧⌘Z` | Undo / redo |
 | `⌘S` | Save |
-| `\` | Hide the panels to reach what's underneath |
+| `Space` + drag | Pan the canvas |
+| `\` | Hide the panels |
 
 ---
 
@@ -169,7 +208,7 @@ visitors download the runtime (a few KB) and nothing else.
 
 **Components**
 
-- `<VeditProvider>` — `documentKey`, `adapter`, `enabled`, `defaultEditing`, `auto`, `autoSelector`, `breakpoints`, `initialDocument`, `autosaveMs`, `onSave`
+- `<VeditProvider>` — `documentKey`, `adapter`, `enabled`, `defaultEditing`, `auto`, `autoSelector`, `breakpoints`, `initialDocument`, `canvas`, `autosaveMs`, `onSave`
 - `<Editable id as kind label container>` — the general case; renders any tag or component
 - `<EditableText>` `<EditableImage>` `<EditableBox>` `<EditableLink>` — presets
 
@@ -220,15 +259,19 @@ the content, not the position:
 
 ## Known limits
 
-- Panels float above the page rather than insetting it, so they can cover content —
-  press `\` to hide them. (An iframe canvas that insets the page properly is the
-  next big piece of work.)
-- Selecting a breakpoint chooses which bucket your edits go into; it doesn't resize
-  the page. Resize the window to see a breakpoint live — the toolbar dims the
-  breakpoints that aren't currently active.
-- Dragging moves an element with a `transform` offset rather than reordering it in
-  its parent. Reordering is not implemented yet.
-- Scanner ids depend on DOM structure. Wrap anything you care about long-term.
+- **One page at a time.** The canvas holds a single artboard; there's no board of
+  every page side by side, and no navigating between routes inside the frame
+  (links are inert while editing, by design).
+- **Re-ordering needs a flex or grid parent.** Block children fall back to a nudge,
+  because CSS `order` doesn't apply to them and the library never rewrites your DOM.
+- **No component-level editing.** You can restyle what a component rendered; you
+  can't change its props, swap a variant, or bind it to data.
+- **No multi-select editing.** You can shift-click several elements, but the
+  inspector only edits one at a time.
+- **The frame reloads the page.** Client state (an open modal, a filled form,
+  a scrolled carousel) resets when the editor opens, like any preview tool.
+- **Scanner ids depend on DOM structure.** Wrap anything you care about long-term
+  in `<Editable>`.
 
 ## Development
 
@@ -239,6 +282,7 @@ npm test             # build, then run the unit tests
 npm run typecheck
 
 cd example && npm install && npm run dev   # demo site at localhost:5173
+                                           # ?mode=overlay edits in place instead
 ```
 
 The example under `example/` is a small marketing page that uses both explicit

@@ -7,52 +7,67 @@ import { Inspector } from './panels/Inspector'
 import { LayersPanel } from './panels/Layers'
 import { Toolbar } from './panels/Toolbar'
 import { EDITOR_CSS } from './styles'
+import { toScreen, useEditorTarget } from './target'
 
 const STYLE_ID = 'vedit-editor-styles'
 
-function useEditorStyles() {
+/** The chrome's stylesheet, and the page's own copy when it lives in a frame. */
+function useEditorStyles(pageDocument: Document) {
   useEffect(() => {
-    if (document.getElementById(STYLE_ID)) return
-    const style = document.createElement('style')
-    style.id = STYLE_ID
-    style.textContent = EDITOR_CSS
-    document.head.appendChild(style)
-  }, [])
+    for (const doc of new Set([document, pageDocument])) {
+      if (doc.getElementById(STYLE_ID)) continue
+      const style = doc.createElement('style')
+      style.id = STYLE_ID
+      style.textContent = EDITOR_CSS
+      doc.head.appendChild(style)
+    }
+  }, [pageDocument])
+}
+
+export interface EditorRootProps {
+  /** Extra controls for the toolbar, e.g. the canvas zoom widget. */
+  toolbarExtras?: React.ReactNode
 }
 
 /**
- * The editor chrome. Rendered into a portal on `document.body` so it sits above the
- * host site without inheriting any of its styles.
+ * The editor chrome. Rendered into a portal on this document's body so it sits
+ * above everything, while the page it edits may be this document or a framed one.
  */
-export function EditorRoot() {
+export function EditorRoot({ toolbarExtras }: EditorRootProps = {}) {
   const store = useVeditStore()
+  const target = useEditorTarget()
   const [collapsed, setCollapsed] = useState(false)
   const status = useVeditState((state) => state.status)
   const error = useVeditState((state) => state.error)
   const tool = useVeditState((state) => state.tool)
   const notice = useVeditState((state) => state.notice)
+  const dropIndicator = useVeditState((state) => state.dropIndicator)
+  const pageDocument = target.getDocument()
 
-  useEditorStyles()
-  useEditorInteractions(store)
+  useEditorStyles(pageDocument)
+  useEditorInteractions(store, target)
 
   useEffect(() => {
-    document.documentElement.classList.add('vedit-editing')
-    return () => document.documentElement.classList.remove('vedit-editing')
-  }, [])
+    const root = pageDocument.documentElement
+    root.classList.add('vedit-editing')
+    return () => root.classList.remove('vedit-editing')
+  }, [pageDocument])
 
   // `\` hides the panels so you can reach whatever they're covering.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null
-      const typing = !!target && (target.isContentEditable || ['INPUT', 'TEXTAREA'].includes(target.tagName))
+      const element = event.target as HTMLElement | null
+      const typing = !!element && (element.isContentEditable || ['INPUT', 'TEXTAREA'].includes(element.tagName))
       if (event.key === '\\' && !typing) {
         event.preventDefault()
         setCollapsed((value) => !value)
       }
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+    for (const doc of new Set([document, pageDocument])) doc.addEventListener('keydown', onKeyDown)
+    return () => {
+      for (const doc of new Set([document, pageDocument])) doc.removeEventListener('keydown', onKeyDown)
+    }
+  }, [pageDocument])
 
   // Warn before losing unsaved work.
   useEffect(() => {
@@ -65,13 +80,20 @@ export function EditorRoot() {
 
   if (typeof document === 'undefined') return null
 
+  const indicator = dropIndicator ? toScreen(dropIndicator, target.getViewport()) : null
+
   return createPortal(
     <div className="vedit-root" data-vedit-ui="" data-collapsed={collapsed ? 'true' : 'false'}>
       <Overlay />
-      <Toolbar collapsed={collapsed} onToggleCollapsed={() => setCollapsed((value) => !value)} />
+      {indicator ? <div className="vedit-drop" style={indicator} /> : null}
+      <Toolbar
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed((value) => !value)}
+        extras={toolbarExtras}
+      />
       <LayersPanel />
       <Inspector />
-      {tool !== 'select' ? (
+      {tool !== 'select' && tool !== 'hand' ? (
         <div className="vedit-toast" data-vedit-ui="">
           Click a container to drop the new {tool} in — Esc or V to cancel
         </div>

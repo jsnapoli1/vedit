@@ -67,6 +67,7 @@ export class VeditStore {
       tool: 'select',
       inlineEditing: null,
       notice: null,
+      dropIndicator: null,
       past: [],
       future: [],
     }
@@ -192,6 +193,30 @@ export class VeditStore {
     else this.update(id, { responsive: { [bp]: styles } }, opts)
   }
 
+  /** Write declarations on several nodes as one change, e.g. re-ordering siblings. */
+  setStyleMany(entries: Array<[string, StyleMap]>, opts: { history?: boolean } = {}) {
+    const bp = this.state.breakpoint
+    const nodes = { ...this.state.doc.nodes }
+    for (const [id, styles] of entries) {
+      const current = nodes[id] ?? {}
+      const merged: NodeOverride =
+        bp === 'base'
+          ? { ...current, style: { ...current.style, ...styles } }
+          : {
+              ...current,
+              responsive: { ...current.responsive, [bp]: { ...current.responsive?.[bp], ...styles } },
+            }
+      const pruned = pruneEmpty(merged)
+      if (pruned) nodes[id] = pruned
+      else delete nodes[id]
+    }
+    this.commit({ ...this.state.doc, nodes }, opts)
+  }
+
+  setDropIndicator(rect: VeditState['dropIndicator']) {
+    if (this.state.dropIndicator !== rect) this.set({ dropIndicator: rect })
+  }
+
   /** Replace every declaration at the current breakpoint (used by the CSS editor). */
   setStyleBucket(id: string, styles: StyleMap) {
     const bp = this.state.breakpoint
@@ -216,6 +241,21 @@ export class VeditStore {
     const override = clone(this.getOverride(id))
     if (bp === 'base') delete override.style?.[property]
     else delete override.responsive?.[bp]?.[property]
+    const nodes = { ...this.state.doc.nodes }
+    const pruned = pruneEmpty(override)
+    if (pruned) nodes[id] = pruned
+    else delete nodes[id]
+    this.commit({ ...this.state.doc, nodes })
+  }
+
+  /** Remove several declarations at the current breakpoint in one change. */
+  clearStyles(id: string, properties: string[]) {
+    const bp = this.state.breakpoint
+    const override = clone(this.getOverride(id))
+    for (const property of properties) {
+      if (bp === 'base') delete override.style?.[property]
+      else delete override.responsive?.[bp]?.[property]
+    }
     const nodes = { ...this.state.doc.nodes }
     const pruned = pruneEmpty(override)
     if (pruned) nodes[id] = pruned

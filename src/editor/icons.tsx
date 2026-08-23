@@ -73,3 +73,16 @@ export const IconAlignRight = (p: SVGProps<SVGSVGElement>) => (
 export const IconAlignJustify = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
 )
+
+export const IconHand = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M8 12V5.5a1.5 1.5 0 013 0V11m0-.5V4.5a1.5 1.5 0 013 0V11m0-.5v-2a1.5 1.5 0 013 0V15a6 6 0 01-6 6h-1a6 6 0 01-6-6v-3a1.5 1.5 0 013 0" /></svg>
+)
+export const IconMinus = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M5 12h14" /></svg>
+)
+export const IconPlus = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M12 5v14M5 12h14" /></svg>
+)
+export const IconFit = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+)

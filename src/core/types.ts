@@ -91,7 +91,7 @@ export interface RegisteredNode {
   sourceText?: string
 }
 
-export type EditorTool = 'select' | 'text' | 'image' | 'box'
+export type EditorTool = 'select' | 'hand' | 'text' | 'image' | 'box'
 
 export interface VeditState {
   doc: VeditDocument
@@ -108,6 +108,8 @@ export interface VeditState {
   inlineEditing: string | null
   /** Short-lived message shown at the bottom of the editor. */
   notice: string | null
+  /** Where a re-ordering drag would drop, in page coordinates. */
+  dropIndicator: { top: number; left: number; width: number; height: number } | null
   past: VeditDocument[]
   future: VeditDocument[]
 }
