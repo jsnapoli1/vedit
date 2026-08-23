@@ -1,3 +1,5 @@
+import type { Comment } from './realtime'
+
 /** Named responsive breakpoints. `base` always applies; the rest are min-width. */
 export type Breakpoint = 'base' | 'sm' | 'md' | 'lg' | 'xl'
 
@@ -146,6 +148,10 @@ export interface VeditAdapter {
   uploadImage?(file: File): Promise<string>
   /** Optional: images to choose from without uploading a new one. */
   listAssets?(): Promise<VeditAsset[]>
+  /** Optional: where review notes live. Without these, comments last the session. */
+  listComments?(key: string): Promise<Comment[]>
+  saveComment?(comment: Comment): Promise<void>
+  deleteComment?(commentId: string): Promise<void>
   /** Optional: publish the current draft, and list/restore earlier versions. */
   publish?(doc: VeditDocument): Promise<void>
   listVersions?(key: string): Promise<VeditVersion[]>
@@ -182,7 +188,7 @@ export interface RegisteredNode {
   props?: Record<string, unknown>
 }
 
-export type EditorTool = 'select' | 'hand' | 'text' | 'image' | 'box'
+export type EditorTool = 'select' | 'hand' | 'comment' | 'text' | 'image' | 'box'
 
 export interface VeditState {
   doc: VeditDocument
@@ -201,6 +207,12 @@ export interface VeditState {
   inlineEditing: string | null
   /** Short-lived message shown at the bottom of the editor. */
   notice: string | null
+  /** Where a new comment is being written, before it has a body. */
+  pendingComment: { nodeId?: string; x: number; y: number } | null
+  /** The comment thread currently open. */
+  openComment: string | null
+  /** Identifies the live collaboration session, so hooks re-read when it changes. */
+  sessionId: string | null
   /** Which interaction state new style edits are written into. */
   styleState: StyleState
   /** Where a re-ordering drag would drop, in page coordinates. */

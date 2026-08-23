@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useVeditState, useVeditStore } from '../core/context'
+import { useVeditSession, useVeditState, useVeditStore } from '../core/context'
 import { useEditorInteractions } from './interactions'
 import { Overlay } from './Overlay'
+import { CommentsLayer } from './CommentsLayer'
+import { PresenceLayer } from './PresenceLayer'
 import { Inspector } from './panels/Inspector'
 import { LeftPanel } from './panels/LeftPanel'
 import { Toolbar } from './panels/Toolbar'
@@ -47,6 +49,7 @@ export function EditorRoot({ toolbarExtras, interactive = true }: EditorRootProp
   const tool = useVeditState((state) => state.tool)
   const notice = useVeditState((state) => state.notice)
   const dropIndicator = useVeditState((state) => state.dropIndicator)
+  const { staleSince } = useVeditSession()
   const pageDocument = target.getDocument()
 
   useEditorStyles(interactive ? pageDocument : document)
@@ -58,6 +61,13 @@ export function EditorRoot({ toolbarExtras, interactive = true }: EditorRootProp
     root.classList.add('vedit-editing')
     return () => root.classList.remove('vedit-editing')
   }, [pageDocument, interactive])
+
+  // The comment tool changes the cursor over the whole page.
+  useEffect(() => {
+    const root = pageDocument.documentElement
+    root.classList.toggle('vedit-commenting', tool === 'comment')
+    return () => root.classList.remove('vedit-commenting')
+  }, [pageDocument, tool])
 
   // `\` hides the panels so you can reach whatever they're covering.
   useEffect(() => {
@@ -91,6 +101,8 @@ export function EditorRoot({ toolbarExtras, interactive = true }: EditorRootProp
   return createPortal(
     <div className="vedit-root" data-vedit-ui="" data-collapsed={collapsed ? 'true' : 'false'}>
       <Overlay />
+      <PresenceLayer />
+      <CommentsLayer />
       {indicator ? <div className="vedit-drop" style={indicator} /> : null}
       <Toolbar
         collapsed={collapsed}
@@ -99,7 +111,12 @@ export function EditorRoot({ toolbarExtras, interactive = true }: EditorRootProp
       />
       <LeftPanel />
       <Inspector />
-      {tool !== 'select' && tool !== 'hand' ? (
+      {tool === 'comment' ? (
+        <div className="vedit-toast" data-vedit-ui="">
+          Click anywhere to leave a note — Esc to cancel
+        </div>
+      ) : null}
+      {tool !== 'select' && tool !== 'hand' && tool !== 'comment' ? (
         <div className="vedit-toast" data-vedit-ui="">
           Click a container to drop the new {tool} in — Esc or V to cancel
         </div>
@@ -107,6 +124,19 @@ export function EditorRoot({ toolbarExtras, interactive = true }: EditorRootProp
       {notice && tool === 'select' ? (
         <div className="vedit-toast" data-vedit-ui="">
           {notice}
+        </div>
+      ) : null}
+      {staleSince ? (
+        <div className="vedit-toast" data-tone="warn" data-vedit-ui="">
+          Someone else saved since you loaded. Saving now replaces their version.
+          <button
+            type="button"
+            className="vedit-btn"
+            style={{ marginLeft: 8, height: 22 }}
+            onClick={() => void store.load('draft').catch(() => undefined)}
+          >
+            Load theirs
+          </button>
         </div>
       ) : null}
       {status === 'error' && error ? (

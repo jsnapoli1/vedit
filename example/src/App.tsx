@@ -6,6 +6,9 @@ import {
   VeditProvider,
   useEditable,
   useVeditEditing,
+  broadcastChannelRealtime,
+  sseRealtime,
+  type Comment,
   type EditableField,
   type VeditAdapter,
   type VeditDocument,
@@ -127,6 +130,20 @@ const demoAdapter: VeditAdapter = {
     return readVersions(key).find((version) => version.id === versionId)?.doc ?? null
   },
 
+  async listComments(key) {
+    return readComments().filter((comment) => comment.key === key)
+  },
+
+  async saveComment(comment) {
+    const rest = readComments().filter((entry) => entry.id !== comment.id)
+    localStorage.setItem('demo:comments', JSON.stringify([...rest, comment]))
+  },
+
+  async deleteComment(commentId) {
+    const rest = readComments().filter((entry) => entry.id !== commentId)
+    localStorage.setItem('demo:comments', JSON.stringify(rest))
+  },
+
   async listAssets() {
     return [
       { url: PLACEHOLDER_ART, name: 'Abstract' },
@@ -136,6 +153,11 @@ const demoAdapter: VeditAdapter = {
       { url: swatch('#db2777', '#f472b6', 'Blossom'), name: 'Blossom' },
     ]
   },
+}
+
+function readComments(): Comment[] {
+  const raw = localStorage.getItem('demo:comments')
+  return raw ? (JSON.parse(raw) as Comment[]) : []
 }
 
 interface StoredVersion {
@@ -173,10 +195,37 @@ export function App() {
   const pricing = window.location.pathname.startsWith('/pricing')
 
   return (
-    <VeditProvider auto canvas={canvas} adapter={demoAdapter} pages={PAGES}>
+    <VeditProvider
+      auto
+      canvas={canvas}
+      adapter={demoAdapter}
+      pages={PAGES}
+      realtime={demoRealtime()}
+      user={demoUser()}
+    >
       {pricing ? <Pricing /> : <Site />}
     </VeditProvider>
   )
+}
+
+/**
+ * How editors reach each other. Cross-tab by default, which needs nothing;
+ * `?rt=sse` switches to the relay in `realtime-server.mjs`, which is what two
+ * people on two machines would use.
+ */
+function demoRealtime() {
+  return new URLSearchParams(window.location.search).get('rt') === 'sse'
+    ? sseRealtime({ endpoint: '/realtime' })
+    : broadcastChannelRealtime()
+}
+
+/**
+ * Who is editing. A real app passes its signed-in user; the demo takes a name
+ * from the URL (`?as=Sam`) so two tabs can pretend to be two people.
+ */
+function demoUser() {
+  const name = new URLSearchParams(window.location.search).get('as')
+  return name ? { id: name.toLowerCase(), name } : undefined
 }
 
 const PLANS = [

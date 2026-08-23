@@ -86,3 +86,7 @@ export const IconPlus = (p: SVGProps<SVGSVGElement>) => (
 export const IconFit = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
 )
+
+export const IconComment = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M21 12a8 8 0 01-8 8H8l-5 3 1.4-4.2A8 8 0 1121 12z" /></svg>
+)

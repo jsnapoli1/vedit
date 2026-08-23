@@ -23,6 +23,8 @@ import {
 import { documentToCss } from '../runtime/css'
 import { AutoScanner } from '../auto/scanner'
 import { isCanvasChild, publishCanvasBridge } from './canvas'
+import { RealtimeSession, type SessionSnapshot } from './session'
+import type { Peer, VeditRealtime } from './realtime'
 
 export interface VeditConfig {
   breakpoints: BreakpointWidths
@@ -72,6 +74,26 @@ export function useVeditStore(): VeditStore {
   return useVeditContext().store
 }
 
+/** Presence and comments for the document being edited, or null when off. */
+export function useVeditSession(): SessionSnapshot & { session: RealtimeSession | null } {
+  const store = useVeditStore()
+  // Re-reads when the provider swaps the session in or out.
+  useVeditState((state) => state.sessionId)
+  const session = store.session
+  const snapshot = useSyncExternalStore(
+    session ? session.subscribe : NO_SESSION.subscribe,
+    session ? session.getSnapshot : NO_SESSION.getSnapshot,
+    session ? session.getSnapshot : NO_SESSION.getSnapshot,
+  )
+  return { ...snapshot, session }
+}
+
+const EMPTY_SNAPSHOT: SessionSnapshot = { peers: [], comments: [], staleSince: null }
+const NO_SESSION = {
+  subscribe: () => () => undefined,
+  getSnapshot: () => EMPTY_SNAPSHOT,
+}
+
 /** `[editing, setEditing]` — handy for a "Edit this page" button in your own chrome. */
 export function useVeditEditing(): [boolean, (editing: boolean) => void] {
   const store = useVeditStore()
@@ -111,6 +133,16 @@ export interface VeditProviderProps {
    * in one session. Defaults to whichever page the editor was opened on.
    */
   pages?: Array<{ path: string; label?: string }>
+  /**
+   * Turns on presence and comments. `broadcastChannelRealtime()` works across
+   * tabs with no backend; `sseRealtime({ endpoint })` pairs with
+   * `createRealtimeHandler` for people on different machines.
+   */
+  realtime?: VeditRealtime
+  /** Who is editing. Without it, everyone shows up as a named anonymous animal. */
+  user?: Partial<Peer>
+  /** Which room to join. One room can carry several documents; defaults to `vedit`. */
+  realtimeRoom?: string
   /** Save automatically this many ms after the last change. 0 disables it. */
   autosaveMs?: number
   onSave?: (doc: VeditDocument) => void
@@ -159,6 +191,9 @@ export function VeditProvider({
   initialDocument = null,
   canvas = true,
   pages,
+  realtime,
+  user,
+  realtimeRoom,
   autosaveMs = 0,
   onSave,
 }: VeditProviderProps) {
@@ -206,6 +241,39 @@ export function VeditProvider({
       publishCanvasBridge({ store, breakpoints, path: window.location.pathname })
     }
   }, [framedByEditor, store, breakpoints])
+
+  // Collaboration belongs to whichever store is actually being edited: the framed
+  // page on the canvas, or this one when editing in place. Attaching it to both
+  // would put the same person in the room twice.
+  // Read straight from the store: this component *is* the provider, so the
+  // context hooks aren't available to it yet.
+  const editing = useSyncExternalStore(
+    store.subscribe,
+    () => store.getState().editing,
+    () => store.getState().editing,
+  )
+  const collaborating = !!realtime && (framedByEditor || (editing && !canvas))
+  const userKey = user ? JSON.stringify(user) : ''
+
+  useEffect(() => {
+    if (!collaborating || !realtime) return
+    const session = new RealtimeSession(
+      store,
+      realtime,
+      adapter ?? store.adapter,
+      user,
+      realtimeRoom ?? 'vedit',
+    )
+    store.setSession(session)
+    void session.start()
+    const untrack = session.trackPointer(document)
+    return () => {
+      untrack()
+      session.stop()
+      if (store.session === session) store.setSession(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collaborating, realtime, store, realtimeRoom, userKey])
 
   // Notify the host app after every successful save.
   const savedRef = useRef<VeditDocument | null>(null)

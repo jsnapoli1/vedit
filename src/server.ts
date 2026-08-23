@@ -7,6 +7,8 @@ import {
 import { documentToCss } from './runtime/css'
 import { DEFAULT_BREAKPOINTS, type BreakpointWidths } from './core/types'
 
+export { createRealtimeHandler } from './realtime-server'
+export type { RealtimeHandlerOptions } from './realtime-server'
 export { documentToCss, emptyDocument }
 export type { DocumentStage, VeditDocument, VeditVersion }
 

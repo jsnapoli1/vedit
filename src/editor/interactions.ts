@@ -215,6 +215,24 @@ export function useEditorInteractions(
       event.preventDefault()
       event.stopPropagation()
 
+      if (state.tool === 'comment') {
+        // Pin to the element when there is one, as a fraction of its box, so the
+        // note follows it when the element moves or resizes.
+        const element = id ? store.getNode(id)?.element : null
+        const rect = element?.getBoundingClientRect()
+        store.setPendingComment(
+          rect && rect.width && rect.height
+            ? {
+                nodeId: id ?? undefined,
+                x: (event.clientX - rect.left) / rect.width,
+                y: (event.clientY - rect.top) / rect.height,
+              }
+            : { x: event.clientX + view.scrollX, y: event.clientY + view.scrollY },
+        )
+        store.setTool('select')
+        return
+      }
+
       if (!id) {
         store.select(null)
         return
@@ -223,7 +241,7 @@ export function useEditorInteractions(
       if (state.tool !== 'select') {
         const parent = containerFor(store, id)
         if (parent) {
-          store.insert(parent, state.tool as Exclude<EditorTool, 'select' | 'hand'>)
+          store.insert(parent, state.tool as Exclude<EditorTool, 'select' | 'hand' | 'comment'>)
           store.setTool('select')
         } else {
           store.notify('Nothing here can hold a new element — drop it inside an <Editable container>')
@@ -327,7 +345,9 @@ export function useEditorInteractions(
 
       if (event.key === 'Escape' && !state.inlineEditing) {
         // Step out one level at a time, the way a canvas tool should.
-        if (state.tool !== 'select') store.setTool('select')
+        if (state.pendingComment) store.setPendingComment(null)
+        else if (state.openComment) store.setOpenComment(null)
+        else if (state.tool !== 'select') store.setTool('select')
         else if (state.selection.length === 1) {
           store.select(store.getNode(state.selection[0])?.parentId ?? null)
         } else store.select(null)
@@ -356,7 +376,14 @@ export function useEditorInteractions(
 
       const id = state.selection.length === 1 ? state.selection[0] : null
 
-      const tools: Record<string, EditorTool> = { v: 'select', h: 'hand', t: 'text', i: 'image', r: 'box' }
+      const tools: Record<string, EditorTool> = {
+        v: 'select',
+        h: 'hand',
+        c: 'comment',
+        t: 'text',
+        i: 'image',
+        r: 'box',
+      }
       const tool = tools[event.key.toLowerCase()]
       if (tool) {
         store.setTool(tool)

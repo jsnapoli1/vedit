@@ -48,9 +48,18 @@ export function readCanvasBridge(frame: HTMLIFrameElement): CanvasBridge | null 
   }
 }
 
-/** The URL to load in an artboard: that page, flagged as the canvas child. */
+/**
+ * The URL to load in an artboard: that page, flagged as the canvas child. The
+ * host page's own query survives, so whatever it carries — a preview token, the
+ * signed-in user, a feature flag — is still there inside the frame.
+ */
 export function canvasUrl(pathOrHref: string): string {
-  const url = new URL(pathOrHref, typeof window === 'undefined' ? 'http://localhost' : window.location.href)
+  const here = typeof window === 'undefined' ? 'http://localhost' : window.location.href
+  const url = new URL(pathOrHref, here)
+  for (const [name, value] of new URL(here).searchParams) {
+    if (name === 'vedit' || name === CANVAS_PARAM) continue
+    if (!url.searchParams.has(name)) url.searchParams.set(name, value)
+  }
   url.searchParams.set(CANVAS_PARAM, '1')
   url.searchParams.delete('vedit')
   return url.toString()

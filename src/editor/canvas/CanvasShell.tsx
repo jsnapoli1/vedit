@@ -15,7 +15,7 @@ const EDITOR_STYLE_ID = 'vedit-editor-styles'
 const MIN_ZOOM = 0.05
 const MAX_ZOOM = 4
 /** Space kept clear for the floating panels when fitting the artboards. */
-const INSETS = { top: 96, right: 296, bottom: 24, left: 256 }
+const INSETS = { top: 96, right: 296, bottom: 24, left: 292 }
 /** Gap between artboards, in page pixels. */
 const GAP = 64
 
@@ -110,6 +110,20 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridgeList])
+
+  // Only the artboard being worked in speaks for you in the room, so one person
+  // with three pages open still shows up once. Sessions start asynchronously, so
+  // re-apply as each one appears.
+  useEffect(() => {
+    const apply = () => {
+      for (const [path, bridge] of Object.entries(bridges)) {
+        bridge.store.session?.setBroadcastPresence(path === activePath)
+      }
+    }
+    apply()
+    const unsubscribes = Object.values(bridges).map((bridge) => bridge.store.subscribe(apply))
+    return () => unsubscribes.forEach((off) => off())
+  }, [bridges, activePath])
 
   // Selecting inside an artboard makes it the one the panels are pointed at.
   useEffect(() => {

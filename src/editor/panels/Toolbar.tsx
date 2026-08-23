@@ -1,9 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useVeditContext, useVeditState, useVeditStore } from '../../core/context'
+import { useVeditContext, useVeditSession, useVeditState, useVeditStore } from '../../core/context'
+import { initialsOf } from '../../core/realtime'
 import { BREAKPOINT_ORDER, type Breakpoint, type EditorTool } from '../../core/types'
 import {
   IconClose,
   IconCursor,
+  IconComment,
   IconHand,
   IconDesktop,
   IconImage,
@@ -19,6 +21,7 @@ import {
 const TOOLS: Array<{ tool: EditorTool; icon: JSX.Element; title: string }> = [
   { tool: 'select', icon: <IconCursor />, title: 'Select — V' },
   { tool: 'hand', icon: <IconHand />, title: 'Pan — H, or hold Space' },
+  { tool: 'comment', icon: <IconComment />, title: 'Comment — C' },
   { tool: 'text', icon: <IconType />, title: 'Add text — T' },
   { tool: 'image', icon: <IconImage />, title: 'Add image — I' },
   { tool: 'box', icon: <IconSquare />, title: 'Add box — R' },
@@ -83,6 +86,8 @@ export function Toolbar({
           {extras}
         </>
       ) : null}
+
+      <Avatars />
 
       <span className="vedit-divider" />
 
@@ -170,6 +175,33 @@ export function Toolbar({
         <IconClose />
       </button>
     </div>
+  )
+}
+
+/** Who else is here. Hovering one says which page they are on. */
+function Avatars() {
+  const { peers, session } = useVeditSession()
+  if (!session) return null
+
+  const everyone = [{ ...session.self, path: undefined }, ...peers]
+  return (
+    <>
+      <span className="vedit-divider" />
+      <span className="vedit-avatars" title={`${everyone.length} editing`}>
+        {everyone.slice(0, 6).map((peer, index) => (
+          <span
+            key={peer.id}
+            className="vedit-avatar"
+            data-self={index === 0 ? 'true' : 'false'}
+            style={{ background: peer.color }}
+            title={index === 0 ? `${peer.name} (you)` : `${peer.name}${peer.path ? ` — ${peer.path}` : ''}`}
+          >
+            {initialsOf(peer.name)}
+          </span>
+        ))}
+        {everyone.length > 6 ? <span className="vedit-avatar" style={{ background: '#555' }}>+{everyone.length - 6}</span> : null}
+      </span>
+    </>
   )
 }
 

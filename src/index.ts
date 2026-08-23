@@ -6,6 +6,7 @@ export {
   useVeditStore,
   useVeditNodes,
   useVeditContext,
+  useVeditSession,
   useOptionalVeditContext,
 } from './core/context'
 
@@ -16,6 +17,20 @@ export { useEditable, labelFromId } from './components/useEditable'
 export type { UseEditableOptions, UseEditableResult } from './components/useEditable'
 
 export { VeditStore } from './core/store'
+export { RealtimeSession, diffDocuments } from './core/session'
+export type { SessionSnapshot, DocumentPatch } from './core/session'
+export { broadcastChannelRealtime } from './core/adapters/broadcast'
+export { sseRealtime } from './core/adapters/sse'
+export type { SseRealtimeOptions } from './core/adapters/sse'
+export { anonymousPeer, colorForPeer, initialsOf } from './core/realtime'
+export type {
+  Comment,
+  CommentReply,
+  Peer,
+  RealtimeConnection,
+  RealtimeMessage,
+  VeditRealtime,
+} from './core/realtime'
 export { localStorageAdapter } from './core/adapters/localStorage'
 export { httpAdapter } from './core/adapters/http'
 export type { HttpAdapterOptions } from './core/adapters/http'

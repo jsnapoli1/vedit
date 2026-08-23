@@ -105,6 +105,7 @@ with the panels floating over the page. `canvas={false}` picks that mode outrigh
 | **Images** | Source, upload, asset library, alt text, object-fit, drag-to-set focal point, aspect-ratio crop |
 | **Position** | In flow or free; drag to re-order among siblings, drag freely when detached, resize with handles |
 | **Structure** | Hide/show anything, add text/images/boxes inside containers, duplicate, re-parent and delete what you added |
+| **Together** | Live cursors, peer selections, comment threads pinned to elements |
 | **Escape hatch** | A raw CSS box per element, for anything the panels don't cover |
 
 Every one of those can be scoped to a breakpoint: pick `sm`/`md`/`lg`/`xl` in the
@@ -189,6 +190,69 @@ clicked and writes to all of them; fields where the selection disagrees read
 **Mixed**. Content and component props stay single-element — those rarely mean the
 same thing across a group.
 
+### Working together
+
+Pass a `realtime` transport and the editor becomes multiplayer: you see who else
+is here, where their pointer is, what they have selected, and their changes as
+they make them.
+
+```tsx
+import { VeditProvider, broadcastChannelRealtime } from 'vedit'
+
+<VeditProvider
+  realtime={broadcastChannelRealtime()}   // across tabs, no backend needed
+  user={{ id: user.id, name: user.name }} // yours; otherwise everyone is an anonymous animal
+>
+```
+
+- **Presence** — a cursor with a name, an outline in their colour around whatever
+  they have selected, and an avatar row in the toolbar. Someone on another page
+  shows in the avatars with their route, not as a cursor on yours.
+- **Live changes** merge per node, last write wins. Two people restyling different
+  elements both keep their work; two people restyling the same one resolve to
+  whoever finished last. That's the honest guarantee without a CRDT underneath,
+  and it covers the way teams actually divide a page up.
+- **Undo stays yours.** A change arriving from someone else is merged into your
+  history as well as your document, so stepping back undoes your last action —
+  never theirs.
+- **Save conflicts are visible.** If someone saves after you loaded, the editor
+  says so before you replace their version, and offers to load theirs.
+
+For people on different machines, swap the transport:
+
+```tsx
+import { sseRealtime } from 'vedit'
+
+realtime={sseRealtime({ endpoint: '/api/vedit/realtime' })}
+```
+
+```ts
+// app/api/vedit/realtime/route.ts
+import { createRealtimeHandler } from 'vedit/server'
+
+const relay = createRealtimeHandler({ authorize: (request) => isEditor(request) })
+export { relay as GET, relay as POST }
+```
+
+Server-sent events down, `POST` up — no WebSocket server, so it runs wherever
+your overrides endpoint already does. Rooms live in that process's memory, which
+is plenty for a team and exactly where you'd swap the fan-out for Redis, a
+Durable Object or your own bus. `VeditRealtime` is two methods, so anything that
+moves JSON — a WebSocket, Ably, Liveblocks, PartyKit — can back it instead.
+
+### Comments
+
+Press `C` and click anywhere to leave a note. A note dropped on an element stores
+its position as a fraction of that element's box, so it stays on the thing it is
+about when the element moves, resizes, or reflows at another breakpoint.
+
+Threads take replies, resolve and reopen, and appear both as pins on the page and
+as a list in the **Notes** tab. They travel over the same transport as presence,
+so they show up for everyone immediately; add `listComments` / `saveComment` /
+`deleteComment` to your adapter to keep them beyond the session.
+
+Comments live outside the document, so they never publish with your content.
+
 ### Checks
 
 The **Checks** tab audits the page as it stands, re-running shortly after every
@@ -209,7 +273,7 @@ Click an issue to select the element that caused it.
 | | |
 | --- | --- |
 | `⌘E` | Open / close the editor |
-| `V` `H` `T` `I` `R` | Select, pan, add text, add image, add box |
+| `V` `H` `C` `T` `I` `R` | Select, pan, comment, add text, add image, add box |
 | `⌘`/`Ctrl` + scroll, `⇧1` | Zoom, fit to screen |
 | `Space` + drag | Pan the canvas |
 | `Enter` / double-click | Edit text in place |
@@ -287,6 +351,9 @@ const adapter = {
   async loadVersion(key, id) { … },
   async uploadImage(file) { … },                // enables Upload
   async listAssets() { … },                     // enables the image library
+  async listComments(key) { … },                // keeps comments beyond the session
+  async saveComment(comment) { … },
+  async deleteComment(id) { … },
 }
 ```
 
@@ -327,7 +394,7 @@ visitors download the runtime (a few KB) and nothing else.
 
 **Components**
 
-- `<VeditProvider>` — `documentKey`, `adapter`, `enabled`, `defaultEditing`, `auto`, `autoSelector`, `breakpoints`, `initialDocument`, `canvas`, `pages`, `autosaveMs`, `onSave`
+- `<VeditProvider>` — `documentKey`, `adapter`, `enabled`, `defaultEditing`, `auto`, `autoSelector`, `breakpoints`, `initialDocument`, `canvas`, `pages`, `realtime`, `user`, `realtimeRoom`, `autosaveMs`, `onSave`
 - `<Editable id as kind label container fields>` — the general case; renders any tag or component
 - `<EditableText>` `<EditableImage>` `<EditableBox>` `<EditableLink>` — presets
 
@@ -335,15 +402,17 @@ visitors download the runtime (a few KB) and nothing else.
 
 - `useVeditEditing()` → `[editing, setEditing]`, for your own "Edit page" button
 - `useEditable({ id, kind, label, container, fields, props })` → `{ ref, veditProps, props, override }`
+- `useVeditSession()` → `{ peers, comments, staleSince, session }` — build your own presence UI
 - `useVeditState(selector)`, `useVeditStore()`, `useVeditNodes()` for deeper integration
 
 **Utilities**
 
 - `localStorageAdapter()`, `httpAdapter()`, `memoryAdapter()`
+- `broadcastChannelRealtime()`, `sseRealtime()` — and `VeditRealtime` for your own
 - `documentToCss(doc)` — the stylesheet for a document
 - `parseTransform` / `withTransform`, `parseGradient` / `serializeGradient`
 - `auditPage(nodes)`, `contrastRatio(fg, bg)` — the accessibility checks, usable in your own tests
-- `vedit/server`: `createVeditHandler()`, `fileStore()`, `veditStyleTag()`
+- `vedit/server`: `createVeditHandler()`, `createRealtimeHandler()`, `fileStore()`, `veditStyleTag()`
 
 **The document**
 
@@ -383,9 +452,12 @@ the content, not the position:
 
 ## Known limits
 
-- **No collaboration.** No presence, comments or locking. Two people editing the
-  same document will overwrite each other on save — that needs a server that can
-  push, which a client library can't provide on its own.
+- **Merging is per node, not per character.** Two people typing into the same
+  headline at the same time resolve to whoever stopped last, rather than
+  interleaving. Different elements never conflict.
+- **The relay is single-process.** `createRealtimeHandler` fans out from memory,
+  so several server instances don't see each other's rooms until you swap the
+  fan-out for something shared.
 - **Re-ordering needs a flex or grid parent.** Block children fall back to a
   nudge (with a one-click offer to convert the parent), because CSS `order`
   doesn't apply to them and the library never rewrites your DOM.
@@ -416,9 +488,14 @@ cd example && npm install && npm run dev   # demo site at localhost:5173
 
 The example under `example/` is a two-page marketing site that uses explicit
 `<Editable>` wrappers, a component with editable props, the DOM scanner, and an
-adapter implementing drafts, publishing, version history and an image library —
-all on `localStorage`. It resolves `vedit` straight to the source, so edits to the
-library show up instantly.
+adapter implementing drafts, publishing, version history, comments and an image
+library — all on `localStorage`. It resolves `vedit` straight to the source, so
+edits to the library show up instantly.
+
+Open it twice with `?as=Sam` and `?as=Alex` to see presence and comments across
+two tabs. `node example/realtime-server.mjs` starts the SSE relay, and `?rt=sse`
+points the demo at it instead of the cross-tab channel — the same path two people
+on two machines would take.
 
 ## License
 

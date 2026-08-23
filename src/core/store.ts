@@ -1,3 +1,4 @@
+import type { RealtimeSession } from './session'
 import {
   deleteStyles,
   mergeStyles,
@@ -39,12 +40,21 @@ export class VeditStore {
   private nodeListeners = new Set<() => void>()
   private registry = new Map<string, RegisteredNode>()
   private registrySnapshot: RegisteredNode[] = []
-  private adapter: VeditAdapter
+  /** Exposed so the provider can hand the same adapter to the realtime session. */
+  readonly adapter: VeditAdapter
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null
   private noticeTimer: ReturnType<typeof setTimeout> | null = null
   readonly autosaveMs: number
 
   state: VeditState
+
+  /** Set by the provider when collaboration is configured. */
+  session: RealtimeSession | null = null
+
+  setSession(session: RealtimeSession | null) {
+    this.session = session
+    this.set({ sessionId: session?.self.id ?? null })
+  }
 
   constructor(opts: { key: string; adapter: VeditAdapter; autosaveMs?: number }) {
     const doc = emptyDocument(opts.key)
@@ -61,6 +71,9 @@ export class VeditStore {
       hovered: null,
       breakpoint: 'base',
       styleState: 'default',
+      sessionId: null,
+      pendingComment: null,
+      openComment: null,
       tool: 'select',
       inlineEditing: null,
       notice: null,
@@ -227,6 +240,41 @@ export class VeditStore {
   setStyleBucket(id: string, styles: StyleMap) {
     const { state, breakpoint } = this.cell
     this.writeNode(id, (override) => replaceStyles(override, state, breakpoint, styles))
+  }
+
+  /**
+   * Merge someone else's change in. Per node, last write wins: their edit to one
+   * element lands without touching yours to another. Not undoable — undo is for
+   * your own actions, not other people's.
+   */
+  applyRemote(patch: {
+    nodes?: Record<string, NodeOverride | null>
+    inserted?: InsertedNode[]
+    tokens?: DesignToken[]
+  }) {
+    const merge = (doc: VeditDocument): VeditDocument => {
+      const next = { ...doc }
+      if (patch.nodes) {
+        const nodes = { ...next.nodes }
+        for (const [id, override] of Object.entries(patch.nodes)) {
+          if (override === null) delete nodes[id]
+          else nodes[id] = override
+        }
+        next.nodes = nodes
+      }
+      if (patch.inserted) next.inserted = patch.inserted
+      if (patch.tokens) next.tokens = patch.tokens
+      return next
+    }
+
+    // Their change is merged into the undo stack as well as the live document.
+    // Undo walks back through *your* actions; stepping back should not take
+    // someone else's work with it.
+    this.set({
+      doc: merge(this.state.doc),
+      past: this.state.past.map(merge),
+      future: this.state.future.map(merge),
+    })
   }
 
   /** Snapshot the document so a drag gesture collapses into one undo step. */
@@ -548,6 +596,14 @@ export class VeditStore {
 
   setStyleState(styleState: StyleState) {
     this.set({ styleState })
+  }
+
+  setPendingComment(pendingComment: VeditState['pendingComment']) {
+    this.set({ pendingComment, openComment: null })
+  }
+
+  setOpenComment(openComment: string | null) {
+    this.set({ openComment, pendingComment: null })
   }
 
   setTool(tool: EditorTool) {
