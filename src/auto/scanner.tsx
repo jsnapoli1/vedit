@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useVeditContext, useVeditState } from '../core/context'
 import type { VeditStore } from '../core/store'
 import type { NodeKind, RegisteredNode } from '../core/types'
-import { sanitizeHtml } from '../runtime/sanitize'
+import { safeUrl, sanitizeHtml } from '../runtime/sanitize'
 import { computeAutoId } from './ids'
 
 const TEXT_TAGS = new Set([
@@ -113,11 +113,14 @@ export function applyAutoOverrides(store: VeditStore, root: HTMLElement): void {
     } else if (override.text !== undefined) {
       if (element.textContent !== override.text) element.textContent = override.text
     }
-    if (override.src !== undefined && element instanceof HTMLImageElement && element.src !== override.src) {
-      element.src = override.src
+    if (override.src !== undefined && element instanceof HTMLImageElement) {
+      const src = safeUrl(override.src, { allowDataImage: true }) ?? ''
+      if (element.getAttribute('src') !== src) element.setAttribute('src', src)
     }
     if (override.alt !== undefined && element instanceof HTMLImageElement) element.alt = override.alt
-    if (override.href !== undefined && element instanceof HTMLAnchorElement) element.href = override.href
+    if (override.href !== undefined && element instanceof HTMLAnchorElement) {
+      element.setAttribute('href', safeUrl(override.href) ?? '#')
+    }
     if (override.className) {
       for (const name of override.className.split(/\s+/).filter(Boolean)) element.classList.add(name)
     }

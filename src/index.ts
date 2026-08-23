@@ -50,7 +50,7 @@ export {
   deleteStyles,
   pruneOverride,
 } from './core/layers'
-export { sanitizeHtml } from './runtime/sanitize'
+export { sanitizeHtml, safeUrl } from './runtime/sanitize'
 export { scanDom } from './auto/scanner'
 export { auditPage, contrastRatio, effectiveBackground, parseColor, luminance } from './editor/a11y'
 export type { A11yIssue } from './editor/a11y'

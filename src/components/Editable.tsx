@@ -1,7 +1,7 @@
 import { createElement, forwardRef, useMemo, type ElementType, type ReactNode, type Ref } from 'react'
 import { useEditable } from './useEditable'
 import { useVeditState } from '../core/context'
-import { sanitizeHtml } from '../runtime/sanitize'
+import { safeUrl, sanitizeHtml } from '../runtime/sanitize'
 import type { EditableField, InsertedNode, NodeKind } from '../core/types'
 
 export interface EditableProps {
@@ -68,10 +68,13 @@ export const Editable = forwardRef<HTMLElement, EditableProps>(function Editable
 
   props.ref = mergeRefs(ref, forwardedRef)
   props.className = [className, override.className].filter(Boolean).join(' ') || undefined
-  if (override.src !== undefined) props.src = override.src
+  // URLs come out of the stored document, so they get the same treatment as its
+  // HTML: anything that would execute rather than navigate is dropped.
+  if (override.src !== undefined) props.src = safeUrl(override.src, { allowDataImage: true }) ?? ''
   if (override.alt !== undefined) props.alt = override.alt
-  if (override.href !== undefined) props.href = override.href
+  if (override.href !== undefined) props.href = safeUrl(override.href) ?? '#'
   if (override.target !== undefined) props.target = override.target
+  if (props.target === '_blank' && props.rel === undefined) props.rel = 'noopener noreferrer'
 
   let content: ReactNode = children
   if (override.html !== undefined) {

@@ -32,3 +32,28 @@ export function sanitizeHtml(html: string): string {
   walk(template.content as unknown as Element)
   return template.innerHTML
 }
+
+/**
+ * Schemes that execute rather than navigate. A URL in an override comes from the
+ * stored document, so it is only as trustworthy as whoever can write to it —
+ * treat it like any other piece of user data reaching the page.
+ */
+const EXECUTABLE_SCHEME = /^[\u0000-\u0020]*(javascript|vbscript|data)[\u0000-\u0020]*:/i
+const DATA_IMAGE = /^[\u0000-\u0020]*data:image\/(png|jpe?g|gif|webp|avif|svg\+xml)[,;]/i
+
+export interface SafeUrlOptions {
+  /**
+   * Allow inline image data. Safe for `src`, where an SVG's scripts never run;
+   * never for `href`, where the browser would navigate to it as a document.
+   */
+  allowDataImage?: boolean
+}
+
+/** The URL if it is safe to put on the page, otherwise undefined. */
+export function safeUrl(value: unknown, options: SafeUrlOptions = {}): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  if (!EXECUTABLE_SCHEME.test(trimmed)) return trimmed
+  return options.allowDataImage && DATA_IMAGE.test(trimmed) ? trimmed : undefined
+}

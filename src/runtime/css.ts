@@ -34,11 +34,25 @@ export function toCssValue(property: string, value: string | number): string {
   return String(value)
 }
 
+/** Anything that could end a declaration, a rule, or the `<style>` element itself. */
+const CSS_BREAKOUT = /[{}<>;@\\]/g
+const CSS_PROPERTY = /^-{0,2}[a-zA-Z][\w-]*$/
+
+/**
+ * A stored document is data, and it is rendered into a `<style>` element on every
+ * visitor's page. A value carrying `}` would close the rule and let the rest
+ * inject arbitrary CSS; `</style` would leave CSS altogether. Strip both, and
+ * refuse property names that aren't property names.
+ */
 export function declarations(style: StyleMap): string {
   return Object.entries(style)
-    .filter(([, value]) => value !== '' && value !== undefined && value !== null)
-    .map(([property, value]) => `${toKebab(property)}:${toCssValue(property, value)}`)
+    .filter(([property, value]) => CSS_PROPERTY.test(property) && value !== '' && value != null)
+    .map(([property, value]) => `${toKebab(property)}:${safeCssValue(property, value)}`)
     .join(';')
+}
+
+export function safeCssValue(property: string, value: string | number): string {
+  return toCssValue(property, value).replace(CSS_BREAKOUT, '').trim()
 }
 
 /** The CSS custom property a token is published as. */
@@ -71,11 +85,13 @@ function selector(id: string, weight: number, state: StyleState): string {
   return `${base}:${state},${base}[data-vedit-force="${state}"]`
 }
 
+const TOKEN_ID = /^[a-zA-Z0-9_-]+$/
+
 function tokensCss(tokens: DesignToken[] | undefined): string {
   if (!tokens?.length) return ''
   const body = tokens
-    .filter((token) => token.value !== '')
-    .map((token) => `${tokenVariable(token)}:${token.value}`)
+    .filter((token) => token.value !== '' && TOKEN_ID.test(token.id))
+    .map((token) => `${tokenVariable(token)}:${safeCssValue(token.id, token.value)}`)
     .join(';')
   return body ? `:root{${body}}` : ''
 }

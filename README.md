@@ -450,6 +450,24 @@ the content, not the position:
 ❌ <EditableText id={`item-${index}`}>
 ```
 
+## Security
+
+The overrides document is data, and it is rendered into every visitor's page.
+Treat it as only as trustworthy as whoever can write to your store:
+
+- **Authorize writes.** `createVeditHandler` accepts an `authorize` callback and
+  has no opinion without one. So does `createRealtimeHandler`.
+- Style values and token names are stripped of anything that could end a rule or
+  leave the `<style>` element; property names that aren't property names are
+  dropped.
+- `href` and `src` overrides refuse `javascript:`, `vbscript:` and `data:` URLs.
+  Inline images are allowed for `src` only, where an SVG's scripts never run.
+- Rich text keeps a small formatting whitelist and loses everything else.
+- `target="_blank"` gets `rel="noopener noreferrer"` unless you set `rel` yourself.
+
+`safeUrl` and `sanitizeHtml` are exported if you want to apply the same rules to
+content of your own.
+
 ## Known limits
 
 - **Merging is per node, not per character.** Two people typing into the same

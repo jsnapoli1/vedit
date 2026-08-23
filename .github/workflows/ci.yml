@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # `npm test` builds first: the tests import the bundle, so they check what
+      # actually ships rather than the sources it came from.
+      - run: npm test
+      - name: Check the package installs and its types resolve
+        run: |
+          npm pack --silent
+          mkdir -p /tmp/consumer && cd /tmp/consumer
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund "$GITHUB_WORKSPACE"/vedit-*.tgz react@18 react-dom@18 typescript@5 @types/react@18
+          printf "import 'vedit'\nimport 'vedit/server'\n" > check.ts
+          npx tsc --noEmit --module esnext --moduleResolution bundler --target es2022 --jsx react-jsx --strict --skipLibCheck check.ts
