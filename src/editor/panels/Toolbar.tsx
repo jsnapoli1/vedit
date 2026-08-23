@@ -48,6 +48,7 @@ export function Toolbar({
   const canUndo = useVeditState((state) => state.past.length > 0)
   const canRedo = useVeditState((state) => state.future.length > 0)
   const dirty = useVeditState((state) => state.doc !== state.saved)
+  const unpublished = useVeditState((state) => state.doc !== state.published)
   const width = useViewportWidth()
 
   return (
@@ -143,12 +144,23 @@ export function Toolbar({
       </button>
       <button
         type="button"
-        className="vedit-btn vedit-btn-primary"
+        className={store.supportsPublishing ? 'vedit-btn' : 'vedit-btn vedit-btn-primary'}
         disabled={status === 'saving' || !dirty}
         onClick={() => void store.save().catch(() => undefined)}
       >
-        {status === 'saving' ? 'Saving…' : dirty ? 'Save changes' : 'Saved'}
+        {status === 'saving' ? 'Saving…' : dirty ? (store.supportsPublishing ? 'Save draft' : 'Save changes') : 'Saved'}
       </button>
+      {store.supportsPublishing ? (
+        <button
+          type="button"
+          className="vedit-btn vedit-btn-primary"
+          disabled={status === 'saving' || !unpublished}
+          title="Make the current draft the version visitors see"
+          onClick={() => void store.publish().catch(() => undefined)}
+        >
+          {unpublished ? 'Publish' : 'Published'}
+        </button>
+      ) : null}
       <button
         type="button"
         className="vedit-btn vedit-btn-icon"

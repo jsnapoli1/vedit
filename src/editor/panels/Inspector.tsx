@@ -1,7 +1,23 @@
-import { useRef, useState } from 'react'
-import { useVeditState, useVeditStore } from '../../core/context'
-import type { NodeKind, StyleMap } from '../../core/types'
-import { LengthField, Row, Section, Segmented, SelectField, Slider, TextField } from '../controls'
+import { useEffect, useRef, useState } from 'react'
+import { useVeditNodes, useVeditState, useVeditStore } from '../../core/context'
+import {
+  STYLE_STATES,
+  type EditableField,
+  type NodeKind,
+  type StyleMap,
+  type StyleState,
+  type VeditAsset,
+} from '../../core/types'
+import { ColorField, LengthField, Row, Section, Segmented, SelectField, Slider, TextField, toHex } from '../controls'
+import {
+  DEFAULT_GRADIENT,
+  gradientPreview,
+  parseGradient,
+  serializeGradient,
+  type Gradient,
+} from '../../runtime/gradient'
+import { parseTransform, withTransform } from '../../runtime/transform'
+import { TokenPicker } from './Tokens'
 import { useComputedStyle, useContentValue, useSelectedNode, useStyleValue } from '../hooks'
 import {
   IconAlignCenter,
@@ -13,7 +29,7 @@ import {
   IconTrash,
 } from '../icons'
 import { BoxSides, ColorRow, LengthRow, SegmentRow, SelectRow } from './rows'
-import { dragModeFor } from '../interactions'
+import { dragModeFor, reorderBlocker } from '../interactions'
 
 const FONT_STACKS = [
   { value: 'inherit', label: 'Inherit' },
@@ -36,20 +52,19 @@ const SHADOWS: Array<{ label: string; value: string }> = [
 
 export function Inspector() {
   const store = useVeditStore()
-  const { id, node } = useSelectedNode()
-  const selectionCount = useVeditState((state) => state.selection.length)
+  const { id, node, count } = useSelectedNode()
   const override = useVeditState((state) => (id ? state.doc.nodes[id] : undefined))
   const isInserted = useVeditState((state) => !!id && state.doc.inserted.some((n) => n.id === id))
+  const multiple = count > 1
 
-  if (!id || selectionCount !== 1) {
+  if (!id) {
     return (
       <aside className="vedit-panel vedit-right" data-vedit-ui="">
         <div className="vedit-panel-head">Inspector</div>
         <div className="vedit-panel-body">
           <div className="vedit-section vedit-hint">
-            {selectionCount > 1
-              ? `${selectionCount} elements selected. Pick a single element to edit it.`
-              : 'Click anything on the page to select it. Double-click text to rewrite it.'}
+            Click anything on the page to select it. Double-click text to rewrite it.
+            Shift-click to select several at once.
           </div>
         </div>
       </aside>
@@ -71,14 +86,14 @@ export function Inspector() {
             color: 'var(--vedit-text)',
           }}
         >
-          {node?.label ?? 'Element'}
+          {multiple ? `${count} elements` : node?.label ?? 'Element'}
         </span>
         <span style={{ display: 'flex', gap: 2 }}>
           <button
             type="button"
             className="vedit-btn vedit-btn-icon"
             title={override?.hidden ? 'Show' : 'Hide'}
-            onClick={() => store.update(id, { hidden: !override?.hidden })}
+            onClick={() => store.updateMany(store.getState().selection, { hidden: !override?.hidden })}
           >
             {override?.hidden ? <IconEyeOff /> : <IconEye />}
           </button>
@@ -94,18 +109,70 @@ export function Inspector() {
       </div>
 
       <div className="vedit-panel-body">
-        <Breadcrumb id={id} />
-        <ContentSection id={id} kind={kind} />
+        {multiple ? (
+          <div className="vedit-section vedit-hint">
+            Editing {count} elements. Changes below apply to all of them; values shown are
+            from the last one you clicked.
+          </div>
+        ) : (
+          <>
+            <Breadcrumb id={id} />
+            <StateSwitch id={id} />
+            <PropsSection id={id} />
+            <ContentSection id={id} kind={kind} />
+          </>
+        )}
         <LayoutSection id={id} />
         {kind !== 'image' ? <TypographySection id={id} /> : null}
         <AppearanceSection id={id} />
-        <CustomCssSection id={id} />
-        <div className="vedit-section vedit-hint" style={{ wordBreak: 'break-all' }}>
-          <div style={{ marginBottom: 4 }}>Node id</div>
-          <code>{id}</code>
-        </div>
+        {multiple ? null : <CustomCssSection id={id} />}
+        {multiple ? null : (
+          <div className="vedit-section vedit-hint" style={{ wordBreak: 'break-all' }}>
+            <div style={{ marginBottom: 4 }}>Node id</div>
+            <code>{id}</code>
+          </div>
+        )}
       </div>
     </aside>
+  )
+}
+
+/**
+ * Which interaction state the panels below are editing. Selecting one also forces
+ * that state on in the page, so you can style a hover without hovering.
+ */
+function StateSwitch({ id }: { id: string }) {
+  const store = useVeditStore()
+  const styleState = useVeditState((state) => state.styleState)
+  const node = store.getNode(id)
+
+  useEffect(() => {
+    const element = node?.element
+    if (!element) return
+    if (styleState === 'default') element.removeAttribute('data-vedit-force')
+    else element.setAttribute('data-vedit-force', styleState)
+    return () => element.removeAttribute('data-vedit-force')
+  }, [node, styleState])
+
+  return (
+    <div className="vedit-section" style={{ paddingBottom: 10 }}>
+      <Row label="State">
+        <Segmented
+          value={styleState}
+          options={STYLE_STATES.map((state) => ({
+            value: state,
+            label: state === 'default' ? 'Normal' : state[0].toUpperCase() + state.slice(1),
+          }))}
+          onChange={(next) => store.setStyleState((next ?? 'default') as StyleState)}
+        />
+      </Row>
+      {styleState !== 'default' ? (
+        <div className="vedit-hint">
+          Changes below apply only while the element is {styleState === 'active' ? 'pressed' : styleState}ed.
+          Add a transition under Appearance to make it ease.
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -142,6 +209,146 @@ function Breadcrumb({ id }: { id: string }) {
   )
 }
 
+/**
+ * The props a component declared as editable. This is the one part of the
+ * inspector your own code defines: the schema travels with the component, so the
+ * editor offers the variants that actually exist instead of guessing.
+ */
+function PropsSection({ id }: { id: string }) {
+  const store = useVeditStore()
+  const nodes = useVeditNodes()
+  const node = nodes.find((entry) => entry.id === id) ?? store.getNode(id)
+  const override = useVeditState((state) => state.doc.nodes[id]?.props)
+  const fields = node?.fields
+  if (!fields?.length) return null
+
+  return (
+    <Section title={node?.kind === 'component' ? 'Component' : 'Properties'}>
+      {fields.map((field) => (
+        <PropField
+          key={field.name}
+          field={field}
+          value={override?.[field.name]}
+          source={node?.props?.[field.name]}
+          onChange={(next) => store.setProp(id, field.name, next)}
+        />
+      ))}
+    </Section>
+  )
+}
+
+function PropField({
+  field,
+  value,
+  source,
+  onChange,
+}: {
+  field: EditableField
+  value: unknown
+  source: unknown
+  onChange: (next: unknown) => void
+}) {
+  const label = field.label ?? field.name.replace(/([A-Z])/g, ' $1').replace(/^\w/, (c) => c.toUpperCase())
+  const current = value ?? source
+  const overridden = value !== undefined
+  const reset = () => onChange(undefined)
+
+  const options = (field.options ?? []).map((option) =>
+    typeof option === 'string' ? { value: option, label: option } : option,
+  )
+
+  const control = () => {
+    switch (field.type) {
+      case 'boolean':
+        return (
+          <Segmented
+            value={current === undefined ? undefined : current ? 'on' : 'off'}
+            options={[
+              { value: 'on', label: 'On' },
+              { value: 'off', label: 'Off' },
+            ]}
+            onChange={(next) => onChange(next === undefined ? undefined : next === 'on')}
+          />
+        )
+      case 'select':
+        return options.length <= 3 ? (
+          <Segmented
+            value={current === undefined ? undefined : String(current)}
+            options={options.map((option) => ({ value: option.value, label: option.label }))}
+            onChange={(next) => onChange(next)}
+          />
+        ) : (
+          <select
+            className="vedit-select"
+            value={current === undefined ? '' : String(current)}
+            onChange={(event) => onChange(event.target.value || undefined)}
+          >
+            <option value="">default</option>
+            {options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )
+      case 'number':
+        return (
+          <LengthField
+            value={current === undefined ? undefined : String(current)}
+            computed={source === undefined ? undefined : String(source)}
+            defaultUnit=""
+            step={field.step}
+            min={field.min}
+            onChange={(next) => onChange(next === undefined ? undefined : Number.parseFloat(next))}
+          />
+        )
+      case 'color':
+        return (
+          <ColorField
+            value={typeof current === 'string' ? current : undefined}
+            computed={typeof source === 'string' ? source : undefined}
+            onChange={(next) => onChange(next)}
+          />
+        )
+      case 'textarea':
+        return (
+          <textarea
+            className="vedit-textarea"
+            value={current === undefined ? '' : String(current)}
+            onChange={(event) => onChange(event.target.value || undefined)}
+          />
+        )
+      default:
+        return (
+          <TextField
+            value={current === undefined ? '' : String(current)}
+            placeholder={source === undefined ? field.type : String(source)}
+            overridden={overridden}
+            onChange={(next) => onChange(next || undefined)}
+          />
+        )
+    }
+  }
+
+  return (
+    <>
+      {field.type === 'textarea' ? (
+        <>
+          <div className="vedit-label" style={{ width: 'auto', marginBottom: 4 }}>
+            {label}
+          </div>
+          {control()}
+        </>
+      ) : (
+        <Row label={label} overridden={overridden} onReset={overridden ? reset : undefined}>
+          {control()}
+        </Row>
+      )}
+      {field.help ? <div className="vedit-hint" style={{ marginBottom: 6 }}>{field.help}</div> : null}
+    </>
+  )
+}
+
 /* ------------------------------------------------------------------ content */
 
 function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
@@ -154,23 +361,21 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
   const [alt, setAlt] = useContentValue(id, 'alt')
   const fileInput = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [browsing, setBrowsing] = useState(false)
 
   if (kind === 'image') {
+    // Falls back to whatever the page is rendering, so the preview works before
+    // anything has been overridden.
+    const current = src ?? node?.element.getAttribute('src') ?? null
     return (
       <Section title="Image">
-        {src ? (
-          <div
-            style={{
-              height: 84,
-              borderRadius: 6,
-              marginBottom: 8,
-              background: `#1a1a1a url("${src}") center/contain no-repeat`,
-              border: '1px solid var(--vedit-border)',
-            }}
-          />
-        ) : null}
+        <ImagePreview id={id} src={current} />
         <Row label="Source">
-          <TextField value={src ?? ''} placeholder="https://…" onChange={(next) => setSrc(next || undefined)} />
+          <TextField
+            value={src ?? ''}
+            placeholder={current ? 'Using the image from your code' : 'https://…'}
+            onChange={(next) => setSrc(next || undefined)}
+          />
         </Row>
         <Row>
           <button
@@ -180,8 +385,18 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
             disabled={uploading}
             onClick={() => fileInput.current?.click()}
           >
-            {uploading ? 'Uploading…' : 'Replace image…'}
+            {uploading ? 'Uploading…' : 'Upload…'}
           </button>
+          {store.canListAssets ? (
+            <button
+              type="button"
+              className="vedit-btn"
+              style={{ flex: 1, background: 'var(--vedit-panel-2)' }}
+              onClick={() => setBrowsing(!browsing)}
+            >
+              {browsing ? 'Close library' : 'Library…'}
+            </button>
+          ) : null}
           <input
             ref={fileInput}
             type="file"
@@ -200,6 +415,7 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
             }}
           />
         </Row>
+        {browsing ? <AssetLibrary onPick={(url) => { setSrc(url); setBrowsing(false) }} /> : null}
         <Row label="Alt">
           <TextField value={alt ?? ''} placeholder="Describe the image" onChange={(next) => setAlt(next || undefined)} />
         </Row>
@@ -209,12 +425,7 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
           property="objectFit"
           options={['cover', 'contain', 'fill', 'none', 'scale-down'].map((v) => ({ value: v, label: v }))}
         />
-        <SelectRow
-          id={id}
-          label="Position"
-          property="objectPosition"
-          options={['center', 'top', 'bottom', 'left', 'right'].map((v) => ({ value: v, label: v }))}
-        />
+        <CropRow id={id} />
       </Section>
     )
   }
@@ -255,6 +466,133 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
         </>
       ) : null}
     </Section>
+  )
+}
+
+/**
+ * The image, with its focal point draggable on top. When an image is cropped by
+ * `object-fit: cover`, this is the only control that decides what survives the
+ * crop — so it is worth being able to point at it rather than type percentages.
+ */
+function ImagePreview({ id, src }: { id: string; src: string | null }) {
+  const position = useStyleValue(id, 'objectPosition')
+  const fit = useStyleValue(id, 'objectFit')
+  const effectiveFit = (fit.value as string | undefined) ?? fit.computed
+  const focal = parsePosition(typeof position.value === 'string' ? position.value : position.computed)
+  const cover = effectiveFit === 'cover' || effectiveFit === 'none'
+
+  if (!src) return null
+
+  const setFromPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = Math.round(Math.min(100, Math.max(0, ((event.clientX - rect.left) / rect.width) * 100)))
+    const y = Math.round(Math.min(100, Math.max(0, ((event.clientY - rect.top) / rect.height) * 100)))
+    position.set(`${x}% ${y}%`)
+  }
+
+  return (
+    <>
+      <div
+        className="vedit-image-preview"
+        style={{ backgroundImage: `url("${src.replace(/"/g, '%22')}")` }}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId)
+          setFromPointer(event)
+        }}
+        onPointerMove={(event) => {
+          if (event.buttons === 1) setFromPointer(event)
+        }}
+        title="Drag to set the focal point"
+      >
+        <span className="vedit-focal" style={{ left: `${focal.x}%`, top: `${focal.y}%` }} />
+      </div>
+      <div className="vedit-hint" style={{ marginBottom: 6 }}>
+        {cover
+          ? `Focal point ${focal.x}% ${focal.y}% — the part kept when the image is cropped.`
+          : 'Set Fit to cover for the focal point to have an effect.'}
+      </div>
+    </>
+  )
+}
+
+function parsePosition(value: string | undefined): { x: number; y: number } {
+  const parts = (value ?? '50% 50%').trim().split(/\s+/)
+  const toPercent = (part: string | undefined, fallback: number) => {
+    if (!part) return fallback
+    if (part.endsWith('%')) return Number.parseFloat(part)
+    const keywords: Record<string, number> = { left: 0, top: 0, center: 50, right: 100, bottom: 100 }
+    return keywords[part] ?? fallback
+  }
+  return { x: toPercent(parts[0], 50), y: toPercent(parts[1] ?? parts[0], 50) }
+}
+
+/** Crop by aspect ratio — the shape of the frame, with `cover` filling it. */
+function CropRow({ id }: { id: string }) {
+  const store = useVeditStore()
+  const ratio = useStyleValue(id, 'aspectRatio')
+  const presets = [
+    { label: 'Auto', value: undefined },
+    { label: '1:1', value: '1 / 1' },
+    { label: '4:3', value: '4 / 3' },
+    { label: '16:9', value: '16 / 9' },
+    { label: '3:4', value: '3 / 4' },
+  ]
+
+  return (
+    <Row label="Crop" overridden={ratio.overridden} onReset={ratio.clear}>
+      <div className="vedit-segmented">
+        {presets.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            data-active={(ratio.value ?? undefined) === preset.value ? 'true' : 'false'}
+            onClick={() => {
+              if (!preset.value) return store.clearStyles(id, ['aspectRatio'])
+              // A ratio only crops if the image is told to fill the box.
+              store.setStyle(id, { aspectRatio: preset.value, objectFit: 'cover' })
+            }}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+    </Row>
+  )
+}
+
+/** Images the adapter already knows about, so you rarely need to upload twice. */
+function AssetLibrary({ onPick }: { onPick: (url: string) => void }) {
+  const store = useVeditStore()
+  const [assets, setAssets] = useState<VeditAsset[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    store
+      .listAssets()
+      .then((result) => !cancelled && setAssets(result))
+      .catch((cause) => !cancelled && setError(cause instanceof Error ? cause.message : String(cause)))
+    return () => {
+      cancelled = true
+    }
+  }, [store])
+
+  if (error) return <div className="vedit-hint">Could not load the library: {error}</div>
+  if (!assets) return <div className="vedit-hint">Loading…</div>
+  if (!assets.length) return <div className="vedit-hint">The library is empty.</div>
+
+  return (
+    <div className="vedit-assets">
+      {assets.map((asset) => (
+        <button
+          key={asset.url}
+          type="button"
+          title={asset.name ?? asset.url}
+          style={{ backgroundImage: `url("${asset.url.replace(/"/g, '%22')}")` }}
+          onClick={() => onPick(asset.url)}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -352,9 +690,12 @@ function PositionControl({ id }: { id: string }) {
   const override = useVeditState((state) => state.doc.nodes[id])
   const node = store.getNode(id)
   const free = override?.style?.position === 'absolute'
-  const offset = typeof override?.style?.transform === 'string' ? override.style.transform : ''
-  const nudged = /translate\(\s*(?!0px\s*,\s*0px)/.test(offset)
+  const offset = String(store.styleValue(id, 'transform') ?? '')
+  const moved = parseTransform(offset)
+  const nudged = moved.translateX !== 0 || moved.translateY !== 0
   const mode = node ? dragModeFor(store, id, node.element) : 'nudge'
+  const blocker = node ? reorderBlocker(node.element) : 'not-flex'
+  const parent = node?.element.parentElement
 
   const setFree = (next: boolean) => {
     const element = node?.element
@@ -378,7 +719,16 @@ function PositionControl({ id }: { id: string }) {
     ? 'Dragging moves it freely, positioned against its nearest positioned ancestor.'
     : mode === 'reorder'
       ? 'Dragging re-orders it among its siblings for real.'
-      : "Dragging nudges it visually — its parent isn't flex or grid, so re-ordering can't be expressed in CSS."
+      : blocker === 'only-child'
+        ? 'Dragging nudges it visually — it has no siblings to swap with.'
+        : blocker === 'missing-ids'
+          ? "Dragging nudges it visually — some of its siblings aren't registered, so ordering them all isn't possible."
+          : "Dragging nudges it visually — its parent lays out as a block, and CSS can't re-order block children."
+
+  // The one-click fix for the common case: a stack of divs that would re-order
+  // happily if the parent were a flex column.
+  const parentId = parent?.getAttribute('data-vedit-id')
+  const offerFlex = !free && blocker === 'not-flex' && !!parentId
 
   return (
     <>
@@ -400,18 +750,85 @@ function PositionControl({ id }: { id: string }) {
       ) : null}
       {nudged ? (
         <Row label="Offset">
-          <span className="vedit-hint" style={{ flex: 1 }}>{offset.replace('translate', '')}</span>
+          <span className="vedit-hint" style={{ flex: 1 }}>
+            {Math.round(moved.translateX)}, {Math.round(moved.translateY)}
+          </span>
           <button
             type="button"
             className="vedit-btn"
             style={{ height: 22 }}
-            onClick={() => store.clearStyle(id, 'transform')}
+            onClick={() => {
+              const kept = withTransform(offset, { translateX: 0, translateY: 0 })
+              if (kept) store.setStyle(id, { transform: kept })
+              else store.clearStyles(id, ['transform'])
+            }}
           >
             Reset
           </button>
         </Row>
       ) : null}
-      <div className="vedit-hint" style={{ marginBottom: 8 }}>{explanation}</div>
+      <div className="vedit-hint" style={{ marginBottom: offerFlex ? 6 : 8 }}>{explanation}</div>
+      {offerFlex ? (
+        <Row>
+          <button
+            type="button"
+            className="vedit-btn"
+            style={{ flex: 1 }}
+            title="Sets display:flex and flex-direction:column on the parent"
+            onClick={() => {
+              store.setStyleMany([[parentId!, { display: 'flex', flexDirection: 'column' }]])
+              store.notify('Parent is now a flex column — dragging re-orders')
+            }}
+          >
+            Make the parent a flex column
+          </button>
+        </Row>
+      ) : null}
+      <InsertedActions id={id} />
+    </>
+  )
+}
+
+/** Duplicate, re-parent and delete — available for elements the editor created. */
+function InsertedActions({ id }: { id: string }) {
+  const store = useVeditStore()
+  const nodes = useVeditNodes()
+  const inserted = useVeditState((state) => state.doc.inserted.find((node) => node.id === id))
+  if (!inserted) return null
+
+  const containers = nodes.filter((node) => node.container && !node.auto)
+
+  return (
+    <>
+      <Row label="Parent">
+        <select
+          className="vedit-select"
+          value={inserted.parentId}
+          onChange={(event) => store.moveInserted(id, event.target.value)}
+        >
+          {containers.map((node) => (
+            <option key={node.id} value={node.id}>
+              {node.label}
+            </option>
+          ))}
+          {containers.some((node) => node.id === inserted.parentId) ? null : (
+            <option value={inserted.parentId}>{inserted.parentId}</option>
+          )}
+        </select>
+      </Row>
+      <Row>
+        <button
+          type="button"
+          className="vedit-btn"
+          style={{ flex: 1 }}
+          onClick={() => store.duplicateInserted(id)}
+        >
+          Duplicate
+        </button>
+        <button type="button" className="vedit-btn" style={{ flex: 1 }} onClick={() => store.removeInserted(id)}>
+          Delete
+        </button>
+      </Row>
     </>
   )
 }
@@ -478,7 +895,7 @@ function AppearanceSection({ id }: { id: string }) {
   const shadow = useStyleValue(id, 'boxShadow')
   return (
     <Section title="Appearance">
-      <ColorRow id={id} label="Fill" property="backgroundColor" />
+      <FillControl id={id} />
       <LengthRow id={id} label="Radius" property="borderRadius" min={0} />
       <LengthRow id={id} label="Border" property="borderWidth" min={0} />
       <ColorRow id={id} label="Stroke" property="borderColor" />
@@ -504,8 +921,208 @@ function AppearanceSection({ id }: { id: string }) {
             </button>
           ))}
         </div>
+        <TokenPicker kind="shadow" value={shadow.value} onChange={shadow.set} />
       </Row>
+      <TransformRows id={id} />
+      <TransitionRow id={id} />
     </Section>
+  )
+}
+
+/** Solid colour or a gradient, with the stops editable in place. */
+function FillControl({ id }: { id: string }) {
+  const store = useVeditStore()
+  const image = useStyleValue(id, 'backgroundImage')
+  const color = useStyleValue(id, 'backgroundColor')
+  const gradient = parseGradient(image.value)
+  const mode = gradient?.type ?? 'solid'
+
+  const setGradient = (next: Gradient) => store.setStyle(id, { backgroundImage: serializeGradient(next) })
+
+  const setMode = (next: string | undefined) => {
+    if (!next || next === 'solid') {
+      store.clearStyles(id, ['backgroundImage'])
+      return
+    }
+    setGradient({ ...(gradient ?? DEFAULT_GRADIENT), type: next as Gradient['type'] })
+  }
+
+  return (
+    <>
+      <Row label="Fill">
+        <Segmented
+          value={mode}
+          options={[
+            { value: 'solid', label: 'Solid' },
+            { value: 'linear', label: 'Linear' },
+            { value: 'radial', label: 'Radial' },
+          ]}
+          onChange={setMode}
+        />
+      </Row>
+      {gradient ? (
+        <>
+          <div
+            style={{
+              height: 22,
+              borderRadius: 5,
+              marginBottom: 6,
+              border: '1px solid var(--vedit-border)',
+              background: gradientPreview(gradient),
+            }}
+          />
+          {gradient.type === 'linear' ? (
+            <Row label="Angle">
+              <LengthField
+                value={`${gradient.angle}deg`}
+                onChange={(next) => setGradient({ ...gradient, angle: Number.parseFloat(next ?? '0') || 0 })}
+                defaultUnit="deg"
+              />
+            </Row>
+          ) : null}
+          {gradient.stops.map((stop, index) => (
+            <Row key={index}>
+              <span className="vedit-swatch">
+                <span style={{ background: stop.color }} />
+                <input
+                  type="color"
+                  value={toHex(stop.color)}
+                  aria-label={`Stop ${index + 1} colour`}
+                  onChange={(event) => {
+                    const stops = [...gradient.stops]
+                    stops[index] = { ...stop, color: event.target.value }
+                    setGradient({ ...gradient, stops })
+                  }}
+                />
+              </span>
+              <TextField
+                value={stop.color}
+                onChange={(next) => {
+                  const stops = [...gradient.stops]
+                  stops[index] = { ...stop, color: next }
+                  setGradient({ ...gradient, stops })
+                }}
+              />
+              <LengthField
+                value={`${Math.round(stop.position)}%`}
+                defaultUnit="%"
+                onChange={(next) => {
+                  const stops = [...gradient.stops]
+                  stops[index] = { ...stop, position: Number.parseFloat(next ?? '0') || 0 }
+                  setGradient({ ...gradient, stops })
+                }}
+              />
+              <button
+                type="button"
+                className="vedit-btn vedit-btn-icon"
+                title="Remove stop"
+                disabled={gradient.stops.length <= 2}
+                onClick={() =>
+                  setGradient({ ...gradient, stops: gradient.stops.filter((_, i) => i !== index) })
+                }
+              >
+                <IconTrash width={12} height={12} />
+              </button>
+            </Row>
+          ))}
+          <Row>
+            <button
+              type="button"
+              className="vedit-btn"
+              style={{ flex: 1 }}
+              onClick={() =>
+                setGradient({
+                  ...gradient,
+                  stops: [...gradient.stops, { color: '#ffffff', position: 50 }],
+                })
+              }
+            >
+              Add stop
+            </button>
+          </Row>
+        </>
+      ) : (
+        <Row label="Color" overridden={color.overridden} onReset={color.clear}>
+          <ColorField value={color.value} computed={color.computed} onChange={color.set} />
+          <TokenPicker kind="color" value={color.value} onChange={color.set} />
+        </Row>
+      )}
+    </>
+  )
+}
+
+/** Rotation and scale. Translation belongs to Position, where dragging writes it. */
+function TransformRows({ id }: { id: string }) {
+  const store = useVeditStore()
+  const transform = useStyleValue(id, 'transform')
+  const parts = parseTransform(transform.value)
+
+  const write = (patch: Partial<typeof parts>) => {
+    const next = withTransform(transform.value, patch)
+    if (next) store.setStyle(id, { transform: next })
+    else store.clearStyles(id, ['transform'])
+  }
+
+  return (
+    <div className="vedit-grid2" style={{ marginBottom: 6 }}>
+      <LengthField
+        label="Rotate"
+        value={parts.rotate ? `${parts.rotate}deg` : undefined}
+        computed="0deg"
+        defaultUnit="deg"
+        onChange={(next) => write({ rotate: Number.parseFloat(next ?? '0') || 0 })}
+      />
+      <LengthField
+        label="Scale"
+        value={parts.scaleX !== 1 ? String(parts.scaleX) : undefined}
+        computed="1"
+        defaultUnit=""
+        step={0.05}
+        onChange={(next) => {
+          const scale = Number.parseFloat(next ?? '1') || 1
+          write({ scaleX: scale, scaleY: scale })
+        }}
+      />
+    </div>
+  )
+}
+
+/** One transition covering everything, which is what an editor-made change needs. */
+function TransitionRow({ id }: { id: string }) {
+  const store = useVeditStore()
+  const transition = useStyleValue(id, 'transition')
+  const match = /^all\s+([\d.]+)m?s\s+(.+)$/.exec(String(transition.value ?? ''))
+  const duration = match ? Number(match[1]) : 0
+  const easing = match ? match[2] : 'ease'
+
+  const write = (nextDuration: number, nextEasing: string) => {
+    if (!nextDuration) return store.clearStyles(id, ['transition'])
+    store.setStyle(id, { transition: `all ${nextDuration}ms ${nextEasing}` })
+  }
+
+  return (
+    <Row label="Transition" overridden={transition.overridden} onReset={transition.clear}>
+      <LengthField
+        label="ms"
+        value={duration ? String(duration) : undefined}
+        computed="0"
+        defaultUnit=""
+        step={25}
+        min={0}
+        onChange={(next) => write(Number.parseFloat(next ?? '0') || 0, easing)}
+      />
+      <select
+        className="vedit-select"
+        value={easing}
+        onChange={(event) => write(duration || 200, event.target.value)}
+      >
+        {['ease', 'ease-in', 'ease-out', 'ease-in-out', 'linear', 'cubic-bezier(.2,.8,.2,1)'].map((value) => (
+          <option key={value} value={value}>
+            {value}
+          </option>
+        ))}
+      </select>
+    </Row>
   )
 }
 

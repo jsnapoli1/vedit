@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { ColorField, LengthField, Row, SelectField, Segmented } from '../controls'
 import { useStyleValue } from '../hooks'
+import { TokenPicker } from './Tokens'
 
 export function LengthRow({
   id,
@@ -18,7 +19,14 @@ export function LengthRow({
   const style = useStyleValue(id, property)
   return (
     <Row label={label} overridden={style.overridden} onReset={style.clear}>
-      <LengthField value={style.value} computed={style.computed} onChange={style.set} step={step} min={min} />
+      <LengthField
+        value={style.value}
+        computed={style.mixed ? 'Mixed' : style.computed}
+        onChange={style.set}
+        step={step}
+        min={min}
+      />
+      <TokenPicker kind="length" value={style.value} onChange={style.set} />
     </Row>
   )
 }
@@ -37,7 +45,12 @@ export function SelectRow({
   const style = useStyleValue(id, property)
   return (
     <Row label={label} overridden={style.overridden} onReset={style.clear}>
-      <SelectField value={style.value} computed={style.computed} options={options} onChange={style.set} />
+      <SelectField
+        value={style.value}
+        computed={style.mixed ? 'Mixed' : style.computed}
+        options={options}
+        onChange={style.set}
+      />
     </Row>
   )
 }
@@ -46,7 +59,12 @@ export function ColorRow({ id, label, property }: { id: string; label: string; p
   const style = useStyleValue(id, property)
   return (
     <Row label={label} overridden={style.overridden} onReset={style.clear}>
-      <ColorField value={style.value} computed={style.computed} onChange={style.set} />
+      <ColorField
+        value={style.value}
+        computed={style.mixed ? 'Mixed' : style.computed}
+        onChange={style.set}
+      />
+      <TokenPicker kind="color" value={style.value} onChange={style.set} />
     </Row>
   )
 }
@@ -89,5 +107,13 @@ export function BoxSides({ id, prefix, label }: { id: string; prefix: 'padding' 
 
 function SideField({ id, property, label }: { id: string; property: string; label: string }) {
   const style = useStyleValue(id, property)
-  return <LengthField label={label} value={style.value} computed={style.computed} onChange={style.set} min={0} />
+  return (
+    <LengthField
+      label={label}
+      value={style.value}
+      computed={style.mixed ? 'Mixed' : style.computed}
+      onChange={style.set}
+      min={0}
+    />
+  )
 }

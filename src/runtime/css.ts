@@ -1,8 +1,13 @@
+import { readLayer } from '../core/layers'
 import {
   DEFAULT_BREAKPOINTS,
+  STYLE_STATES,
   type Breakpoint,
   type BreakpointWidths,
+  type DesignToken,
+  type StyleLayer,
   type StyleMap,
+  type StyleState,
   type VeditDocument,
 } from '../core/types'
 
@@ -36,6 +41,16 @@ export function declarations(style: StyleMap): string {
     .join(';')
 }
 
+/** The CSS custom property a token is published as. */
+export function tokenVariable(token: Pick<DesignToken, 'id'>): string {
+  return `--vedit-${token.id}`
+}
+
+/** A value referencing a token, ready to drop into a declaration. */
+export function tokenReference(token: Pick<DesignToken, 'id'>): string {
+  return `var(${tokenVariable(token)})`
+}
+
 /** Escape a node id for use inside an attribute selector. */
 function escapeId(id: string): string {
   return id.replace(/["\\]/g, '\\$&')
@@ -43,12 +58,26 @@ function escapeId(id: string): string {
 
 /**
  * Overrides are emitted as a stylesheet rather than inline styles so that
- * responsive breakpoints work with real media queries (and so server rendering
- * produces the same paint as the client). The selector is repeated to raise
- * specificity above ordinary site CSS without resorting to `!important`.
+ * responsive breakpoints and interaction states work with real CSS (and so server
+ * rendering produces the same paint as the client). The selector is repeated to
+ * raise specificity above ordinary site CSS without resorting to `!important`,
+ * and state rules repeat it once more so they win over the element's base styles.
  */
-function selector(id: string, weight: number): string {
-  return `[data-vedit-id="${escapeId(id)}"]`.repeat(weight)
+function selector(id: string, weight: number, state: StyleState): string {
+  const base = `[data-vedit-id="${escapeId(id)}"]`.repeat(weight)
+  if (state === 'default') return base
+  // The second selector lets the editor force a state on so you can style a hover
+  // without having to keep the pointer still on the element.
+  return `${base}:${state},${base}[data-vedit-force="${state}"]`
+}
+
+function tokensCss(tokens: DesignToken[] | undefined): string {
+  if (!tokens?.length) return ''
+  const body = tokens
+    .filter((token) => token.value !== '')
+    .map((token) => `${tokenVariable(token)}:${token.value}`)
+    .join(';')
+  return body ? `:root{${body}}` : ''
 }
 
 export function documentToCss(
@@ -58,25 +87,32 @@ export function documentToCss(
   const base: string[] = []
   const media = new Map<Exclude<Breakpoint, 'base'>, string[]>()
 
+  const emit = (id: string, layer: StyleLayer | undefined, state: StyleState) => {
+    if (!layer) return
+    // States sit one specificity step above the element's own base styles.
+    const weight = state === 'default' ? 2 : 3
+    if (layer.style && Object.keys(layer.style).length) {
+      base.push(`${selector(id, weight, state)}{${declarations(layer.style)}}`)
+    }
+    for (const [bp, style] of Object.entries(layer.responsive ?? {})) {
+      if (!style || !Object.keys(style).length) continue
+      const key = bp as Exclude<Breakpoint, 'base'>
+      const bucket = media.get(key) ?? []
+      bucket.push(`${selector(id, weight + 1, state)}{${declarations(style)}}`)
+      media.set(key, bucket)
+    }
+  }
+
   for (const [id, override] of Object.entries(doc.nodes)) {
     if (override.hidden) {
       // Hidden nodes stay in the layout while editing (dimmed) so they can be
       // found and brought back; visitors never see them at all.
-      base.push(`html:not(.vedit-editing) ${selector(id, 3)}{display:none !important}`)
+      base.push(`html:not(.vedit-editing) ${selector(id, 3, 'default')}{display:none !important}`)
       base.push(
-        `html.vedit-editing ${selector(id, 3)}{opacity:.35;outline:1px dashed var(--vedit-accent,#4f46e5)}`,
+        `html.vedit-editing ${selector(id, 3, 'default')}{opacity:.35;outline:1px dashed var(--vedit-accent,#0d99ff)}`,
       )
     }
-    if (override.style && Object.keys(override.style).length) {
-      base.push(`${selector(id, 2)}{${declarations(override.style)}}`)
-    }
-    for (const [bp, style] of Object.entries(override.responsive ?? {})) {
-      if (!style || !Object.keys(style).length) continue
-      const key = bp as Exclude<Breakpoint, 'base'>
-      const bucket = media.get(key) ?? []
-      bucket.push(`${selector(id, 3)}{${declarations(style)}}`)
-      media.set(key, bucket)
-    }
+    for (const state of STYLE_STATES) emit(id, readLayer(override, state), state)
   }
 
   const ordered = (Object.keys(breakpoints) as Array<Exclude<Breakpoint, 'base'>>).sort(
@@ -86,5 +122,5 @@ export function documentToCss(
     .filter((bp) => media.has(bp))
     .map((bp) => `@media (min-width:${breakpoints[bp]}px){${media.get(bp)!.join('')}}`)
 
-  return [...base, ...queries].join('\n')
+  return [tokensCss(doc.tokens), ...base, ...queries].filter(Boolean).join('\n')
 }

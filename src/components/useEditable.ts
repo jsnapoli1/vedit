@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useVeditContext, useVeditState } from '../core/context'
-import type { NodeKind, NodeOverride } from '../core/types'
+import type { EditableField, NodeKind, NodeOverride } from '../core/types'
 
 const EMPTY: NodeOverride = {}
 
@@ -15,15 +15,21 @@ export interface UseEditableOptions {
   sourceText?: string
   /** Skip registration entirely, e.g. for a node rendered in a portal you don't own. */
   disabled?: boolean
+  /** Props the editor may change, and the controls to offer for them. */
+  fields?: EditableField[]
+  /** The prop values your code passed in. Overrides are layered on top. */
+  props?: Record<string, unknown>
 }
 
-export interface UseEditableResult {
+export interface UseEditableResult<P = Record<string, unknown>> {
   ref: (element: HTMLElement | null) => void
   /** Spread onto the element you want to make editable. */
   veditProps: { 'data-vedit-id': string; 'data-vedit-kind': NodeKind }
   override: NodeOverride
   /** True while this node is being typed into. */
   inlineEditing: boolean
+  /** Your props with the editor's overrides applied. Render with these. */
+  props: P
 }
 
 export function labelFromId(id: string): string {
@@ -36,12 +42,28 @@ export function labelFromId(id: string): string {
  * recorded for it. Use this when you need full control over rendering; otherwise
  * reach for `<Editable>`.
  */
-export function useEditable(options: UseEditableOptions): UseEditableResult {
-  const { id, kind = 'box', label, container = false, sourceText, disabled = false } = options
+export function useEditable<P extends Record<string, unknown> = Record<string, unknown>>(
+  options: UseEditableOptions,
+): UseEditableResult<P> {
+  const {
+    id,
+    kind = 'box',
+    label,
+    container = false,
+    sourceText,
+    disabled = false,
+    fields,
+    props: sourceProps,
+  } = options
   const { store } = useVeditContext()
   const [element, setElement] = useState<HTMLElement | null>(null)
   const override = useVeditState((state) => state.doc.nodes[id]) ?? EMPTY
   const inlineEditing = useVeditState((state) => state.inlineEditing === id)
+
+  // Serialized so that re-rendering with equal-but-new objects doesn't churn
+  // the registry on every keystroke.
+  const fieldsKey = fields ? JSON.stringify(fields) : ''
+  const propsKey = sourceProps ? JSON.stringify(sourceProps) : ''
 
   useEffect(() => {
     if (!element || disabled) return
@@ -55,16 +77,26 @@ export function useEditable(options: UseEditableOptions): UseEditableResult {
       auto: false,
       container,
       sourceText,
+      fields,
+      props: sourceProps,
     })
     return () => store.unregister(id)
-  }, [store, element, id, kind, label, container, sourceText, disabled])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, element, id, kind, label, container, sourceText, disabled, fieldsKey, propsKey])
 
   const ref = useCallback((next: HTMLElement | null) => setElement(next), [])
+
+  const props = useMemo(
+    () => ({ ...(sourceProps ?? {}), ...(override.props ?? {}) }) as P,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [propsKey, override.props],
+  )
 
   return {
     ref,
     veditProps: { 'data-vedit-id': id, 'data-vedit-kind': kind },
     override,
     inlineEditing,
+    props,
   }
 }

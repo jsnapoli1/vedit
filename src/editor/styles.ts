@@ -81,6 +81,93 @@ export const EDITOR_CSS = `
 .vedit-layer-eye { opacity: 0; flex: none; }
 .vedit-layer:hover .vedit-layer-eye, .vedit-layer[data-hidden="true"] .vedit-layer-eye { opacity: .8; }
 
+/* ------------------------------------------------------------------ tabs */
+.vedit-tabs {
+  display: flex; flex: none; padding: 6px; gap: 2px; border-bottom: 1px solid var(--vedit-border);
+}
+.vedit-tabs button {
+  flex: 1; min-width: 0; height: 24px; padding: 0 2px; border: 0; border-radius: 5px;
+  background: transparent; cursor: pointer; color: var(--vedit-muted); font-weight: 600;
+  text-transform: uppercase; font-size: 10px; letter-spacing: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.vedit-tabs button:hover { background: var(--vedit-panel-2); }
+.vedit-tabs button[data-active="true"] { background: var(--vedit-panel-2); color: var(--vedit-text); }
+
+/* ---------------------------------------------------------------- tokens */
+.vedit-token-chip {
+  flex: none; width: 20px; height: 20px; border-radius: 4px; cursor: pointer;
+  border: 1px dashed var(--vedit-border); background: transparent; color: var(--vedit-muted);
+  font-size: 10px; line-height: 1; padding: 0;
+}
+.vedit-token-chip:hover { border-color: var(--vedit-accent); color: var(--vedit-text); }
+.vedit-token-chip[data-linked="true"] {
+  border-style: solid; border-color: var(--vedit-accent); background: var(--vedit-accent); color: #fff;
+}
+.vedit-token-menu {
+  position: absolute; right: 0; top: 24px; z-index: 5; min-width: 168px; max-height: 240px;
+  overflow: auto; padding: 4px; background: var(--vedit-panel-2);
+  border: 1px solid var(--vedit-border); border-radius: 8px; box-shadow: 0 12px 28px rgba(0,0,0,.45);
+}
+.vedit-token-menu button {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 7px; border: 0;
+  border-radius: 5px; background: transparent; cursor: pointer; text-align: left; color: inherit;
+}
+.vedit-token-menu button:hover { background: var(--vedit-accent); color: #fff; }
+.vedit-token-dot { width: 10px; height: 10px; border-radius: 3px; border: 1px solid rgba(255,255,255,.25); }
+
+/* ---------------------------------------------------------------- images */
+.vedit-image-preview {
+  position: relative; height: 96px; border-radius: 6px; margin-bottom: 6px; cursor: crosshair;
+  background-color: #1a1a1a; background-size: cover; background-position: center;
+  border: 1px solid var(--vedit-border);
+}
+.vedit-focal {
+  position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+  border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 2px 6px rgba(0,0,0,.5);
+  pointer-events: none;
+}
+.vedit-assets {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 6px;
+  max-height: 176px; overflow: auto;
+}
+.vedit-assets button {
+  aspect-ratio: 1; border: 1px solid var(--vedit-border); border-radius: 5px; cursor: pointer;
+  background-color: #1a1a1a; background-size: cover; background-position: center; padding: 0;
+}
+.vedit-assets button:hover { border-color: var(--vedit-accent); }
+
+/* --------------------------------------------------------------- history */
+.vedit-version {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--vedit-border);
+}
+.vedit-version strong { display: block; font-weight: 600; }
+.vedit-version em { display: block; font-style: normal; color: var(--vedit-accent); margin-top: 2px; }
+
+/* ---------------------------------------------------------------- issues */
+.vedit-issue-summary { display: flex; gap: 12px; }
+.vedit-issue-summary span[data-tone="error"] { color: #ff8f84; }
+.vedit-issue-summary span[data-tone="warning"] { color: #f0c674; }
+.vedit-issue {
+  display: flex; gap: 8px; width: 100%; text-align: left; padding: 8px 12px;
+  border: 0; border-bottom: 1px solid var(--vedit-border); background: transparent; cursor: pointer;
+  color: inherit;
+}
+.vedit-issue:hover { background: var(--vedit-panel-2); }
+.vedit-issue span { display: block; }
+.vedit-issue strong { display: block; font-weight: 600; }
+.vedit-issue em { display: block; font-style: normal; color: var(--vedit-muted); margin-top: 2px; }
+.vedit-issue code {
+  display: block; margin-top: 3px; color: var(--vedit-muted); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; max-width: 176px;
+}
+.vedit-issue-dot {
+  width: 7px; height: 7px; border-radius: 50%; margin-top: 4px; flex: none;
+}
+.vedit-issue[data-tone="error"] .vedit-issue-dot { background: #ff5c4d; }
+.vedit-issue[data-tone="warning"] .vedit-issue-dot { background: #e8b339; }
+
 /* ------------------------------------------------------------- breadcrumb */
 .vedit-breadcrumb {
   display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
@@ -187,14 +274,17 @@ export const EDITOR_CSS = `
 }
 .vedit-canvas[data-panning="true"] { cursor: grab; }
 .vedit-canvas[data-panning="true"]:active { cursor: grabbing; }
-.vedit-artboard { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.vedit-artboards { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.vedit-artboard { position: absolute; top: 0; }
+.vedit-artboard[data-active="true"] .vedit-artboard-label { color: var(--vedit-text); }
+.vedit-artboard[data-active="true"] iframe { box-shadow: 0 0 0 1.5px var(--vedit-accent), 0 30px 80px rgba(0,0,0,.55); }
 .vedit-artboard iframe {
   display: block; border: 0; background: #fff;
   box-shadow: 0 0 0 1px #3a3a3a, 0 30px 80px rgba(0, 0, 0, .55);
 }
 .vedit-artboard-label {
   position: absolute; top: 0; left: 0; color: #8a8a8a; white-space: nowrap;
-  font-family: ui-sans-serif, system-ui, sans-serif; pointer-events: none;
+  font-family: ui-sans-serif, system-ui, sans-serif; cursor: pointer;
 }
 .vedit-frame-handle {
   position: absolute; top: 0; right: 0; height: 100%; transform: translateX(100%);

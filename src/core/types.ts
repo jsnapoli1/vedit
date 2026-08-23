@@ -15,11 +15,62 @@ export const DEFAULT_BREAKPOINTS: BreakpointWidths = {
 /** A bag of CSS declarations, camelCase or kebab-case keys both accepted. */
 export type StyleMap = Record<string, string | number>
 
+/** Interaction states you can style separately. */
+export type StyleState = 'default' | 'hover' | 'focus' | 'active'
+
+export const STYLE_STATES: StyleState[] = ['default', 'hover', 'focus', 'active']
+
+/** One set of styles: a base plus per-breakpoint refinements. */
+export interface StyleLayer {
+  /** Applies at every width. */
+  style?: StyleMap
+  /** Applies from a breakpoint up. */
+  responsive?: Partial<Record<Exclude<Breakpoint, 'base'>, StyleMap>>
+}
+
+/** A named value reused across the site — a brand color, a spacing step, a font. */
+export interface DesignToken {
+  /** Stable slug; becomes the CSS custom property name. */
+  id: string
+  name: string
+  kind: 'color' | 'length' | 'font' | 'shadow'
+  value: string
+}
+
+/** Kinds of control the inspector can render for a component prop. */
+export type EditableFieldType =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'boolean'
+  | 'select'
+  | 'color'
+  | 'image'
+  | 'link'
+
+/**
+ * One prop a component has declared as editable. The schema lives in your code,
+ * next to the component, so the editor can offer exactly the choices the component
+ * actually supports — a variant list, not a free-text field.
+ */
+export interface EditableField {
+  name: string
+  label?: string
+  type: EditableFieldType
+  /** For `select`. Strings, or `{ value, label }` when the label differs. */
+  options?: Array<string | { value: string; label: string }>
+  min?: number
+  max?: number
+  step?: number
+  /** Shown under the control. */
+  help?: string
+}
+
 /** What kind of thing a node is — drives which inspector sections show up. */
 export type NodeKind = 'text' | 'image' | 'box' | 'button' | 'link' | 'component'
 
 /** Everything the editor can change about a single node. */
-export interface NodeOverride {
+export interface NodeOverride extends StyleLayer {
   /** Replacement plain text for text nodes. */
   text?: string
   /** Replacement rich text (sanitized subset of HTML). Wins over `text`. */
@@ -36,10 +87,10 @@ export interface NodeOverride {
   hidden?: boolean
   /** Extra class names appended to the node. */
   className?: string
-  /** Styles that apply at every breakpoint. */
-  style?: StyleMap
-  /** Styles that only apply from a breakpoint up. */
-  responsive?: Partial<Record<Exclude<Breakpoint, 'base'>, StyleMap>>
+  /** Styles that apply only while the element is hovered, focused or pressed. */
+  states?: Partial<Record<Exclude<StyleState, 'default'>, StyleLayer>>
+  /** Values for the props a component declared as editable. */
+  props?: Record<string, unknown>
 }
 
 /** A visual the editor added that does not exist in source code. */
@@ -60,18 +111,54 @@ export interface VeditDocument {
   updatedAt: string
   nodes: Record<string, NodeOverride>
   inserted: InsertedNode[]
+  /** Named values every node can reference. */
+  tokens: DesignToken[]
 }
 
 export function emptyDocument(key: string): VeditDocument {
-  return { version: 1, key, updatedAt: new Date(0).toISOString(), nodes: {}, inserted: [] }
+  return {
+    version: 1,
+    key,
+    updatedAt: new Date(0).toISOString(),
+    nodes: {},
+    inserted: [],
+    tokens: [],
+  }
 }
+
+/** An image already available to the site, offered in the image picker. */
+export interface VeditAsset {
+  url: string
+  name?: string
+  width?: number
+  height?: number
+}
+
+/** Which copy of a document to read: the editor's working copy, or the live one. */
+export type DocumentStage = 'draft' | 'published'
 
 /** Where overrides are read from and written to. */
 export interface VeditAdapter {
-  load(key: string): Promise<VeditDocument | null>
+  /** `stage` is only meaningful for adapters that also implement `publish`. */
+  load(key: string, options?: { stage?: DocumentStage }): Promise<VeditDocument | null>
   save(doc: VeditDocument): Promise<void>
   /** Optional: called when the user picks a local file in the image inspector. */
   uploadImage?(file: File): Promise<string>
+  /** Optional: images to choose from without uploading a new one. */
+  listAssets?(): Promise<VeditAsset[]>
+  /** Optional: publish the current draft, and list/restore earlier versions. */
+  publish?(doc: VeditDocument): Promise<void>
+  listVersions?(key: string): Promise<VeditVersion[]>
+  loadVersion?(key: string, versionId: string): Promise<VeditDocument | null>
+}
+
+/** A point in a document's history. */
+export interface VeditVersion {
+  id: string
+  savedAt: string
+  /** True for the version currently live for visitors. */
+  published?: boolean
+  label?: string
 }
 
 /** Live info about a node currently mounted on the page. */
@@ -89,6 +176,10 @@ export interface RegisteredNode {
   container: boolean
   /** Text content as authored in source, before overrides. */
   sourceText?: string
+  /** Props this node has declared as editable. */
+  fields?: EditableField[]
+  /** The prop values the source code passed, shown as the defaults. */
+  props?: Record<string, unknown>
 }
 
 export type EditorTool = 'select' | 'hand' | 'text' | 'image' | 'box'
@@ -97,6 +188,8 @@ export interface VeditState {
   doc: VeditDocument
   /** Document as it was at the last successful save. */
   saved: VeditDocument
+  /** Document as it was at the last publish, when the adapter supports it. */
+  published: VeditDocument | null
   status: 'loading' | 'ready' | 'saving' | 'error'
   error: string | null
   editing: boolean
@@ -108,6 +201,8 @@ export interface VeditState {
   inlineEditing: string | null
   /** Short-lived message shown at the bottom of the editor. */
   notice: string | null
+  /** Which interaction state new style edits are written into. */
+  styleState: StyleState
   /** Where a re-ordering drag would drop, in page coordinates. */
   dropIndicator: { top: number; left: number; width: number; height: number } | null
   past: VeditDocument[]

@@ -29,6 +29,8 @@ export interface VeditConfig {
   auto: boolean
   autoSelector: string
   enabled: boolean
+  /** Artboards to show on the canvas. */
+  pages: Array<{ path: string; label?: string }>
 }
 
 export interface VeditContextValue {
@@ -104,13 +106,26 @@ export interface VeditProviderProps {
    * automatically when the page refuses to be framed).
    */
   canvas?: boolean
+  /**
+   * Pages to lay out side by side on the canvas, so several routes can be edited
+   * in one session. Defaults to whichever page the editor was opened on.
+   */
+  pages?: Array<{ path: string; label?: string }>
   /** Save automatically this many ms after the last change. 0 disables it. */
   autosaveMs?: number
   onSave?: (doc: VeditDocument) => void
 }
 
-const DEFAULT_AUTO_SELECTOR =
-  'h1,h2,h3,h4,h5,h6,p,span,a,li,button,label,blockquote,figcaption,td,th,img,svg,section,article,header,footer,main,aside,div'
+/**
+ * Broad on purpose: an element the scanner skips can't be selected, and — more
+ * subtly — can't be re-ordered either, because `order` has to be set on every
+ * child of a container for the result to be predictable.
+ */
+const DEFAULT_AUTO_SELECTOR = [
+  'h1,h2,h3,h4,h5,h6,p,span,a,li,dt,dd,blockquote,figcaption,td,th,label,button',
+  'img,svg,picture,video,canvas,figure',
+  'div,section,article,header,footer,main,aside,nav,form,ul,ol,dl,table,pre',
+].join(',')
 
 const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1|\[::1\]|.*\.local)$/
 
@@ -143,6 +158,7 @@ export function VeditProvider({
   breakpoints = DEFAULT_BREAKPOINTS,
   initialDocument = null,
   canvas = true,
+  pages,
   autosaveMs = 0,
   onSave,
 }: VeditProviderProps) {
@@ -155,9 +171,19 @@ export function VeditProvider({
   // chrome of its own; it just hands its store to the editor in the parent window.
   const [framedByEditor] = useState(isCanvasChild)
 
+  const pagesKey = pages ? JSON.stringify(pages) : ''
   const config = useMemo<VeditConfig>(
-    () => ({ breakpoints, auto, autoSelector, enabled: isEnabled }),
-    [breakpoints, auto, autoSelector, isEnabled],
+    () => ({
+      breakpoints,
+      auto,
+      autoSelector,
+      enabled: isEnabled,
+      pages: pages ?? [
+        { path: typeof window === 'undefined' ? '/' : window.location.pathname, label: 'This page' },
+      ],
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [breakpoints, auto, autoSelector, isEnabled, pagesKey],
   )
 
   const hydrated = useRef(false)
@@ -167,15 +193,18 @@ export function VeditProvider({
   }
 
   useEffect(() => {
-    if (!initialDocument) void store.load()
-  }, [store, initialDocument])
+    // The framed page is the editor's own copy, so it starts from the draft.
+    if (!initialDocument) void store.load(framedByEditor ? 'draft' : 'published')
+  }, [store, initialDocument, framedByEditor])
 
   useEffect(() => {
     if (defaultEditing && isEnabled) store.setEditing(true)
   }, [store, defaultEditing, isEnabled])
 
   useEffect(() => {
-    if (framedByEditor) publishCanvasBridge({ store, breakpoints })
+    if (framedByEditor) {
+      publishCanvasBridge({ store, breakpoints, path: window.location.pathname })
+    }
   }, [framedByEditor, store, breakpoints])
 
   // Notify the host app after every successful save.

@@ -4,7 +4,7 @@ import { useVeditState, useVeditStore } from '../core/context'
 import { useEditorInteractions } from './interactions'
 import { Overlay } from './Overlay'
 import { Inspector } from './panels/Inspector'
-import { LayersPanel } from './panels/Layers'
+import { LeftPanel } from './panels/LeftPanel'
 import { Toolbar } from './panels/Toolbar'
 import { EDITOR_CSS } from './styles'
 import { toScreen, useEditorTarget } from './target'
@@ -27,13 +27,18 @@ function useEditorStyles(pageDocument: Document) {
 export interface EditorRootProps {
   /** Extra controls for the toolbar, e.g. the canvas zoom widget. */
   toolbarExtras?: React.ReactNode
+  /**
+   * Whether this instance installs the page-level gestures. The canvas wires each
+   * artboard up separately, so its chrome is drawing and panels only.
+   */
+  interactive?: boolean
 }
 
 /**
  * The editor chrome. Rendered into a portal on this document's body so it sits
  * above everything, while the page it edits may be this document or a framed one.
  */
-export function EditorRoot({ toolbarExtras }: EditorRootProps = {}) {
+export function EditorRoot({ toolbarExtras, interactive = true }: EditorRootProps = {}) {
   const store = useVeditStore()
   const target = useEditorTarget()
   const [collapsed, setCollapsed] = useState(false)
@@ -44,14 +49,15 @@ export function EditorRoot({ toolbarExtras }: EditorRootProps = {}) {
   const dropIndicator = useVeditState((state) => state.dropIndicator)
   const pageDocument = target.getDocument()
 
-  useEditorStyles(pageDocument)
-  useEditorInteractions(store, target)
+  useEditorStyles(interactive ? pageDocument : document)
+  useEditorInteractions(store, target, { enabled: interactive })
 
   useEffect(() => {
+    if (!interactive) return
     const root = pageDocument.documentElement
     root.classList.add('vedit-editing')
     return () => root.classList.remove('vedit-editing')
-  }, [pageDocument])
+  }, [pageDocument, interactive])
 
   // `\` hides the panels so you can reach whatever they're covering.
   useEffect(() => {
@@ -91,7 +97,7 @@ export function EditorRoot({ toolbarExtras }: EditorRootProps = {}) {
         onToggleCollapsed={() => setCollapsed((value) => !value)}
         extras={toolbarExtras}
       />
-      <LayersPanel />
+      <LeftPanel />
       <Inspector />
       {tool !== 'select' && tool !== 'hand' ? (
         <div className="vedit-toast" data-vedit-ui="">

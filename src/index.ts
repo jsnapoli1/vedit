@@ -21,19 +21,40 @@ export { httpAdapter } from './core/adapters/http'
 export type { HttpAdapterOptions } from './core/adapters/http'
 export { memoryAdapter } from './core/adapters/memory'
 
-export { documentToCss } from './runtime/css'
+export { documentToCss, tokenVariable, tokenReference } from './runtime/css'
+export { parseTransform, serializeTransform, withTransform } from './runtime/transform'
+export type { TransformParts } from './runtime/transform'
+export { parseGradient, serializeGradient, DEFAULT_GRADIENT } from './runtime/gradient'
+export type { Gradient, GradientStop } from './runtime/gradient'
+export {
+  readLayer,
+  readStyles,
+  readStyleValue,
+  mergeStyles,
+  replaceStyles,
+  deleteStyles,
+  pruneOverride,
+} from './core/layers'
 export { sanitizeHtml } from './runtime/sanitize'
 export { scanDom } from './auto/scanner'
+export { auditPage, contrastRatio, effectiveBackground, parseColor, luminance } from './editor/a11y'
+export type { A11yIssue } from './editor/a11y'
 export { computeAutoId } from './auto/ids'
 
 export {
   emptyDocument,
   BREAKPOINT_ORDER,
   DEFAULT_BREAKPOINTS,
+  STYLE_STATES,
 } from './core/types'
 export type {
   Breakpoint,
   BreakpointWidths,
+  DesignToken,
+  EditableField,
+  EditableFieldType,
+  StyleLayer,
+  StyleState,
   EditorTool,
   InsertedNode,
   NodeKind,
@@ -41,6 +62,8 @@ export type {
   RegisteredNode,
   StyleMap,
   VeditAdapter,
+  VeditAsset,
   VeditDocument,
   VeditState,
+  VeditVersion,
 } from './core/types'

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import type { VeditStore } from '../core/store'
 import type { EditorTool, StyleMap } from '../core/types'
+import { parseTransform, withTransform } from '../runtime/transform'
 import type { EditorTarget, Rect } from './target'
 
 const TEXTUAL = new Set(['text', 'link', 'button'])
@@ -22,12 +23,6 @@ function nodeIdFrom(target: EventTarget | null): string | null {
 
 function isEditorSurface(target: EventTarget | null): boolean {
   return !!asElement(target)?.closest('[data-vedit-ui]')
-}
-
-function parseTranslate(transform: string | number | undefined): [number, number] {
-  if (typeof transform !== 'string') return [0, 0]
-  const match = /translate\(\s*(-?[\d.]+)px\s*,\s*(-?[\d.]+)px\s*\)/.exec(transform)
-  return match ? [Number(match[1]), Number(match[2])] : [0, 0]
 }
 
 /**
@@ -124,6 +119,17 @@ export function dragModeFor(store: VeditStore, id: string, element: HTMLElement)
   return reorderableSiblings(element) ? 'reorder' : 'nudge'
 }
 
+/** Why an element can't be re-ordered, for the inspector to explain. */
+export function reorderBlocker(element: HTMLElement): 'none' | 'not-flex' | 'missing-ids' | 'only-child' {
+  const parent = element.parentElement
+  const view = element.ownerDocument.defaultView
+  if (!parent || !view) return 'not-flex'
+  if (!/flex|grid/.test(view.getComputedStyle(parent).display)) return 'not-flex'
+  const children = [...parent.children] as HTMLElement[]
+  if (children.some((child) => !child.getAttribute('data-vedit-id'))) return 'missing-ids'
+  return children.length > 1 ? 'none' : 'only-child'
+}
+
 /** Siblings in document order, or null when this parent can't be re-ordered. */
 export function reorderableSiblings(element: HTMLElement): HTMLElement[] | null {
   const parent = element.parentElement
@@ -187,8 +193,14 @@ function applyOrder(store: VeditStore, siblings: HTMLElement[], dragged: HTMLEle
  * shortcuts. Everything runs in the capture phase so the host site's own click
  * handlers and links stay inert while the editor is open.
  */
-export function useEditorInteractions(store: VeditStore, target: EditorTarget) {
+export function useEditorInteractions(
+  store: VeditStore,
+  target: EditorTarget,
+  options: { enabled?: boolean } = {},
+) {
+  const enabled = options.enabled !== false
   useEffect(() => {
+    if (!enabled) return
     const doc = target.getDocument()
     const view = target.getWindow()
 
@@ -230,7 +242,8 @@ export function useEditorInteractions(store: VeditStore, target: EditorTarget) {
       const startY = event.clientY
       const mode = dragModeFor(store, id, element)
       const siblings = mode === 'reorder' ? reorderableSiblings(element) : null
-      const [baseX, baseY] = parseTranslate(store.getOverride(id).style?.transform)
+      const baseTransform = store.styleValue(id, 'transform')
+      const base = parseTransform(baseTransform)
       const startLeft = element.offsetLeft
       const startTop = element.offsetTop
       let dragging = false
@@ -259,11 +272,12 @@ export function useEditorInteractions(store: VeditStore, target: EditorTarget) {
           )
           return
         }
-        store.setStyle(
-          id,
-          { transform: `translate(${Math.round(baseX + dx)}px, ${Math.round(baseY + dy)}px)` },
-          { history: false },
-        )
+        // Keep any rotation or scale the element already has.
+        const transform = withTransform(baseTransform, {
+          translateX: Math.round(base.translateX + dx),
+          translateY: Math.round(base.translateY + dy),
+        })
+        store.setStyle(id, { transform: transform ?? 'none' }, { history: false })
       }
 
       const up = () => {
@@ -376,8 +390,14 @@ export function useEditorInteractions(store: VeditStore, target: EditorTarget) {
           store.setStyle(id, { left: `${left + dx}px`, top: `${top + dy}px` })
           return
         }
-        const [x, y] = parseTranslate(store.getOverride(id).style?.transform)
-        store.setStyle(id, { transform: `translate(${x + dx}px, ${y + dy}px)` })
+        const current = store.styleValue(id, 'transform')
+        const parts = parseTransform(current)
+        const transform = withTransform(current, {
+          translateX: parts.translateX + dx,
+          translateY: parts.translateY + dy,
+        })
+        if (transform) store.setStyle(id, { transform })
+        else store.clearStyles(id, ['transform'])
       }
     }
 
@@ -402,5 +422,5 @@ export function useEditorInteractions(store: VeditStore, target: EditorTarget) {
       doc.removeEventListener('keydown', onKeyDown, true)
       if (chromeDoc && chromeDoc !== doc) chromeDoc.removeEventListener('keydown', onKeyDown, true)
     }
-  }, [store, target])
+  }, [store, target, enabled])
 }

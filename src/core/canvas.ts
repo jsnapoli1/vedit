@@ -6,6 +6,8 @@ export const CANVAS_PARAM = 'vedit-canvas'
 export interface CanvasBridge {
   store: VeditStore
   breakpoints: Record<string, number>
+  /** Which artboard this is, so the editor can tell several frames apart. */
+  path: string
 }
 
 interface CanvasGlobals {
@@ -46,9 +48,9 @@ export function readCanvasBridge(frame: HTMLIFrameElement): CanvasBridge | null 
   }
 }
 
-/** The URL to load in the artboard: this page, flagged as the canvas child. */
-export function canvasUrl(href: string): string {
-  const url = new URL(href, typeof window === 'undefined' ? 'http://localhost' : window.location.href)
+/** The URL to load in an artboard: that page, flagged as the canvas child. */
+export function canvasUrl(pathOrHref: string): string {
+  const url = new URL(pathOrHref, typeof window === 'undefined' ? 'http://localhost' : window.location.href)
   url.searchParams.set(CANVAS_PARAM, '1')
   url.searchParams.delete('vedit')
   return url.toString()

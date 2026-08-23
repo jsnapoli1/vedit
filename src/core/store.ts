@@ -1,5 +1,13 @@
 import {
+  deleteStyles,
+  mergeStyles,
+  pruneOverride,
+  readStyleValue,
+  replaceStyles,
+} from './layers'
+import {
   emptyDocument,
+  type DesignToken,
   type Breakpoint,
   type EditorTool,
   type InsertedNode,
@@ -7,7 +15,11 @@ import {
   type NodeOverride,
   type RegisteredNode,
   type StyleMap,
+  type StyleState,
+  type DocumentStage,
   type VeditAdapter,
+  type VeditAsset,
+  type VeditVersion,
   type VeditDocument,
   type VeditState,
 } from './types'
@@ -16,23 +28,6 @@ const HISTORY_LIMIT = 100
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
-}
-
-function pruneEmpty(override: NodeOverride): NodeOverride | undefined {
-  const next: NodeOverride = { ...override }
-  if (next.style && Object.keys(next.style).length === 0) delete next.style
-  if (next.responsive) {
-    for (const key of Object.keys(next.responsive) as Array<keyof NonNullable<NodeOverride['responsive']>>) {
-      const bucket = next.responsive[key]
-      if (!bucket || Object.keys(bucket).length === 0) delete next.responsive[key]
-    }
-    if (Object.keys(next.responsive).length === 0) delete next.responsive
-  }
-  for (const key of ['text', 'html', 'src', 'alt', 'href', 'target', 'className'] as const) {
-    if (next[key] === undefined || next[key] === '') delete next[key]
-  }
-  if (next.hidden === false) delete next.hidden
-  return Object.keys(next).length ? next : undefined
 }
 
 /**
@@ -58,12 +53,14 @@ export class VeditStore {
     this.state = {
       doc,
       saved: doc,
+      published: null,
       status: 'loading',
       error: null,
       editing: false,
       selection: [],
       hovered: null,
       breakpoint: 'base',
+      styleState: 'default',
       tool: 'select',
       inlineEditing: null,
       notice: null,
@@ -180,33 +177,42 @@ export class VeditStore {
       if (value === undefined) delete (merged as Record<string, unknown>)[key]
     }
     const nodes = { ...this.state.doc.nodes }
-    const pruned = pruneEmpty(merged)
+    const pruned = pruneOverride(merged)
     if (pruned) nodes[id] = pruned
     else delete nodes[id]
     this.commit({ ...this.state.doc, nodes }, opts)
   }
 
-  /** Set style declarations at the currently selected breakpoint. */
+  /** The cell of the state × breakpoint matrix the editor is currently writing to. */
+  private get cell(): { state: StyleState; breakpoint: Breakpoint } {
+    return { state: this.state.styleState, breakpoint: this.state.breakpoint }
+  }
+
+  /** Apply a change to one node's override and commit it. */
+  private writeNode(
+    id: string,
+    change: (override: NodeOverride) => NodeOverride,
+    opts: { history?: boolean } = {},
+  ) {
+    const nodes = { ...this.state.doc.nodes }
+    const pruned = pruneOverride(change(clone(nodes[id] ?? {})))
+    if (pruned) nodes[id] = pruned
+    else delete nodes[id]
+    this.commit({ ...this.state.doc, nodes }, opts)
+  }
+
+  /** Set style declarations in the active state and breakpoint. */
   setStyle(id: string, styles: StyleMap, opts: { history?: boolean } = {}) {
-    const bp = this.state.breakpoint
-    if (bp === 'base') this.update(id, { style: styles }, opts)
-    else this.update(id, { responsive: { [bp]: styles } }, opts)
+    const { state, breakpoint } = this.cell
+    this.writeNode(id, (override) => mergeStyles(override, state, breakpoint, styles), opts)
   }
 
   /** Write declarations on several nodes as one change, e.g. re-ordering siblings. */
   setStyleMany(entries: Array<[string, StyleMap]>, opts: { history?: boolean } = {}) {
-    const bp = this.state.breakpoint
+    const { state, breakpoint } = this.cell
     const nodes = { ...this.state.doc.nodes }
     for (const [id, styles] of entries) {
-      const current = nodes[id] ?? {}
-      const merged: NodeOverride =
-        bp === 'base'
-          ? { ...current, style: { ...current.style, ...styles } }
-          : {
-              ...current,
-              responsive: { ...current.responsive, [bp]: { ...current.responsive?.[bp], ...styles } },
-            }
-      const pruned = pruneEmpty(merged)
+      const pruned = pruneOverride(mergeStyles(clone(nodes[id] ?? {}), state, breakpoint, styles))
       if (pruned) nodes[id] = pruned
       else delete nodes[id]
     }
@@ -217,17 +223,10 @@ export class VeditStore {
     if (this.state.dropIndicator !== rect) this.set({ dropIndicator: rect })
   }
 
-  /** Replace every declaration at the current breakpoint (used by the CSS editor). */
+  /** Replace every declaration in the active cell (used by the CSS editor). */
   setStyleBucket(id: string, styles: StyleMap) {
-    const bp = this.state.breakpoint
-    const override = clone(this.getOverride(id))
-    if (bp === 'base') override.style = styles
-    else override.responsive = { ...override.responsive, [bp]: styles }
-    const nodes = { ...this.state.doc.nodes }
-    const pruned = pruneEmpty(override)
-    if (pruned) nodes[id] = pruned
-    else delete nodes[id]
-    this.commit({ ...this.state.doc, nodes })
+    const { state, breakpoint } = this.cell
+    this.writeNode(id, (override) => replaceStyles(override, state, breakpoint, styles))
   }
 
   /** Snapshot the document so a drag gesture collapses into one undo step. */
@@ -235,32 +234,86 @@ export class VeditStore {
     this.set({ past: [...this.state.past, this.state.doc].slice(-HISTORY_LIMIT), future: [] })
   }
 
-  /** Remove a declaration at the current breakpoint, falling back to source styling. */
+  /** Remove a declaration from the active cell, falling back to the site's styling. */
   clearStyle(id: string, property: string) {
-    const bp = this.state.breakpoint
-    const override = clone(this.getOverride(id))
-    if (bp === 'base') delete override.style?.[property]
-    else delete override.responsive?.[bp]?.[property]
+    this.clearStyles(id, [property])
+  }
+
+  /** Remove several declarations from the active cell in one change. */
+  clearStyles(id: string, properties: string[]) {
+    this.clearStylesMany([id], properties)
+  }
+
+  /** Remove declarations from several nodes at once, for a multi-selection edit. */
+  clearStylesMany(ids: string[], properties: string[]) {
+    const { state, breakpoint } = this.cell
     const nodes = { ...this.state.doc.nodes }
-    const pruned = pruneEmpty(override)
-    if (pruned) nodes[id] = pruned
-    else delete nodes[id]
+    for (const id of ids) {
+      const pruned = pruneOverride(deleteStyles(clone(nodes[id] ?? {}), state, breakpoint, properties))
+      if (pruned) nodes[id] = pruned
+      else delete nodes[id]
+    }
     this.commit({ ...this.state.doc, nodes })
   }
 
-  /** Remove several declarations at the current breakpoint in one change. */
-  clearStyles(id: string, properties: string[]) {
-    const bp = this.state.breakpoint
-    const override = clone(this.getOverride(id))
-    for (const property of properties) {
-      if (bp === 'base') delete override.style?.[property]
-      else delete override.responsive?.[bp]?.[property]
-    }
+  /** Apply a content patch to several nodes at once. */
+  updateMany(ids: string[], patch: NodeOverride) {
     const nodes = { ...this.state.doc.nodes }
-    const pruned = pruneEmpty(override)
-    if (pruned) nodes[id] = pruned
-    else delete nodes[id]
+    for (const id of ids) {
+      const merged: NodeOverride = { ...(nodes[id] ?? {}), ...patch }
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === undefined) delete (merged as Record<string, unknown>)[key]
+      }
+      const pruned = pruneOverride(merged)
+      if (pruned) nodes[id] = pruned
+      else delete nodes[id]
+    }
     this.commit({ ...this.state.doc, nodes })
+  }
+
+  /** Read a declaration from the active cell. */
+  styleValue(id: string, property: string): string | number | undefined {
+    const { state, breakpoint } = this.cell
+    return readStyleValue(this.state.doc.nodes[id], state, breakpoint, property)
+  }
+
+  /** Set one of the props a component declared as editable. */
+  setProp(id: string, name: string, value: unknown) {
+    this.writeNode(id, (override) => {
+      const props = { ...override.props }
+      if (value === undefined) delete props[name]
+      else props[name] = value
+      return { ...override, props }
+    })
+  }
+
+  /* ---------------------------------------------------------------- tokens */
+
+  /** Create a named value. Returns the token, whose id is a slug of the name. */
+  addToken(token: Omit<DesignToken, 'id'> & { id?: string }): DesignToken {
+    const tokens = this.state.doc.tokens ?? []
+    const base = (token.id ?? token.name)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'token'
+    let id = base
+    let suffix = 2
+    while (tokens.some((existing) => existing.id === id)) id = `${base}-${suffix++}`
+    const created: DesignToken = { ...token, id }
+    this.commit({ ...this.state.doc, tokens: [...tokens, created] })
+    return created
+  }
+
+  updateToken(id: string, patch: Partial<Omit<DesignToken, 'id'>>) {
+    const tokens = (this.state.doc.tokens ?? []).map((token) =>
+      token.id === id ? { ...token, ...patch } : token,
+    )
+    this.commit({ ...this.state.doc, tokens })
+  }
+
+  removeToken(id: string) {
+    const tokens = (this.state.doc.tokens ?? []).filter((token) => token.id !== id)
+    this.commit({ ...this.state.doc, tokens })
   }
 
   /** Drop every override for a node. */
@@ -290,6 +343,33 @@ export class VeditStore {
     this.commit({ ...this.state.doc, nodes, inserted: [...this.state.doc.inserted, node] })
     this.select(id)
     return id
+  }
+
+  /** Copy an inserted element, styles and all, right after the original. */
+  duplicateInserted(id: string): string | null {
+    const source = this.state.doc.inserted.find((node) => node.id === id)
+    if (!source) return null
+    const copyId = `${source.parentId}::added-${Math.random().toString(36).slice(2, 8)}`
+    const inserted = this.state.doc.inserted.map((node) =>
+      node.parentId === source.parentId && node.index > source.index
+        ? { ...node, index: node.index + 1 }
+        : node,
+    )
+    inserted.push({ ...source, id: copyId, index: source.index + 1 })
+    const nodes = { ...this.state.doc.nodes, [copyId]: clone(this.getOverride(id)) }
+    this.commit({ ...this.state.doc, nodes, inserted })
+    this.select(copyId)
+    return copyId
+  }
+
+  /** Move an inserted element into a different container. */
+  moveInserted(id: string, parentId: string) {
+    const inserted = this.state.doc.inserted.map((node) =>
+      node.id === id
+        ? { ...node, parentId, index: this.state.doc.inserted.filter((n) => n.parentId === parentId).length }
+        : node,
+    )
+    this.commit({ ...this.state.doc, inserted })
   }
 
   removeInserted(id: string) {
@@ -336,10 +416,19 @@ export class VeditStore {
 
   /* ------------------------------------------------------------ persistence */
 
-  async load() {
+  /** True when the adapter keeps a draft separate from what visitors see. */
+  get supportsPublishing(): boolean {
+    return typeof this.adapter.publish === 'function'
+  }
+
+  get supportsHistory(): boolean {
+    return typeof this.adapter.listVersions === 'function'
+  }
+
+  async load(stage: DocumentStage = 'published') {
     this.set({ status: 'loading', error: null })
     try {
-      const loaded = await this.adapter.load(this.state.doc.key)
+      const loaded = await this.adapter.load(this.state.doc.key, { stage })
       const doc = loaded ? { ...emptyDocument(this.state.doc.key), ...loaded } : this.state.doc
       this.set({ doc, saved: doc, status: 'ready', past: [], future: [] })
     } catch (error) {
@@ -366,6 +455,38 @@ export class VeditStore {
     }
   }
 
+  /** Make the saved draft the one visitors see. */
+  async publish() {
+    if (!this.adapter.publish) throw new Error('This adapter cannot publish')
+    if (this.dirty) await this.save()
+    this.set({ status: 'saving', error: null })
+    try {
+      await this.adapter.publish(this.state.doc)
+      this.set({ status: 'ready', published: this.state.doc })
+      this.notify('Published — visitors see this now')
+    } catch (error) {
+      this.set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+  }
+
+  async listVersions(): Promise<VeditVersion[]> {
+    return this.adapter.listVersions ? this.adapter.listVersions(this.state.doc.key) : []
+  }
+
+  /** Load an earlier version into the editor, ready to review and save. */
+  async restoreVersion(versionId: string) {
+    if (!this.adapter.loadVersion) return
+    const doc = await this.adapter.loadVersion(this.state.doc.key, versionId)
+    if (!doc) throw new Error('That version could not be loaded')
+    this.set({
+      doc: { ...doc, key: this.state.doc.key },
+      past: [...this.state.past, this.state.doc].slice(-HISTORY_LIMIT),
+      future: [],
+    })
+    this.notify('Version restored — save to keep it')
+  }
+
   discard() {
     this.set({ doc: this.state.saved, past: [], future: [], selection: [] })
   }
@@ -381,6 +502,14 @@ export class VeditStore {
   async uploadImage(file: File): Promise<string> {
     if (this.adapter.uploadImage) return this.adapter.uploadImage(file)
     return await fileToDataUrl(file)
+  }
+
+  async listAssets(): Promise<VeditAsset[]> {
+    return this.adapter.listAssets ? this.adapter.listAssets() : []
+  }
+
+  get canListAssets(): boolean {
+    return typeof this.adapter.listAssets === 'function'
   }
 
   /* ------------------------------------------------------------------- ui */
@@ -415,6 +544,10 @@ export class VeditStore {
 
   setBreakpoint(breakpoint: Breakpoint) {
     this.set({ breakpoint })
+  }
+
+  setStyleState(styleState: StyleState) {
+    this.set({ styleState })
   }
 
   setTool(tool: EditorTool) {

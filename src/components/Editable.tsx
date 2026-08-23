@@ -2,7 +2,7 @@ import { createElement, forwardRef, useMemo, type ElementType, type ReactNode, t
 import { useEditable } from './useEditable'
 import { useVeditState } from '../core/context'
 import { sanitizeHtml } from '../runtime/sanitize'
-import type { InsertedNode, NodeKind } from '../core/types'
+import type { EditableField, InsertedNode, NodeKind } from '../core/types'
 
 export interface EditableProps {
   /**
@@ -16,6 +16,11 @@ export interface EditableProps {
   label?: string
   /** Allow new text/images/boxes to be dropped inside. */
   container?: boolean
+  /**
+   * Props the editor may change. Only props named here are editable, and the
+   * schema decides which control the inspector shows for each one.
+   */
+  fields?: EditableField[]
   children?: ReactNode
   className?: string
   /** Anything else is forwarded to the underlying element. */
@@ -38,22 +43,28 @@ function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
  * clickable, selectable and inspectable.
  */
 export const Editable = forwardRef<HTMLElement, EditableProps>(function Editable(
-  { id, as, kind, label, container = false, children, className, ...rest },
+  { id, as, kind, label, container = false, fields, children, className, ...rest },
   forwardedRef,
 ) {
   const resolvedKind: NodeKind = kind ?? inferKind(as, children)
   const isContainer = container || resolvedKind === 'box'
   const sourceText = typeof children === 'string' ? children : undefined
-  const { ref, veditProps, override } = useEditable({
+  const schema = fields as EditableField[] | undefined
+  const declared = schema
+    ? Object.fromEntries(schema.map((field) => [field.name, rest[field.name]]))
+    : undefined
+  const { ref, veditProps, override, props: edited } = useEditable({
     id,
     kind: resolvedKind,
     label,
     container: isContainer,
     sourceText,
+    fields: schema,
+    props: declared,
   })
 
   const Component = (as ?? defaultTagFor(resolvedKind)) as ElementType
-  const props: Record<string, unknown> = { ...rest, ...veditProps }
+  const props: Record<string, unknown> = { ...rest, ...(schema ? edited : {}), ...veditProps }
 
   props.ref = mergeRefs(ref, forwardedRef)
   props.className = [className, override.className].filter(Boolean).join(' ') || undefined

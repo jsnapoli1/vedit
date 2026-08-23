@@ -38,27 +38,21 @@ function KindIcon({ kind }: { kind: NodeKind }) {
   return <IconType width={12} height={12} />
 }
 
-export function LayersPanel() {
+export function LayersTree() {
   const nodes = useVeditNodes()
   const tree = useMemo(() => buildTree(nodes), [nodes])
 
   return (
-    <aside className="vedit-panel vedit-left" data-vedit-ui="">
-      <div className="vedit-panel-head">
-        <span>Layers</span>
-        <span style={{ textTransform: 'none', letterSpacing: 0 }}>{nodes.length}</span>
-      </div>
-      <div className="vedit-panel-body">
-        {tree.length ? (
-          tree.map((entry) => <LayerRow key={entry.node.id} entry={entry} depth={0} />)
-        ) : (
-          <div className="vedit-section vedit-hint">
-            Nothing registered yet. Wrap elements in <code>&lt;Editable&gt;</code> or turn on
-            <code> auto</code> scanning.
-          </div>
-        )}
-      </div>
-    </aside>
+    <div className="vedit-panel-body">
+      {tree.length ? (
+        tree.map((entry) => <LayerRow key={entry.node.id} entry={entry} depth={0} />)
+      ) : (
+        <div className="vedit-section vedit-hint">
+          Nothing registered yet. Wrap elements in <code>&lt;Editable&gt;</code> or turn on
+          <code> auto</code> scanning.
+        </div>
+      )}
+    </div>
   )
 }
 
