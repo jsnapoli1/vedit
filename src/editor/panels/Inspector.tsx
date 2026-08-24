@@ -59,7 +59,7 @@ export function Inspector() {
 
   if (!id) {
     return (
-      <aside className="vedit-panel vedit-right" data-vedit-ui="">
+      <aside className="vedit-panel vedit-right" data-vedit-ui="" aria-label="Inspector">
         <div className="vedit-panel-head">Inspector</div>
         <div className="vedit-panel-body">
           <div className="vedit-section vedit-hint">
@@ -74,7 +74,7 @@ export function Inspector() {
   const kind: NodeKind = node?.kind ?? store.kindOf(id)
 
   return (
-    <aside className="vedit-panel vedit-right" data-vedit-ui="">
+    <aside className="vedit-panel vedit-right" data-vedit-ui="" aria-label="Inspector">
       <div className="vedit-panel-head">
         <span
           style={{

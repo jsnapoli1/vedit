@@ -55,11 +55,15 @@ export function Toolbar({
   const width = useViewportWidth()
 
   return (
-    <div className="vedit-panel vedit-toolbar" data-vedit-ui="">
+    // `tabIndex={-1}` so the editor can put focus here when it opens: it is a
+    // landing point for the tab sequence, not a control, so it takes no ring.
+    <div className="vedit-panel vedit-toolbar" data-vedit-ui="" role="toolbar" aria-label="vedit" tabIndex={-1}>
       <button
         type="button"
         className="vedit-btn vedit-btn-icon"
         title={collapsed ? 'Show panels — \\' : 'Hide panels — \\'}
+        aria-label={collapsed ? 'Show panels' : 'Hide panels'}
+        aria-pressed={!collapsed}
         data-active={collapsed ? 'false' : 'true'}
         onClick={onToggleCollapsed}
       >
@@ -73,6 +77,8 @@ export function Toolbar({
           type="button"
           className="vedit-btn vedit-btn-icon"
           title={entry.title}
+          aria-label={entry.title}
+          aria-pressed={tool === entry.tool}
           data-active={tool === entry.tool ? 'true' : 'false'}
           onClick={() => store.setTool(entry.tool)}
         >
@@ -100,6 +106,8 @@ export function Toolbar({
             type="button"
             className="vedit-btn"
             data-breakpoint={entry}
+            aria-label={entry === 'base' ? 'Base width' : `From ${minWidth}px up`}
+            aria-pressed={breakpoint === entry}
             data-active={breakpoint === entry ? 'true' : 'false'}
             title={
               entry === 'base'
@@ -121,6 +129,7 @@ export function Toolbar({
         type="button"
         className="vedit-btn vedit-btn-icon"
         title="Undo — ⌘Z"
+        aria-label="Undo"
         disabled={!canUndo}
         onClick={() => store.undo()}
       >
@@ -130,6 +139,7 @@ export function Toolbar({
         type="button"
         className="vedit-btn vedit-btn-icon"
         title="Redo — ⇧⌘Z"
+        aria-label="Redo"
         disabled={!canRedo}
         onClick={() => store.redo()}
       >
@@ -170,6 +180,7 @@ export function Toolbar({
         type="button"
         className="vedit-btn vedit-btn-icon"
         title="Close the editor — ⌘E"
+        aria-label="Close the editor"
         onClick={() => store.setEditing(false)}
       >
         <IconClose />
@@ -187,7 +198,7 @@ function Avatars() {
   return (
     <>
       <span className="vedit-divider" />
-      <span className="vedit-avatars" title={`${everyone.length} editing`}>
+      <span className="vedit-avatars" title={`${everyone.length} editing`} aria-label={`${everyone.length} editing`}>
         {everyone.slice(0, 6).map((peer, index) => (
           <span
             key={peer.id}

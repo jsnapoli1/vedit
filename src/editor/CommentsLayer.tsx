@@ -3,6 +3,7 @@ import { useVeditSession, useVeditState, useVeditStore } from '../core/context'
 import type { Comment } from '../core/realtime'
 import type { VeditStore } from '../core/store'
 import { initialsOf } from '../core/realtime'
+import { useFocusTrap } from './focus'
 import { toScreen, useEditorTarget, type EditorTarget, type Rect } from './target'
 
 /**
@@ -87,7 +88,9 @@ function Composer() {
   const target = useEditorTarget()
   const [body, setBody] = useState('')
   const input = useRef<HTMLTextAreaElement>(null)
+  const thread = useRef<HTMLDivElement>(null)
 
+  useFocusTrap(thread, { onEscape: () => store.setPendingComment(null) })
   useEffect(() => {
     input.current?.focus()
   }, [])
@@ -112,7 +115,7 @@ function Composer() {
       <span className="vedit-pin" style={{ background: session.self.color }}>
         +
       </span>
-      <div className="vedit-thread" data-vedit-ui="">
+      <div className="vedit-thread" data-vedit-ui="" ref={thread} role="dialog" aria-label="New note">
         <textarea
           ref={input}
           className="vedit-textarea"
@@ -141,10 +144,22 @@ export function Thread({ comment, standalone = false }: { comment: Comment; stan
   const store = useVeditStore()
   const { session } = useVeditSession()
   const [reply, setReply] = useState('')
+  const thread = useRef<HTMLDivElement>(null)
+
+  // A thread pinned to the page is a popover and behaves like one. The same thread
+  // rendered in the Notes panel is just part of the panel, and trapping focus in it
+  // would strand a keyboard user in a list.
+  useFocusTrap(thread, { active: !standalone, onEscape: () => store.setOpenComment(null) })
+
   if (!session) return null
 
   return (
-    <div className={standalone ? 'vedit-thread vedit-thread-inline' : 'vedit-thread'} data-vedit-ui="">
+    <div
+      className={standalone ? 'vedit-thread vedit-thread-inline' : 'vedit-thread'}
+      data-vedit-ui=""
+      ref={thread}
+      {...(standalone ? {} : { role: 'dialog' as const, 'aria-label': `Note from ${comment.author.name}` })}
+    >
       <Entry author={comment.author} body={comment.body} createdAt={comment.createdAt} />
       {comment.replies.map((entry) => (
         <Entry key={entry.id} author={entry.author} body={entry.body} createdAt={entry.createdAt} />

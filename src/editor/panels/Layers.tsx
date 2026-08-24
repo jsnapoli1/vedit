@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { useVeditNodes, useVeditState, useVeditStore } from '../../core/context'
 import type { NodeKind, RegisteredNode } from '../../core/types'
+import { moveFocus } from '../focus'
 import { IconEye, IconEyeOff, IconImage, IconSquare, IconType } from '../icons'
 
 interface TreeNode {
@@ -38,14 +39,35 @@ function KindIcon({ kind }: { kind: NodeKind }) {
   return <IconType width={12} height={12} />
 }
 
+/** The tree in the order it is drawn, so arrow keys walk it the way it looks. */
+function flatten(tree: TreeNode[]): string[] {
+  return tree.flatMap((entry) => [entry.node.id, ...flatten(entry.children)])
+}
+
 export function LayersTree() {
   const nodes = useVeditNodes()
   const tree = useMemo(() => buildTree(nodes), [nodes])
+  const body = useRef<HTMLDivElement>(null)
+  const order = useMemo(() => flatten(tree), [tree])
+  const selection = useVeditState((state) => state.selection)
+
+  // One tab stop for the whole tree, arrow keys inside it: tabbing through
+  // several hundred layer rows to reach the inspector is not navigation.
+  const focused = order.find((id) => selection.includes(id)) ?? order[0]
+  const rows = () => [...(body.current?.querySelectorAll<HTMLElement>('.vedit-layer') ?? [])]
 
   return (
-    <div className="vedit-panel-body">
+    <div className="vedit-panel-body" ref={body} role="tree" aria-label="Layers">
       {tree.length ? (
-        tree.map((entry) => <LayerRow key={entry.node.id} entry={entry} depth={0} />)
+        tree.map((entry) => (
+          <LayerRow
+            key={entry.node.id}
+            entry={entry}
+            depth={0}
+            focusedId={focused}
+            onKeyDown={(event) => moveFocus(event, rows())}
+          />
+        ))
       ) : (
         <div className="vedit-section vedit-hint">
           Nothing registered yet. Wrap elements in <code>&lt;Editable&gt;</code> or turn on
@@ -56,7 +78,18 @@ export function LayersTree() {
   )
 }
 
-function LayerRow({ entry, depth }: { entry: TreeNode; depth: number }) {
+function LayerRow({
+  entry,
+  depth,
+  focusedId,
+  onKeyDown,
+}: {
+  entry: TreeNode
+  depth: number
+  /** The single row that is in the tab order right now. */
+  focusedId: string | undefined
+  onKeyDown: (event: React.KeyboardEvent) => void
+}) {
   const store = useVeditStore()
   const { node } = entry
   const selected = useVeditState((state) => state.selection.includes(node.id))
@@ -68,9 +101,16 @@ function LayerRow({ entry, depth }: { entry: TreeNode; depth: number }) {
       <button
         type="button"
         className="vedit-layer"
+        role="treeitem"
+        aria-selected={selected}
+        aria-level={depth + 1}
+        tabIndex={focusedId === node.id ? 0 : -1}
         data-selected={selected ? 'true' : 'false'}
         data-hidden={hidden ? 'true' : 'false'}
         style={{ paddingLeft: 10 + depth * 12 }}
+        onKeyDown={onKeyDown}
+        onFocus={() => store.hover(node.id)}
+        onBlur={() => store.hover(null)}
         onClick={(event) => {
           store.select(node.id, { additive: event.shiftKey })
           node.element.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
@@ -97,7 +137,13 @@ function LayerRow({ entry, depth }: { entry: TreeNode; depth: number }) {
         </span>
       </button>
       {entry.children.map((child) => (
-        <LayerRow key={child.node.id} entry={child} depth={depth + 1} />
+        <LayerRow
+          key={child.node.id}
+          entry={child}
+          depth={depth + 1}
+          focusedId={focusedId}
+          onKeyDown={onKeyDown}
+        />
       ))}
     </>
   )

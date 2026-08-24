@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useVeditSession, useVeditState, useVeditStore } from '../core/context'
 import { useEditorInteractions } from './interactions'
@@ -52,7 +52,21 @@ export function EditorRoot({ toolbarExtras, interactive = true }: EditorRootProp
   const { staleSince } = useVeditSession()
   const pageDocument = target.getDocument()
 
+  const root = useRef<HTMLDivElement>(null)
+
   useEditorStyles(interactive ? pageDocument : document)
+
+  // Opening the editor puts the tab sequence at the toolbar, and closing it gives
+  // focus back to whatever had it. Without this, opening from the keyboard leaves
+  // focus on the page and every panel is several dozen tabs away — the chrome is
+  // portalled to the end of <body>, behind everything the site renders.
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    root.current?.querySelector<HTMLElement>('.vedit-toolbar')?.focus()
+    return () => {
+      if (previous?.isConnected) previous.focus()
+    }
+  }, [])
   useEditorInteractions(store, target, { enabled: interactive })
 
   useEffect(() => {
@@ -99,7 +113,14 @@ export function EditorRoot({ toolbarExtras, interactive = true }: EditorRootProp
   const indicator = dropIndicator ? toScreen(dropIndicator, target.getViewport()) : null
 
   return createPortal(
-    <div className="vedit-root" data-vedit-ui="" data-collapsed={collapsed ? 'true' : 'false'}>
+    <div
+      className="vedit-root"
+      data-vedit-ui=""
+      data-collapsed={collapsed ? 'true' : 'false'}
+      ref={root}
+      role="region"
+      aria-label="vedit editor"
+    >
       <Overlay />
       <PresenceLayer />
       <CommentsLayer />

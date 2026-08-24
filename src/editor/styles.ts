@@ -26,6 +26,22 @@ export const EDITOR_CSS = `
 .vedit-root *, .vedit-root *::before, .vedit-root *::after { box-sizing: border-box; }
 .vedit-root button { font: inherit; color: inherit; }
 
+/*
+ * A visible ring on anything focused by keyboard. The chrome is dark and dense,
+ * so the ring is drawn outside the control with an offset rather than as a border
+ * that would shift the layout. Nothing here removes an outline without giving one
+ * back — an editor that audits other people's contrast can be used without a mouse.
+ */
+.vedit-root :focus-visible {
+  outline: 2px solid var(--vedit-accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+.vedit-root .vedit-field:focus-within { outline: 2px solid var(--vedit-accent); outline-offset: 1px; }
+.vedit-layer:focus-visible { outline-offset: -2px; }
+/* The toolbar itself is only ever focused programmatically, as a place to land. */
+.vedit-toolbar:focus, .vedit-toolbar:focus-visible { outline: none; }
+
 /* ---------------------------------------------------------------- surfaces */
 .vedit-panel {
   position: fixed;

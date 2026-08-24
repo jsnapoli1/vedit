@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useVeditState, useVeditStore } from '../../core/context'
+import { moveFocus } from '../focus'
 import { CommentsPanel } from './Comments'
 import { HistoryPanel } from './History'
 import { IssuesPanel } from './Issues'
@@ -27,25 +28,40 @@ export function LeftPanel() {
       (entry.id !== 'history' || store.supportsHistory) && (entry.id !== 'notes' || !!store.session),
   )
 
+  const strip = useRef<HTMLDivElement>(null)
+
   return (
-    <aside className="vedit-panel vedit-left" data-vedit-ui="">
-      <div className="vedit-tabs">
+    <aside className="vedit-panel vedit-left" data-vedit-ui="" aria-label="Layers, tokens and notes">
+      <div className="vedit-tabs" role="tablist" ref={strip}>
         {tabs.map((entry) => (
           <button
             key={entry.id}
             type="button"
+            role="tab"
+            id={`vedit-tab-${entry.id}`}
+            aria-selected={tab === entry.id}
+            aria-controls="vedit-tabpanel"
+            // One tab stop for the strip; left and right move between the tabs.
+            tabIndex={tab === entry.id ? 0 : -1}
             data-active={tab === entry.id ? 'true' : 'false'}
+            onKeyDown={(event) =>
+              moveFocus(event, [...(strip.current?.querySelectorAll<HTMLElement>('button') ?? [])], {
+                orientation: 'horizontal',
+              })
+            }
             onClick={() => setTab(entry.id)}
           >
             {entry.label}
           </button>
         ))}
       </div>
+      <div id="vedit-tabpanel" role="tabpanel" aria-labelledby={`vedit-tab-${tab}`} style={{ display: 'contents' }}>
       {tab === 'layers' ? <LayersTree /> : null}
       {tab === 'tokens' ? <TokensPanel /> : null}
       {tab === 'issues' ? <IssuesPanel /> : null}
       {tab === 'notes' ? <CommentsPanel /> : null}
       {tab === 'history' ? <HistoryPanel /> : null}
+      </div>
     </aside>
   )
 }

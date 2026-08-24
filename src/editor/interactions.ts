@@ -25,6 +25,17 @@ function isEditorSurface(target: EventTarget | null): boolean {
   return !!asElement(target)?.closest('[data-vedit-ui]')
 }
 
+// `[tabindex="-1"]` is deliberately not a control here: the toolbar carries one as
+// a place for focus to land when the editor opens, and it must not swallow the
+// single-letter shortcuts while it holds focus.
+const CONTROLS = 'button,a[href],input,select,textarea,summary,[role="button"],[tabindex]:not([tabindex="-1"])'
+
+/** Focus is on something in the editor's chrome that handles its own keys. */
+function isChromeControl(target: EventTarget | null): boolean {
+  const element = asElement(target)
+  return !!element && !!element.closest('[data-vedit-ui]') && !!element.closest(CONTROLS)
+}
+
 /**
  * Nearest ancestor (or self) that can host a new element. Scanner-found nodes are
  * skipped: nothing renders their children, so dropping something inside one would
@@ -354,6 +365,12 @@ export function useEditorInteractions(
         return
       }
       if (typing) return
+
+      // Focus is on a control in the editor's own chrome. Enter, Space, the arrow
+      // keys and the single-letter tool shortcuts all belong to that control while
+      // it has focus — stealing them is what makes an editor mouse-only. The
+      // shortcuts below with a modifier still work everywhere.
+      if (!event.metaKey && !event.ctrlKey && isChromeControl(event.target)) return
 
       const meta = event.metaKey || event.ctrlKey
       if (meta && event.key.toLowerCase() === 'e') {
