@@ -18,7 +18,7 @@ npm install github:jsnapoli1/vedit
 nothing else to run. Pin a tag or commit for anything you deploy:
 
 ```bash
-npm install github:jsnapoli1/vedit#v0.1.0
+npm install github:jsnapoli1/vedit#v0.2.0
 ```
 
 To publish it under your own scope instead, set `"name": "@your-scope/vedit"` in
@@ -212,6 +212,39 @@ export { relay as GET, relay as POST }
 
 ---
 
+## 9. Optional: let an agent design too
+
+Everything the editor does is also reachable without it — useful for scripted
+changes, and for handing a page to an AI agent.
+
+```bash
+claude mcp add vedit -- npx -y vedit-mcp --dir ./content
+```
+
+Point it at the same documents your adapter writes (`--dir` for files,
+`--endpoint` for a deployed site's API). The agent works on the **draft**, so
+nothing reaches visitors until someone publishes. Steps 3 and 4 pay off here: an
+agent can only change what has an id, and it picks a declared variant rather than
+inventing one.
+
+The matching HTTP surface is one more route:
+
+```ts
+// app/api/vedit/[...path]/route.ts
+import { createVeditApi } from 'vedit/api'
+import { fileStore } from 'vedit/server'
+
+const handle = createVeditApi({
+  store: fileStore('./content'),
+  authorize: (request, { write }) => isEditor(request, { write }),   // required
+})
+export { handle as GET, handle as PUT, handle as POST, handle as DELETE }
+```
+
+Full detail in [API.md](./API.md).
+
+---
+
 ## Framework notes
 
 **Next.js App Router** — the browser half of the bundle ships `'use client'`, so
@@ -254,3 +287,5 @@ machine; anything shared needs an endpoint.
 - [ ] `enabled` is wired to your own auth
 - [ ] `initialDocument` is server-rendered, if the framework has a server
 - [ ] Edited, published, and confirmed as a signed-out visitor
+- [ ] Optional: `vedit/api` mounted with a real `authorize`, or `vedit-mcp`
+      pointed at your documents

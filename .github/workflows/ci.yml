@@ -25,8 +25,14 @@ jobs:
           mkdir -p /tmp/consumer && cd /tmp/consumer
           npm init -y >/dev/null
           npm install --no-audit --no-fund "$GITHUB_WORKSPACE"/vedit-*.tgz react@18 react-dom@18 typescript@5 @types/react@18
-          printf "import 'vedit'\nimport 'vedit/server'\n" > check.ts
+          printf "import 'vedit'\nimport 'vedit/server'\nimport 'vedit/api'\nimport 'vedit/mcp'\nimport 'vedit/internal'\n" > check.ts
           npx tsc --noEmit --module esnext --moduleResolution bundler --target es2022 --jsx react-jsx --strict --skipLibCheck check.ts
+      - name: Check the MCP command answers on stdio
+        run: |
+          cd /tmp/consumer
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+            | ./node_modules/.bin/vedit-mcp --dir ./content \
+            | grep -q '"describe_document"'
 
   e2e:
     runs-on: ubuntu-latest

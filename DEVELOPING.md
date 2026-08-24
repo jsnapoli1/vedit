@@ -45,6 +45,8 @@ src/
   core/            everything that has no opinion about the editor UI
     types.ts       the document, the adapter, the node model
     layers.ts      the state × breakpoint matrix — the only file that knows its shape
+    migrate.ts     bringing a stored document to the shape this build expects
+    operations.ts  every change to a document as data — the API and MCP speak this
     store.ts       an observable document with undo/redo and persistence
     context.tsx    VeditProvider: store, config, guards, lazy editor mount
     canvas.ts      the parent ↔ artboard handshake
@@ -72,6 +74,10 @@ src/
 
   server.ts          vedit/server: document handler, file store, SSR helper
   realtime-server.ts the SSE relay
+  api.ts             vedit/api: the open HTTP surface, and a client for it
+  mcp.ts             vedit/mcp: the same vocabulary as MCP tools
+  index.ts           the supported API
+  internal.ts        the rest, exported and explicitly unsupported
 ```
 
 Rough sizes: `core` 2.3k lines, `editor` 5k, everything else under 900. The
@@ -123,7 +129,19 @@ the inspector talk in terms of "the cell the user is currently editing"
 and the rest mostly follows. If you find yourself reaching into
 `override.states.hover.responsive.md` anywhere else, that's the smell.
 
-### 3. The page being edited is somewhere else
+### 3. There is one vocabulary for changing a document
+
+`core/operations.ts` is every possible change as data — `set-styles`,
+`set-content`, `insert-node`, `set-token`. The editor drives `VeditStore`
+directly, because it also has a selection, an undo stack and a page to point at.
+Everything without a browser drives operations: the HTTP API, the MCP server, a
+script, a test.
+
+**Consequence**: a new kind of change belongs in `operations.ts` first, and in the
+inspector second. Adding it only to the editor means an agent can't do what a
+person can, which is the kind of gap that is invisible until someone asks.
+
+### 4. The page being edited is somewhere else
 
 On the canvas, the page runs inside a same-origin iframe. The chrome runs in the
 parent. `editor/target.tsx` is the abstraction that makes one set of components
@@ -213,8 +231,41 @@ uses it:
 2. `layers.ts` — if it participates in the matrix
 3. `pruneOverride` — so an empty value doesn't bloat every document
 4. `css.ts` or the component that renders it
-5. `session.ts` `diffDocuments` — if it should travel to other editors
-6. A unit test against `dist/`, and a line in the README's document example
+5. `operations.ts` — so it can be set without the editor, and `describeDocument`
+   mentions it
+6. `migrate.ts` — `normalize` decides what happens to a document that has it
+   wrong; a *removed* or renamed field needs a migration step
+7. `session.ts` `diffDocuments` — if it should travel to other editors
+8. A unit test against `dist/`, and a line in the README's document example
+
+### Add an MCP tool
+
+`mcp.ts`, in the `all` array: a name, a description a model can act on, a JSON
+Schema, and a `run` that goes through `applyOperations`. Mark it `write: true` if
+it changes anything — that is what `--read-only` filters on. Then a line in
+API.md, because a tool nobody knows about is not a feature.
+
+---
+
+## The document format
+
+`DOCUMENT_VERSION` (in `types.ts`) is the shape this build writes. It moves under
+one condition and not the other:
+
+- **Additive** — a new optional field, a new node kind. The version does *not*
+  move. Old builds ignore what they don't know; new builds treat a missing field
+  as absent. Most changes are this.
+- **Breaking** — a field is renamed, removed, or its meaning changes. Bump the
+  version and add a step to `MIGRATIONS` in `migrate.ts` that rewrites the old
+  shape into the new one. **Never edit an existing step**: documents saved by
+  every past build have to walk the same path.
+
+The package version is separate and moves for its own reasons.
+
+`inspectDocument` also repairs: a document that isn't an object, `nodes` that
+isn't one, an override that's a string, a token with no value. Data reaches this
+library from a database, a file, a hand edit and an agent — treating it as
+well-formed because it usually is, is how a design tool takes a site down.
 
 ---
 
@@ -242,13 +293,15 @@ site. Breaking one is a bug even if the tests pass.
 
 ## Testing
 
-**`npm test`** — 79 unit tests, run against `dist/` rather than `src/`, so they
+**`npm test`** — 130 unit tests, run against `dist/` rather than `src/`, so they
 check what actually ships. Pure logic lives here: the CSS emitter, the layer
-matrix, the store, diffing, contrast maths, the relay, the escaping rules.
+matrix, the store, migration, the operations vocabulary, the open API, the MCP
+server, diffing, contrast maths, the relay, the escaping rules.
 
-**`npm run test:e2e`** — 34 browser tests over the real editor: selection,
+**`npm run test:e2e`** — 41 browser tests over the real editor: selection,
 breakpoints, states, component props, re-ordering, publishing, two people
-collaborating, and what happens when the editor throws.
+collaborating, driving it all from a keyboard, and what happens when the editor
+throws.
 
 **Visual regression** comes in two forms because they catch different things:
 
@@ -275,9 +328,13 @@ can't check any other way.
   a constraint you can't see — a cross-realm `instanceof`, a specificity trick,
   a decision that looks arbitrary until you know what it prevents.
 - **No CSS files, no runtime dependencies.** React is the only peer.
-- **The two entry points stay apart.** `src/index.ts` is browser code and ships
-  `'use client'` (added post-build; see `scripts/use-client.mjs`).
-  `src/server.ts` is server code and deliberately doesn't.
+- **The browser and server entries stay apart.** `src/index.ts` and
+  `src/internal.ts` are browser code and ship `'use client'` (added post-build;
+  see `scripts/use-client.mjs`). `src/server.ts`, `src/api.ts` and `src/mcp.ts`
+  are server code and deliberately don't.
+- **`src/index.ts` is a promise.** Anything exported there is supported. If a
+  helper is only exported because something needed it, it belongs in
+  `src/internal.ts`.
 - **`example/` is a fixture.** If you change it, run the e2e suite — its ids and
   markup are load-bearing.
 
@@ -296,6 +353,9 @@ git push --follow-tags
 ```bash
 npm install github:jsnapoli1/vedit#v0.2.0
 ```
+
+Every release gets a [CHANGELOG.md](./CHANGELOG.md) entry, written for someone
+who already depends on this: what changed, and what they have to do about it.
 
 To publish to npm the package needs a scoped name — `vedit` is taken by someone
 else. Set `"name": "@your-scope/vedit"` and `npm publish --access public`.

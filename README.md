@@ -17,8 +17,12 @@ itself on install.
 
 - **[INTEGRATING.md](./INTEGRATING.md)** — adding it to a site, step by step.
   Written to be followed or handed to a coding agent.
+- **[API.md](./API.md)** — editing without the editor: the operations model, the
+  open HTTP API, and the MCP server that lets an agent design.
 - **[DEVELOPING.md](./DEVELOPING.md)** — working on the library itself:
   architecture, recipes, invariants, testing.
+- **[CHANGELOG.md](./CHANGELOG.md)** — what changed, and what it means for a site
+  that already uses this.
 - **[ROADMAP.md](./ROADMAP.md)** — what stands between here and 1.0.
 
 ---
@@ -292,6 +296,12 @@ Click an issue to select the element that caused it.
 | `⌘Z` / `⇧⌘Z` | Undo / redo |
 | `⌘S` | Save |
 | `\` | Hide the panels |
+| `Tab` | Move through the chrome — the toolbar, then the panels |
+| Arrows in a panel | Move through the layers tree or the panel tabs |
+
+Opening the editor puts focus on the toolbar and closing it gives focus back, so
+the whole thing can be driven without a mouse. Modified shortcuts work wherever
+focus is; the single-letter ones belong to a focused field while it has focus.
 
 ---
 
@@ -420,9 +430,31 @@ a CJS consumer gets the whole thing, editor included.)
 - `localStorageAdapter()`, `httpAdapter()`, `memoryAdapter()`
 - `broadcastChannelRealtime()`, `sseRealtime()` — and `VeditRealtime` for your own
 - `documentToCss(doc)` — the stylesheet for a document
-- `parseTransform` / `withTransform`, `parseGradient` / `serializeGradient`
-- `auditPage(nodes)`, `contrastRatio(fg, bg)` — the accessibility checks, usable in your own tests
-- `vedit/server`: `createVeditHandler()`, `createRealtimeHandler()`, `fileStore()`, `veditStyleTag()`
+- `applyOperations(doc, ops)`, `describeDocument(doc)` — change and summarise a
+  document without the editor
+- `migrateDocument(raw)`, `inspectDocument(raw)` — bring a stored document to the
+  shape this build expects
+
+**Entry points**
+
+| | |
+| --- | --- |
+| `vedit` | The supported API — everything above |
+| `vedit/server` | `createVeditHandler()`, `createRealtimeHandler()`, `fileStore()`, `veditStyleTag()` |
+| `vedit/api` | `createVeditApi()`, `remoteStore()` — the open HTTP API. See [API.md](./API.md) |
+| `vedit/mcp` | `createVeditMcpServer()`, `serveStdio()`, `createMcpHandler()`, `notifyEditors()` |
+| `vedit/internal` | The library's own workings — the layer matrix, the scanner, the sanitizers, `auditPage`, the transform and gradient parsers. **Not supported**: these can change in a minor release |
+
+**Designing with an agent**
+
+```bash
+claude mcp add vedit -- npx -y vedit-mcp --dir ./content
+```
+
+16 MCP tools over the same documents the editor writes: read what a page
+overrides, restyle it, add a section, check the CSS it would produce, publish it.
+Edits land on the draft, so an agent proposes and a person publishes. Full detail
+in [API.md](./API.md).
 
 **The document**
 
@@ -446,6 +478,10 @@ a CJS consumer gets the whole thing, editor included.)
 ```
 
 Plain JSON: diff it, review it, commit it, or write it straight into your database.
+
+`version` is the document format, not the package version. It is read on every
+load and migrated forward, so a document saved by an older build keeps working
+and one saved by a newer build is not quietly reshaped.
 
 ---
 
@@ -512,6 +548,9 @@ content of your own.
   loading a webfont is still a change to your code.
 - **Scanner ids depend on DOM structure.** Wrap anything you care about long-term
   in `<Editable>`.
+- **Inspector fields aren't announced by name.** They can be reached and used
+  from a keyboard, but their labels are visual rather than `<label>` elements, so
+  a screen reader reads the control without its name.
 
 ## Development
 
@@ -539,11 +578,13 @@ on two machines would take.
 
 ### Tests
 
-- `npm test` — the document model, the CSS emitter, the session, the relay and
-  the escaping rules, run against the built bundle rather than the sources.
+- `npm test` — the document model, migration, the operations vocabulary, the CSS
+  emitter, the session, the relay, the open API, the MCP server and the escaping
+  rules, run against the built bundle rather than the sources.
 - `npm run test:e2e` — the editor in a real browser: selection, breakpoints,
   states, component props, re-ordering, publishing, two people collaborating,
-  and what happens when the editor throws.
+  driving the whole thing from a keyboard, and what happens when the editor
+  throws.
 - The same run holds screenshot baselines for the chrome, plus layout invariants
   (nothing covers the toolbar, no fixed label is clipped, the panels leave room
   for the artboards) that hold on any machine. Regenerate the images with
