@@ -13,8 +13,13 @@ npm install github:jsnapoli1/vedit
 ```
 
 Not on npm — the name is taken — so it installs from the repository, which builds
-itself on install. **[INTEGRATING.md](./INTEGRATING.md)** is the step-by-step
-version of everything below, written to be followed or handed to a coding agent.
+itself on install.
+
+- **[INTEGRATING.md](./INTEGRATING.md)** — adding it to a site, step by step.
+  Written to be followed or handed to a coding agent.
+- **[DEVELOPING.md](./DEVELOPING.md)** — working on the library itself:
+  architecture, recipes, invariants, testing.
+- **[ROADMAP.md](./ROADMAP.md)** — what stands between here and 1.0.
 
 ---
 
@@ -390,7 +395,8 @@ The editor is off for visitors. It becomes available when any of these is true:
 - the site is running on `localhost` or a development build
 
 The editor UI is loaded with a dynamic import the first time someone opens it, so
-visitors download the runtime (a few KB) and nothing else.
+visitors download the runtime (~16KB) and nothing else. (That split needs ESM;
+a CJS consumer gets the whole thing, editor included.)
 
 ---
 
