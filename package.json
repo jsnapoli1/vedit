@@ -27,6 +27,7 @@
   "scripts": {
     "build": "tsup && node scripts/use-client.mjs",
     "dev": "tsup --watch",
+    "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
     "test": "npm run test:unit",
