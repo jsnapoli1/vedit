@@ -8,6 +8,7 @@ import {
   useState,
   useSyncExternalStore,
   type ComponentType,
+  type CSSProperties,
   type ReactNode,
 } from 'react'
 import { localStorageAdapter } from './adapters/localStorage'
@@ -23,6 +24,7 @@ import {
 import { documentToCss } from '../runtime/css'
 import { AutoScanner } from '../auto/scanner'
 import { isCanvasChild, publishCanvasBridge } from './canvas'
+import { VeditErrorBoundary, type VeditErrorBoundaryProps } from './ErrorBoundary'
 import { RealtimeSession, type SessionSnapshot } from './session'
 import type { Peer, VeditRealtime } from './realtime'
 
@@ -143,6 +145,12 @@ export interface VeditProviderProps {
   user?: Partial<Peer>
   /** Which room to join. One room can carry several documents; defaults to `vedit`. */
   realtimeRoom?: string
+  /**
+   * Called when any part of the editor throws while rendering. The failing part
+   * is unmounted rather than taking your page with it; this is how you hear
+   * about it. Without it, failures go to `console.error`.
+   */
+  onError?: (error: Error, info: { part: string; componentStack?: string }) => void
   /** Save automatically this many ms after the last change. 0 disables it. */
   autosaveMs?: number
   onSave?: (doc: VeditDocument) => void
@@ -195,6 +203,7 @@ export function VeditProvider({
   user,
   realtimeRoom,
   autosaveMs = 0,
+  onError,
   onSave,
 }: VeditProviderProps) {
   const key = documentKey ?? (typeof window !== 'undefined' ? window.location.pathname : 'default')
@@ -289,13 +298,92 @@ export function VeditProvider({
 
   const value = useMemo<VeditContextValue>(() => ({ store, config }), [store, config])
 
+  // Each piece is guarded separately: a broken panel shouldn't cost you the
+  // override styles, and none of it should cost the host their page.
+  const guard = (part: string, node: ReactNode, fallback?: VeditErrorBoundaryProps['fallback']) => (
+    <VeditErrorBoundary part={part} onError={onError} fallback={fallback}>
+      {node}
+    </VeditErrorBoundary>
+  )
+
   return (
     <VeditContext.Provider value={value}>
-      <OverrideStyles />
+      {guard('override styles', <OverrideStyles />)}
       {children}
-      {auto ? <AutoScanner /> : null}
-      {isEnabled && !framedByEditor ? <EditorHost canvas={canvas} /> : null}
+      {auto ? guard('the DOM scanner', <AutoScanner />) : null}
+      {isEnabled && !framedByEditor
+        ? guard('the editor', <EditorHost canvas={canvas} />, (error, retry) => (
+            <EditorCrashed store={store} error={error} onRetry={retry} />
+          ))
+        : null}
     </VeditContext.Provider>
+  )
+}
+
+/**
+ * Shown in place of the editor after it throws. Deliberately styled inline: the
+ * editor's stylesheet lives in the chunk that just failed.
+ */
+function EditorCrashed({
+  store,
+  error,
+  onRetry,
+}: {
+  store: VeditStore
+  error: Error
+  onRetry: () => void
+}) {
+  const button: CSSProperties = {
+    font: 'inherit',
+    color: '#fff',
+    background: 'rgba(255,255,255,.14)',
+    border: 0,
+    borderRadius: 6,
+    padding: '5px 10px',
+    cursor: 'pointer',
+  }
+
+  return (
+    <div
+      role="alert"
+      style={{
+        position: 'fixed',
+        zIndex: 2147483001,
+        bottom: 16,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        maxWidth: 'min(560px, calc(100vw - 32px))',
+        padding: '10px 14px',
+        borderRadius: 10,
+        background: '#2c2c2c',
+        color: '#e8e8e8',
+        border: '1px solid #b4443a',
+        boxShadow: '0 10px 26px rgba(0,0,0,.4)',
+        font: '12px/1.45 ui-sans-serif, system-ui, sans-serif',
+      }}
+    >
+      <span style={{ flex: 1 }}>
+        The editor hit an error and closed. Your page is fine; unsaved edits are not.
+        <br />
+        <code style={{ opacity: 0.7 }}>{error.message}</code>
+      </span>
+      <button type="button" style={button} onClick={onRetry}>
+        Reopen
+      </button>
+      <button
+        type="button"
+        style={button}
+        onClick={() => {
+          store.setEditing(false)
+          onRetry()
+        }}
+      >
+        Dismiss
+      </button>
+    </div>
   )
 }
 

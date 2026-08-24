@@ -450,6 +450,17 @@ the content, not the position:
 ❌ <EditableText id={`item-${index}`}>
 ```
 
+## When it breaks
+
+Everything this library renders sits behind an error boundary, so a failure
+inside the editor unmounts the editor — not the page it was opened on. The
+visitor sees a short notice with **Reopen** and **Dismiss**; you get the error
+through `onError`:
+
+```tsx
+<VeditProvider onError={(error, { part }) => reportToSentry(error, { part })}>
+```
+
 ## Security
 
 The overrides document is data, and it is rendered into every visitor's page.
@@ -498,6 +509,7 @@ content of your own.
 npm install
 npm run build        # bundle to dist/
 npm test             # build, then run the unit tests
+npm run test:e2e     # browser tests, including screenshot baselines
 npm run typecheck
 
 cd example && npm install && npm run dev   # demo site at localhost:5173
@@ -514,6 +526,22 @@ Open it twice with `?as=Sam` and `?as=Alex` to see presence and comments across
 two tabs. `node example/realtime-server.mjs` starts the SSE relay, and `?rt=sse`
 points the demo at it instead of the cross-tab channel — the same path two people
 on two machines would take.
+
+### Tests
+
+- `npm test` — the document model, the CSS emitter, the session, the relay and
+  the escaping rules, run against the built bundle rather than the sources.
+- `npm run test:e2e` — the editor in a real browser: selection, breakpoints,
+  states, component props, re-ordering, publishing, two people collaborating,
+  and what happens when the editor throws.
+- The same run holds screenshot baselines for the chrome, plus layout invariants
+  (nothing covers the toolbar, no fixed label is clipped, the panels leave room
+  for the artboards) that hold on any machine. Regenerate the images with
+  `npm run test:e2e:update` when a change to the chrome is intended.
+
+The browser is pinned by the `@playwright/test` version and CI runs the suite in
+the matching container, because a pixel comparison is only meaningful when the
+browser build and the fonts are the same on both sides.
 
 ## License
 

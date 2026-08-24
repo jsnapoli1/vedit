@@ -9,6 +9,11 @@ export const EDITOR_CSS = `
   --vedit-text: #e8e8e8;
   --vedit-muted: #9b9b9b;
   --vedit-radius: 6px;
+  --vedit-left-width: 268px;
+  --vedit-right-width: 272px;
+  /* Space the floating panels occupy, for anything that has to avoid them. */
+  --vedit-gutter-left: calc(var(--vedit-left-width) + 24px);
+  --vedit-gutter-right: calc(var(--vedit-right-width) + 24px);
   position: fixed;
   inset: 0;
   z-index: 2147483000;
@@ -33,13 +38,32 @@ export const EDITOR_CSS = `
   flex-direction: column;
   overflow: hidden;
 }
+/*
+ * Centred in the space between the panels rather than on the viewport, so a
+ * toolbar that has grown never slides underneath one of them and takes its last
+ * buttons out of reach. If it still doesn't fit, it scrolls.
+ */
 .vedit-toolbar {
-  top: 12px; left: 50%; transform: translateX(-50%);
-  flex-direction: row; align-items: center; gap: 4px;
+  top: 12px;
+  left: var(--vedit-gutter-left);
+  right: var(--vedit-gutter-right);
+  width: max-content;
+  max-width: calc(100% - var(--vedit-gutter-left) - var(--vedit-gutter-right) - 24px);
+  margin: 0 auto;
+  flex-direction: row; align-items: center; justify-content: center;
+  /* Wraps rather than scrolling: a control you cannot see is a control you
+   * cannot use, and the toolbar grows with the features behind it. */
+  flex-wrap: wrap; gap: 4px;
   padding: 5px 6px; border-radius: 12px;
 }
-.vedit-left { top: 12px; left: 12px; bottom: 12px; width: 268px; }
-.vedit-right { top: 12px; right: 12px; bottom: 12px; width: 272px; }
+.vedit-toolbar > * { flex: none; }
+.vedit-toolbar .vedit-divider { height: 18px; align-self: center; }
+.vedit-left { top: 12px; left: 12px; bottom: 12px; width: var(--vedit-left-width); }
+.vedit-right { top: 12px; right: 12px; bottom: 12px; width: var(--vedit-right-width); }
+.vedit-root[data-collapsed="true"] {
+  --vedit-gutter-left: 0px;
+  --vedit-gutter-right: 0px;
+}
 .vedit-root[data-collapsed="true"] .vedit-left,
 .vedit-root[data-collapsed="true"] .vedit-right { display: none; }
 

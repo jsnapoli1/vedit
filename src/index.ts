@@ -16,6 +16,8 @@ export { EditableText, EditableImage, EditableBox, EditableLink } from './compon
 export { useEditable, labelFromId } from './components/useEditable'
 export type { UseEditableOptions, UseEditableResult } from './components/useEditable'
 
+export { VeditErrorBoundary } from './core/ErrorBoundary'
+export type { VeditErrorBoundaryProps } from './core/ErrorBoundary'
 export { VeditStore } from './core/store'
 export { RealtimeSession, diffDocuments } from './core/session'
 export type { SessionSnapshot, DocumentPatch } from './core/session'
