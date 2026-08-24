@@ -1,4 +1,6 @@
 import type { RealtimeSession } from './session'
+import { inspectDocument } from './migrate'
+import { INSERTED_DEFAULTS, applyOperations, newInsertedId, type VeditOperation } from './operations'
 import {
   deleteStyles,
   mergeStyles,
@@ -277,6 +279,16 @@ export class VeditStore {
     })
   }
 
+  /**
+   * Apply a batch of document operations — the same vocabulary the HTTP API and
+   * the MCP server speak. One undo step for the batch, whatever it contains.
+   */
+  apply(operations: VeditOperation[]): string[] {
+    const { doc, changed } = applyOperations(this.state.doc, operations)
+    this.commit(doc)
+    return changed
+  }
+
   /** Snapshot the document so a drag gesture collapses into one undo step. */
   beginHistory() {
     this.set({ past: [...this.state.past, this.state.doc].slice(-HISTORY_LIMIT), future: [] })
@@ -373,21 +385,10 @@ export class VeditStore {
   }
 
   insert(parentId: string, kind: InsertedNode['kind']): string {
-    const id = `${parentId}::added-${Math.random().toString(36).slice(2, 8)}`
+    const id = newInsertedId(parentId)
     const siblings = this.state.doc.inserted.filter((n) => n.parentId === parentId)
     const node: InsertedNode = { id, parentId, kind, index: siblings.length }
-    const defaults: Record<InsertedNode['kind'], NodeOverride> = {
-      text: { text: 'New text', style: { fontSize: '16px', color: 'inherit' } },
-      image: {
-        src: 'https://placehold.co/600x400/e2e8f0/64748b?text=Image',
-        alt: '',
-        style: { width: '100%', height: 'auto' },
-      },
-      box: { style: { minHeight: '96px', background: '#f1f5f9', borderRadius: '8px' } },
-      button: { text: 'Button', href: '#', style: {} },
-      link: { text: 'Link', href: '#' },
-    }
-    const nodes = { ...this.state.doc.nodes, [id]: defaults[kind] }
+    const nodes = { ...this.state.doc.nodes, [id]: INSERTED_DEFAULTS[kind] }
     this.commit({ ...this.state.doc, nodes, inserted: [...this.state.doc.inserted, node] })
     this.select(id)
     return id
@@ -397,7 +398,7 @@ export class VeditStore {
   duplicateInserted(id: string): string | null {
     const source = this.state.doc.inserted.find((node) => node.id === id)
     if (!source) return null
-    const copyId = `${source.parentId}::added-${Math.random().toString(36).slice(2, 8)}`
+    const copyId = newInsertedId(source.parentId)
     const inserted = this.state.doc.inserted.map((node) =>
       node.parentId === source.parentId && node.index > source.index
         ? { ...node, index: node.index + 1 }
@@ -477,8 +478,11 @@ export class VeditStore {
     this.set({ status: 'loading', error: null })
     try {
       const loaded = await this.adapter.load(this.state.doc.key, { stage })
-      const doc = loaded ? { ...emptyDocument(this.state.doc.key), ...loaded } : this.state.doc
-      this.set({ doc, saved: doc, status: 'ready', past: [], future: [] })
+      if (loaded == null) {
+        this.set({ saved: this.state.doc, status: 'ready', past: [], future: [] })
+        return
+      }
+      this.adopt(loaded)
     } catch (error) {
       this.set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
     }
@@ -486,7 +490,23 @@ export class VeditStore {
 
   /** Replace the working document, e.g. from a server-rendered payload. */
   hydrate(doc: VeditDocument) {
+    this.adopt(doc)
+  }
+
+  /**
+   * Take a document that came from somewhere else — storage, a server render, a
+   * version restore — as the working copy. Everything from outside goes through
+   * `inspectDocument` first: stored data is older than the code reading it, and a
+   * document from a newer build is something the editor has to say out loud rather
+   * than quietly overwrite.
+   */
+  private adopt(incoming: unknown) {
+    const report = inspectDocument(incoming, this.state.doc.key)
+    const doc = report.doc.key === this.state.doc.key ? report.doc : { ...report.doc, key: this.state.doc.key }
     this.set({ doc, saved: doc, status: 'ready', past: [], future: [] })
+    if (report.warnings.length) {
+      this.notify(report.future ? report.warnings[0] : `Repaired the stored document: ${report.warnings.join(' ')}`)
+    }
   }
 
   async save() {
@@ -525,8 +545,9 @@ export class VeditStore {
   /** Load an earlier version into the editor, ready to review and save. */
   async restoreVersion(versionId: string) {
     if (!this.adapter.loadVersion) return
-    const doc = await this.adapter.loadVersion(this.state.doc.key, versionId)
-    if (!doc) throw new Error('That version could not be loaded')
+    const loaded = await this.adapter.loadVersion(this.state.doc.key, versionId)
+    if (!loaded) throw new Error('That version could not be loaded')
+    const doc = inspectDocument(loaded, this.state.doc.key).doc
     this.set({
       doc: { ...doc, key: this.state.doc.key },
       past: [...this.state.past, this.state.doc].slice(-HISTORY_LIMIT),

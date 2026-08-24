@@ -18,7 +18,14 @@ export default defineConfig([
   },
   {
     ...shared,
-    // Deliberately without the directive: this half runs on the server.
-    entry: { server: 'src/server.ts' },
+    // Its own build rather than another entry alongside `index`: sharing a build
+    // would split the two into common chunks, and the client directive has to be
+    // the first statement of a real entry file.
+    entry: { internal: 'src/internal.ts' },
+  },
+  {
+    ...shared,
+    // Deliberately without the directive: these run on the server.
+    entry: { server: 'src/server.ts', api: 'src/api.ts', mcp: 'src/mcp.ts' },
   },
 ])

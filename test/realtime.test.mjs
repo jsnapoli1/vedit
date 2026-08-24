@@ -1,14 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  VeditStore,
-  RealtimeSession,
-  memoryAdapter,
-  diffDocuments,
-  emptyDocument,
-  colorForPeer,
-  initialsOf,
-} from '../dist/index.js'
+import { VeditStore, memoryAdapter, emptyDocument } from '../dist/index.js'
+import { RealtimeSession, diffDocuments, colorForPeer, initialsOf } from '../dist/internal.js'
 
 /** An in-process transport: every connection in a room hears the others. */
 function loopback() {

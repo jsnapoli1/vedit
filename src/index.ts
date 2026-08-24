@@ -1,3 +1,13 @@
+/**
+ * The supported API.
+ *
+ * What is here is what a site is meant to use, and what a version number is a
+ * promise about. Helpers the library uses on itself — the layer matrix, the DOM
+ * scanner, the sanitizers, the a11y checks — live in `vedit/internal`, where they
+ * can change in a minor release. If you find yourself needing one of those, that's
+ * worth an issue: it usually means something belongs here.
+ */
+
 export { VeditProvider } from './core/context'
 export type { VeditProviderProps, VeditConfig, VeditContextValue } from './core/context'
 export {
@@ -19,12 +29,14 @@ export type { UseEditableOptions, UseEditableResult } from './components/useEdit
 export { VeditErrorBoundary } from './core/ErrorBoundary'
 export type { VeditErrorBoundaryProps } from './core/ErrorBoundary'
 export { VeditStore } from './core/store'
-export { RealtimeSession, diffDocuments } from './core/session'
-export type { SessionSnapshot, DocumentPatch } from './core/session'
+
+export { localStorageAdapter } from './core/adapters/localStorage'
+export { httpAdapter } from './core/adapters/http'
+export type { HttpAdapterOptions } from './core/adapters/http'
+export { memoryAdapter } from './core/adapters/memory'
 export { broadcastChannelRealtime } from './core/adapters/broadcast'
 export { sseRealtime } from './core/adapters/sse'
 export type { SseRealtimeOptions } from './core/adapters/sse'
-export { anonymousPeer, colorForPeer, initialsOf } from './core/realtime'
 export type {
   Comment,
   CommentReply,
@@ -33,51 +45,41 @@ export type {
   RealtimeMessage,
   VeditRealtime,
 } from './core/realtime'
-export { localStorageAdapter } from './core/adapters/localStorage'
-export { httpAdapter } from './core/adapters/http'
-export type { HttpAdapterOptions } from './core/adapters/http'
-export { memoryAdapter } from './core/adapters/memory'
 
+/** Reading and changing a document without the editor — see also `vedit/api`. */
+export { applyOperations, describeDocument, OperationError } from './core/operations'
+export type {
+  ContentPatch,
+  DocumentSummary,
+  OperationResult,
+  VeditOperation,
+} from './core/operations'
+export { migrateDocument, inspectDocument } from './core/migrate'
+export type { MigrationReport } from './core/migrate'
 export { documentToCss, tokenVariable, tokenReference } from './runtime/css'
-export { parseTransform, serializeTransform, withTransform } from './runtime/transform'
-export type { TransformParts } from './runtime/transform'
-export { parseGradient, serializeGradient, DEFAULT_GRADIENT } from './runtime/gradient'
-export type { Gradient, GradientStop } from './runtime/gradient'
-export {
-  readLayer,
-  readStyles,
-  readStyleValue,
-  mergeStyles,
-  replaceStyles,
-  deleteStyles,
-  pruneOverride,
-} from './core/layers'
-export { sanitizeHtml, safeUrl } from './runtime/sanitize'
-export { scanDom } from './auto/scanner'
-export { auditPage, contrastRatio, effectiveBackground, parseColor, luminance } from './editor/a11y'
-export type { A11yIssue } from './editor/a11y'
-export { computeAutoId } from './auto/ids'
 
 export {
   emptyDocument,
   BREAKPOINT_ORDER,
   DEFAULT_BREAKPOINTS,
+  DOCUMENT_VERSION,
   STYLE_STATES,
 } from './core/types'
 export type {
   Breakpoint,
   BreakpointWidths,
   DesignToken,
+  DocumentStage,
   EditableField,
   EditableFieldType,
-  StyleLayer,
-  StyleState,
   EditorTool,
   InsertedNode,
   NodeKind,
   NodeOverride,
   RegisteredNode,
+  StyleLayer,
   StyleMap,
+  StyleState,
   VeditAdapter,
   VeditAsset,
   VeditDocument,

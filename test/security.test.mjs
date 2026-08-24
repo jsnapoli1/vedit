@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { documentToCss, emptyDocument, safeUrl, sanitizeHtml } from '../dist/index.js'
+import { documentToCss, emptyDocument } from '../dist/index.js'
+import { safeUrl, sanitizeHtml } from '../dist/internal.js'
 
 /**
  * An overrides document is data. It reaches every visitor's page, so it is only

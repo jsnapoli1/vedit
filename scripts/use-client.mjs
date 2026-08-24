@@ -6,7 +6,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 
 const DIRECTIVE = "'use client';\n"
-const entries = ['dist/index.js', 'dist/index.cjs']
+const entries = ['dist/index.js', 'dist/index.cjs', 'dist/internal.js', 'dist/internal.cjs']
 
 for (const entry of entries) {
   const source = await readFile(entry, 'utf8')

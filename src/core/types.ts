@@ -105,9 +105,16 @@ export interface InsertedNode {
   index: number
 }
 
+/**
+ * The document format this build writes. See `core/migrate.ts` for what moving
+ * it means and when it should move.
+ */
+export const DOCUMENT_VERSION = 1
+
 /** The saved payload: everything the editor knows about one site. */
 export interface VeditDocument {
-  version: 1
+  /** Format version. Read on load by `migrateDocument`, never assumed. */
+  version: number
   /** Which site/page these overrides belong to. */
   key: string
   updatedAt: string
@@ -119,7 +126,7 @@ export interface VeditDocument {
 
 export function emptyDocument(key: string): VeditDocument {
   return {
-    version: 1,
+    version: DOCUMENT_VERSION,
     key,
     updatedAt: new Date(0).toISOString(),
     nodes: {},

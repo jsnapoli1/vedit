@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeAutoId } from '../dist/index.js'
+import { computeAutoId } from '../dist/internal.js'
 
 /** Enough of an element to satisfy the id walker, without pulling in a DOM. */
 function el(tag, options = {}) {

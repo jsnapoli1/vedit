@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { contrastRatio, parseColor, luminance } from '../dist/index.js'
+import { contrastRatio, parseColor, luminance } from '../dist/internal.js'
 
 test('parses rgb and rgba, with alpha in either notation', () => {
   assert.deepEqual(parseColor('rgb(255, 0, 0)'), [255, 0, 0, 1])

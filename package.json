@@ -18,10 +18,27 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "require": "./dist/server.cjs"
-    }
+    },
+    "./api": {
+      "types": "./dist/api.d.ts",
+      "import": "./dist/api.js",
+      "require": "./dist/api.cjs"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js",
+      "require": "./dist/mcp.cjs"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "import": "./dist/internal.js",
+      "require": "./dist/internal.cjs"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "bin",
     "README.md"
   ],
   "scripts": {
@@ -57,5 +74,8 @@
     "react-dom": "^18.3.1",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3"
+  },
+  "bin": {
+    "vedit-mcp": "./bin/vedit-mcp.mjs"
   }
 }

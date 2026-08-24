@@ -6,7 +6,7 @@ import {
   withTransform,
   parseGradient,
   serializeGradient,
-} from '../dist/index.js'
+} from '../dist/internal.js'
 
 test('a transform round-trips through its parts', () => {
   const parts = parseTransform('translate(10px, -4px) rotate(45deg) scale(1.5)')

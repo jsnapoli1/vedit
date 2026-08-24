@@ -4,10 +4,20 @@ import {
   type VeditDocument,
   type VeditVersion,
 } from './core/types'
+import { migrateDocument } from './core/migrate'
 import { documentToCss } from './runtime/css'
 import { DEFAULT_BREAKPOINTS, type BreakpointWidths } from './core/types'
 
 export { createRealtimeHandler } from './realtime-server'
+export { migrateDocument, inspectDocument, DOCUMENT_VERSION } from './core/migrate'
+export { applyOperations, describeDocument, OperationError } from './core/operations'
+export type {
+  ContentPatch,
+  DocumentSummary,
+  OperationResult,
+  VeditOperation,
+} from './core/operations'
+export type { MigrationReport } from './core/migrate'
 export type { RealtimeHandlerOptions } from './realtime-server'
 export { documentToCss, emptyDocument }
 export type { DocumentStage, VeditDocument, VeditVersion }
@@ -20,6 +30,8 @@ export type { DocumentStage, VeditDocument, VeditVersion }
 export interface VeditServerStore {
   read(key: string, stage?: DocumentStage): Promise<VeditDocument | null>
   write(doc: VeditDocument, stage?: DocumentStage): Promise<void>
+  /** Optional: which documents exist. Switches on `GET /v1/documents` in the API. */
+  list?(): Promise<Array<{ key: string; updatedAt?: string }>>
   /** Optional history. Implement both to switch on the editor's History panel. */
   listVersions?(key: string): Promise<VeditVersion[]>
   readVersion?(key: string, versionId: string): Promise<VeditDocument | null>
@@ -68,6 +80,29 @@ export function fileStore(directory: string): VeditServerStore {
       // Every write is a point you can come back to.
       const stamp = doc.updatedAt.replace(/[:.]/g, '-')
       await writeJson(join(await versionDir(doc.key), `${stage}-${stamp}.json`), doc)
+    },
+
+    async list() {
+      const { readdir, readFile } = await import('node:fs/promises')
+      const { join } = await import('node:path')
+      let names: string[] = []
+      try {
+        names = await readdir(directory)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      const items: Array<{ key: string; updatedAt?: string }> = []
+      for (const name of names) {
+        // Drafts are listed under the same key as what they are a draft of.
+        if (!name.endsWith('.json') || name.endsWith('.draft.json')) continue
+        try {
+          const doc = JSON.parse(await readFile(join(directory, name), 'utf8')) as VeditDocument
+          if (typeof doc?.key === 'string') items.push({ key: doc.key, updatedAt: doc.updatedAt })
+        } catch {
+          // A file that isn't a document simply isn't one.
+        }
+      }
+      return items.sort((a, b) => a.key.localeCompare(b.key))
     },
 
     async listVersions(key) {
@@ -145,7 +180,7 @@ export function createVeditHandler({ store, authorize }: HandlerOptions) {
       }
       const stage = url.searchParams.get('stage') === 'draft' ? 'draft' : 'published'
       const doc = await store.read(key, stage)
-      return json(doc ?? emptyDocument(key))
+      return json(doc ? migrateDocument(doc, key) : emptyDocument(key))
     }
 
     if (request.method === 'PUT' || request.method === 'POST') {
@@ -156,7 +191,9 @@ export function createVeditHandler({ store, authorize }: HandlerOptions) {
       if (!body || typeof body !== 'object' || typeof body.key !== 'string' || !body.nodes) {
         return json({ error: 'Malformed document' }, 400)
       }
-      const doc = { ...emptyDocument(body.key), ...body }
+      // Whatever the client sent is stored data now: bring it to this build's
+      // shape before it reaches disk, rather than on every later read.
+      const doc = migrateDocument(body, body.key)
       const publishing = url.searchParams.get('action') === 'publish'
       await store.write(doc, publishing ? 'published' : 'draft')
       return json({ ok: true, stage: publishing ? 'published' : 'draft' })
