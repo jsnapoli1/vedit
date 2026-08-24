@@ -9,8 +9,12 @@ spacing per breakpoint. Changes are saved as a small JSON document of
 **overrides** — your components stay exactly as you wrote them.
 
 ```bash
-npm install vedit
+npm install github:jsnapoli1/vedit
 ```
+
+Not on npm — the name is taken — so it installs from the repository, which builds
+itself on install. **[INTEGRATING.md](./INTEGRATING.md)** is the step-by-step
+version of everything below, written to be followed or handed to a coding agent.
 
 ---
 
