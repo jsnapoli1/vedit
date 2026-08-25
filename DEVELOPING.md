@@ -368,7 +368,7 @@ git push --follow-tags
 `prepare` builds on install, so a git dependency needs no publish step:
 
 ```bash
-npm install github:jsnapoli1/vedit#v0.3.0
+npm install github:jsnapoli1/vedit#v0.4.0
 ```
 
 Every release gets a [CHANGELOG.md](./CHANGELOG.md) entry, written for someone

@@ -308,7 +308,7 @@ realtime={sseRealtime({ endpoint: '/api/vedit/realtime' })}
 // app/api/vedit/realtime/route.ts
 import { createRealtimeHandler } from 'vedit/server'
 
-const relay = createRealtimeHandler({ authorize: (request) => isEditor(request) })
+const relay = createRealtimeHandler({ authorize: (request) => isEditor(request) }) // required
 export { relay as GET, relay as POST }
 ```
 
@@ -508,7 +508,7 @@ a CJS consumer gets the whole thing, editor included.)
 | | |
 | --- | --- |
 | `vedit` | The supported API — everything above |
-| `vedit/server` | `createVeditHandler()`, `createUnsafeLocalHandler()`, `createRealtimeHandler()`, `fileStore()`, `veditStyleTag()` |
+| `vedit/server` | `createVeditHandler()`, `createRealtimeHandler()`, their `createUnsafeLocal…` counterparts, `fileStore()`, `veditStyleTag()` |
 | `vedit/api` | `createVeditApi()`, `remoteStore()` — the open HTTP API. See [API.md](./API.md) |
 | `vedit/mcp` | `createVeditMcpServer()`, `serveStdio()`, `createMcpHandler()`, `notifyEditors()` |
 | `vedit/internal` | The library's own workings — the layer matrix, the scanner, the sanitizers, `auditPage`, the transform and gradient parsers. **Not supported**: these can change in a minor release |
@@ -588,9 +588,10 @@ Treat it as only as trustworthy as whoever can write to your store:
   save to. Where an open endpoint really is what you want — a laptop, a test, a
   preview nothing else can reach — `createUnsafeLocalHandler({ store })` is the
   same handler with the check opted out of, under a name you have to type.
-  `createRealtimeHandler` takes the same callback, still optionally: it relays
-  messages between peers rather than writing to your store, so pass one wherever
-  the relay is reachable by more than your own editors.
+- **Authorize the relay.** `createRealtimeHandler` requires `authorize` on the
+  same terms, and for the same reason: an open relay lets anyone who finds it
+  read every edit in progress and post messages your editors will act on.
+  `createUnsafeLocalRealtimeHandler()` is the opted-out version.
 - Style values and token names are stripped of anything that could end a rule or
   leave the `<style>` element; property names that aren't property names are
   dropped.

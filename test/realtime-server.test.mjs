@@ -1,6 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createRealtimeHandler } from '../dist/server.js'
+import {
+  createRealtimeHandler,
+  createUnsafeLocalRealtimeHandler,
+} from '../dist/server.js'
 
 /** Read the next `data:` frame off an SSE stream. */
 async function nextMessage(response, timeoutMs = 1000) {
@@ -28,7 +31,7 @@ async function nextMessage(response, timeoutMs = 1000) {
 }
 
 test('a published message reaches the other subscriber', async () => {
-  const handle = createRealtimeHandler()
+  const handle = createUnsafeLocalRealtimeHandler()
   const listener = await handle(new Request('https://s.test/rt?room=home&peer=alex'))
   assert.equal(listener.headers.get('content-type'), 'text/event-stream')
 
@@ -46,7 +49,7 @@ test('a published message reaches the other subscriber', async () => {
 })
 
 test('the sender does not hear their own message', async () => {
-  const handle = createRealtimeHandler({ heartbeatMs: 60_000 })
+  const handle = createUnsafeLocalRealtimeHandler({ heartbeatMs: 60_000 })
   const listener = await handle(new Request('https://s.test/rt?room=home&peer=sam'))
   await handle(
     new Request('https://s.test/rt?room=home&peer=sam', {
@@ -58,7 +61,7 @@ test('the sender does not hear their own message', async () => {
 })
 
 test('rooms are isolated from each other', async () => {
-  const handle = createRealtimeHandler({ heartbeatMs: 60_000 })
+  const handle = createUnsafeLocalRealtimeHandler({ heartbeatMs: 60_000 })
   const listener = await handle(new Request('https://s.test/rt?room=marketing&peer=alex'))
   await handle(
     new Request('https://s.test/rt?room=docs&peer=sam', {
@@ -70,7 +73,7 @@ test('rooms are isolated from each other', async () => {
 })
 
 test('malformed messages are rejected rather than relayed', async () => {
-  const handle = createRealtimeHandler()
+  const handle = createUnsafeLocalRealtimeHandler()
   const response = await handle(
     new Request('https://s.test/rt?room=home&peer=sam', { method: 'POST', body: 'not json' }),
   )
@@ -84,4 +87,32 @@ test('authorize gates both directions', async () => {
     (await handle(new Request('https://s.test/rt?room=home', { method: 'POST', body: '{}' }))).status,
     403,
   )
+})
+
+test('a relay without authorize is refused at construction', () => {
+  assert.throws(() => createRealtimeHandler(), /authorize/)
+  assert.throws(() => createRealtimeHandler({}), /authorize/)
+  assert.throws(() => createRealtimeHandler({ heartbeatMs: 60_000 }), /authorize/)
+  // The escape hatch exists, but you have to name it.
+  assert.doesNotThrow(() => createUnsafeLocalRealtimeHandler())
+})
+
+test('an authorized relay passes messages through', async () => {
+  const seen = []
+  const handle = createRealtimeHandler({
+    heartbeatMs: 60_000,
+    authorize: (request) => {
+      seen.push(new URL(request.url).searchParams.get('peer'))
+      return true
+    },
+  })
+  const listener = await handle(new Request('https://s.test/rt?room=home&peer=alex'))
+  await handle(
+    new Request('https://s.test/rt?room=home&peer=sam', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'bye', peerId: 'sam' }),
+    }),
+  )
+  assert.equal((await nextMessage(listener)).type, 'bye')
+  assert.deepEqual(seen, ['alex', 'sam'])
 })

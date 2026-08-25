@@ -256,7 +256,8 @@ For people on different machines, swap the transport for
 ```ts
 // app/api/vedit/realtime/route.ts
 import { createRealtimeHandler } from 'vedit/server'
-const relay = createRealtimeHandler({ authorize: (request) => isEditor(request) })
+const relay = createRealtimeHandler({ authorize: (request) => isEditor(request) }) // required
+// Locally: createUnsafeLocalRealtimeHandler()
 export { relay as GET, relay as POST }
 ```
 

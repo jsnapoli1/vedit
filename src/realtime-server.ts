@@ -1,4 +1,5 @@
 import type { RealtimeMessage } from './core/realtime'
+import { isProductionLike } from './core/env'
 
 interface Subscriber {
   peerId: string
@@ -7,8 +8,14 @@ interface Subscriber {
 }
 
 export interface RealtimeHandlerOptions {
-  /** Reject a connection or a message — the same place you'd check a session cookie. */
-  authorize?: (request: Request) => boolean | Promise<boolean>
+  /**
+   * Reject a connection or a message — the same place you'd check a session
+   * cookie. Required: an open relay lets anyone who finds it read every edit in
+   * progress and push messages the editors will act on. Where an open relay is
+   * genuinely what you want, say so by name with
+   * `createUnsafeLocalRealtimeHandler`.
+   */
+  authorize: (request: Request) => boolean | Promise<boolean>
   /** How often to send a keep-alive comment, in ms. Proxies tend to cut idle streams. */
   heartbeatMs?: number
 }
@@ -19,9 +26,39 @@ export interface RealtimeHandlerOptions {
  * collaboration — plenty for a team, and the point at which you'd swap the
  * fan-out for Redis, a Durable Object or your message bus of choice.
  */
-export function createRealtimeHandler(options: RealtimeHandlerOptions = {}) {
+export function createRealtimeHandler(options: RealtimeHandlerOptions) {
+  // The types say this already, but a JavaScript caller never hears them, and an
+  // open relay fails silently: it works perfectly, for everyone.
+  if (typeof options?.authorize !== 'function') {
+    throw new TypeError(
+      'createRealtimeHandler needs an `authorize` callback: without one anyone can join a room and ' +
+        'post to it. Use createUnsafeLocalRealtimeHandler() if an open relay is genuinely what you want.',
+    )
+  }
+  return relay(options.authorize, options.heartbeatMs)
+}
+
+/**
+ * `createRealtimeHandler` with the authorization opted out of — anyone may join
+ * a room, read what is being edited in it, and post to it. For a laptop, a test,
+ * or a relay nothing else can reach. The name is the point.
+ */
+export function createUnsafeLocalRealtimeHandler(options: { heartbeatMs?: number } = {}) {
+  if (isProductionLike()) {
+    console.warn(
+      '[vedit] createUnsafeLocalRealtimeHandler is relaying edits for anyone in a production build. ' +
+        'Use createRealtimeHandler({ authorize }) instead.',
+    )
+  }
+  return relay(() => true, options.heartbeatMs)
+}
+
+function relay(
+  authorize: (request: Request) => boolean | Promise<boolean>,
+  heartbeatMsOption?: number,
+) {
   const rooms = new Map<string, Set<Subscriber>>()
-  const heartbeatMs = options.heartbeatMs ?? 25_000
+  const heartbeatMs = heartbeatMsOption ?? 25_000
 
   const publish = (room: string, message: string, exceptPeer?: string) => {
     for (const subscriber of rooms.get(room) ?? []) {
@@ -31,7 +68,7 @@ export function createRealtimeHandler(options: RealtimeHandlerOptions = {}) {
   }
 
   return async function handle(request: Request): Promise<Response> {
-    if (options.authorize && !(await options.authorize(request))) {
+    if (!(await authorize(request))) {
       return new Response('Not allowed', { status: 403 })
     }
 

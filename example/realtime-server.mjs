@@ -8,9 +8,11 @@
  */
 import { createServer } from 'node:http'
 import { Readable } from 'node:stream'
-import { createRealtimeHandler } from '../dist/server.js'
+import { createUnsafeLocalRealtimeHandler } from '../dist/server.js'
 
-const handle = createRealtimeHandler()
+// The example relay is open on purpose: it is a local demo. A deployed one takes
+// `createRealtimeHandler({ authorize })` instead.
+const handle = createUnsafeLocalRealtimeHandler()
 const port = Number(process.env.PORT ?? 5179)
 
 createServer(async (nodeRequest, nodeResponse) => {

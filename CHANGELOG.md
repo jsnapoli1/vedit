@@ -9,7 +9,10 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
-## Unreleased
+## 0.4.0 — 2026-08-25
+
+One change, and it is a breaking one: the two server constructors no longer let
+you leave the authorization off.
 
 ### Breaking
 
@@ -35,11 +38,24 @@ when a saved document has to be rewritten to keep working.
 
   `createUnsafeLocalHandler` is the same handler with the check opted out of, and
   warns on `console` when it finds itself in a `NODE_ENV=production` build.
-  `createVeditApi` already required `authorize`; the two now agree.
+  `createVeditApi` already required `authorize`; the three now agree.
 
-  `createRealtimeHandler` is unchanged — its `authorize` stays optional. It relays
-  messages between peers rather than writing to your store, so an unauthorized
-  relay is a different, smaller problem than an unauthorized write.
+- **`authorize` is required on `createRealtimeHandler`,** on the same terms and
+  for the same reason. An open relay is a smaller problem than an open write, but
+  it is still one: anyone who finds it can join a room, read every edit in
+  progress, and post messages the editors will act on. The options object is no
+  longer optional either, so `createRealtimeHandler()` throws where it used to
+  return a working relay.
+
+  ```ts
+  createRealtimeHandler({ authorize: (request) => isEditor(request) })
+
+  import { createUnsafeLocalRealtimeHandler } from 'vedit/server'
+  const relay = createUnsafeLocalRealtimeHandler()  // anyone may join and post
+  ```
+
+  `heartbeatMs` moves to the unsafe variant unchanged:
+  `createUnsafeLocalRealtimeHandler({ heartbeatMs: 60_000 })`.
 
 ---
 

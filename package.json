@@ -1,6 +1,6 @@
 {
   "name": "vedit",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A Figma-like visual editor you drop into any React site. Click any element, edit text, images, spacing, typography and layout \u2014 then save the overrides back to your own backend.",
   "license": "MIT",
   "type": "module",

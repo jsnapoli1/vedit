@@ -5,11 +5,12 @@ import {
   type VeditVersion,
 } from './core/types'
 import { migrateDocument } from './core/migrate'
+import { isProductionLike } from './core/env'
 import type { ComponentSummary } from './core/registry'
 import { documentToCss } from './runtime/css'
 import { DEFAULT_BREAKPOINTS, type BreakpointWidths } from './core/types'
 
-export { createRealtimeHandler } from './realtime-server'
+export { createRealtimeHandler, createUnsafeLocalRealtimeHandler } from './realtime-server'
 export { migrateDocument, inspectDocument, DOCUMENT_VERSION } from './core/migrate'
 export { componentManifest } from './core/registry'
 export type { ComponentSummary } from './core/registry'
@@ -199,12 +200,6 @@ export function createUnsafeLocalHandler({ store }: { store: VeditServerStore })
     )
   }
   return handler(store, () => true)
-}
-
-/** Reads as production to Node and most bundlers; simply unknown elsewhere. */
-function isProductionLike(): boolean {
-  const runtime = globalThis as { process?: { env?: Record<string, string | undefined> } }
-  return runtime.process?.env?.NODE_ENV === 'production'
 }
 
 function handler(
