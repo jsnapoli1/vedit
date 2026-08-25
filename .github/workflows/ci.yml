@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # `npm test` builds first: the tests import the bundle, so they check what
+      # actually ships rather than the sources it came from.
+      - run: npm test
+      - name: Check the package installs and its types resolve
+        run: |
+          npm pack --silent
+          mkdir -p /tmp/consumer && cd /tmp/consumer
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund "$GITHUB_WORKSPACE"/vedit-*.tgz react@18 react-dom@18 typescript@5 @types/react@18
+          printf "import 'vedit'\nimport 'vedit/server'\nimport 'vedit/api'\nimport 'vedit/mcp'\nimport 'vedit/internal'\n" > check.ts
+          npx tsc --noEmit --module esnext --moduleResolution bundler --target es2022 --jsx react-jsx --strict --skipLibCheck check.ts
+      - name: Check the MCP command answers on stdio
+        run: |
+          cd /tmp/consumer
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+            | ./node_modules/.bin/vedit-mcp --dir ./content \
+            | grep -q '"describe_document"'
+
+  e2e:
+    runs-on: ubuntu-latest
+    # Pinned to the same version as the `@playwright/test` dependency, so every
+    # run uses one browser build. Screenshot baselines are also sensitive to font
+    # rasterisation: if a clean checkout reports diffs here, regenerate them once
+    # inside this image with `npm run test:e2e:update` and commit the result.
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.0-noble
+      options: --user 1001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm ci --prefix example
+      - run: npm run build
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7
