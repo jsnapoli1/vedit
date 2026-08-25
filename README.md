@@ -400,8 +400,8 @@ Next.js route handlers, Remix, Hono, Workers, Deno or Bun:
 import { createVeditHandler, fileStore } from 'vedit/server'
 
 const handle = createVeditHandler({
-  store: fileStore('./content'),             // or your own read/write pair
-  authorize: (request) => isEditor(request),  // required in production
+  store: fileStore('./content'),            // or your own read/write pair
+  authorize: (request) => isEditor(request), // required — see Security
 })
 
 export { handle as GET, handle as PUT, handle as POST }
@@ -508,7 +508,7 @@ a CJS consumer gets the whole thing, editor included.)
 | | |
 | --- | --- |
 | `vedit` | The supported API — everything above |
-| `vedit/server` | `createVeditHandler()`, `createRealtimeHandler()`, `fileStore()`, `veditStyleTag()` |
+| `vedit/server` | `createVeditHandler()`, `createUnsafeLocalHandler()`, `createRealtimeHandler()`, `fileStore()`, `veditStyleTag()` |
 | `vedit/api` | `createVeditApi()`, `remoteStore()` — the open HTTP API. See [API.md](./API.md) |
 | `vedit/mcp` | `createVeditMcpServer()`, `serveStdio()`, `createMcpHandler()`, `notifyEditors()` |
 | `vedit/internal` | The library's own workings — the layer matrix, the scanner, the sanitizers, `auditPage`, the transform and gradient parsers. **Not supported**: these can change in a minor release |
@@ -583,8 +583,14 @@ through `onError`:
 The overrides document is data, and it is rendered into every visitor's page.
 Treat it as only as trustworthy as whoever can write to your store:
 
-- **Authorize writes.** `createVeditHandler` accepts an `authorize` callback and
-  has no opinion without one. So does `createRealtimeHandler`.
+- **Authorize writes.** `authorize` is required on `createVeditHandler`, and
+  leaving it off is a `TypeError` at startup rather than an endpoint anyone can
+  save to. Where an open endpoint really is what you want — a laptop, a test, a
+  preview nothing else can reach — `createUnsafeLocalHandler({ store })` is the
+  same handler with the check opted out of, under a name you have to type.
+  `createRealtimeHandler` takes the same callback, still optionally: it relays
+  messages between peers rather than writing to your store, so pass one wherever
+  the relay is reachable by more than your own editors.
 - Style values and token names are stripped of anything that could end a rule or
   leave the `<style>` element; property names that aren't property names are
   dropped.

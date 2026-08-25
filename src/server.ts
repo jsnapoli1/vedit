@@ -155,10 +155,12 @@ function restoreTimestamp(stamp: string): string {
 export interface HandlerOptions {
   store: VeditServerStore
   /**
-   * Decide whether a request may write. Without this, every request can save —
-   * fine for local development, never for production.
+   * Decide whether a request may write. Required, and deliberately so: a handler
+   * without one saves whatever any request sends it. Where that really is what
+   * you want — a laptop, a preview no one else can reach — say it out loud with
+   * `createUnsafeLocalHandler` rather than by leaving a field off.
    */
-  authorize?: (request: Request) => boolean | Promise<boolean>
+  authorize: (request: Request) => boolean | Promise<boolean>
 }
 
 /**
@@ -173,6 +175,42 @@ export interface HandlerOptions {
  * - `POST ?action=publish`      — make the draft live
  */
 export function createVeditHandler({ store, authorize }: HandlerOptions) {
+  // The types say this already, but a JavaScript caller never hears them, and the
+  // failure is silent: an endpoint that saves for anyone who finds it.
+  if (typeof authorize !== 'function') {
+    throw new TypeError(
+      'createVeditHandler needs an `authorize` callback: without one every request could write. ' +
+        'Use createUnsafeLocalHandler({ store }) if an open endpoint is genuinely what you want.',
+    )
+  }
+  return handler(store, authorize)
+}
+
+/**
+ * `createVeditHandler` with the authorization opted out of — every request may
+ * write. For a laptop, a test, or a preview nothing else can reach. The name is
+ * the point: on a deployed site this is the whole vulnerability.
+ */
+export function createUnsafeLocalHandler({ store }: { store: VeditServerStore }) {
+  if (isProductionLike()) {
+    console.warn(
+      '[vedit] createUnsafeLocalHandler is serving writes to anyone in a production build. ' +
+        'Use createVeditHandler({ store, authorize }) instead.',
+    )
+  }
+  return handler(store, () => true)
+}
+
+/** Reads as production to Node and most bundlers; simply unknown elsewhere. */
+function isProductionLike(): boolean {
+  const runtime = globalThis as { process?: { env?: Record<string, string | undefined> } }
+  return runtime.process?.env?.NODE_ENV === 'production'
+}
+
+function handler(
+  store: VeditServerStore,
+  authorize: (request: Request) => boolean | Promise<boolean>,
+) {
   return async function handle(request: Request): Promise<Response> {
     const url = new URL(request.url)
     const key = url.searchParams.get('key') ?? 'default'
@@ -193,7 +231,7 @@ export function createVeditHandler({ store, authorize }: HandlerOptions) {
     }
 
     if (request.method === 'PUT' || request.method === 'POST') {
-      if (authorize && !(await authorize(request))) {
+      if (!(await authorize(request))) {
         return json({ error: 'Not allowed' }, 403)
       }
       const body = (await request.json()) as VeditDocument

@@ -179,9 +179,13 @@ import { VeditProvider, httpAdapter } from 'vedit'
 import { createVeditHandler, fileStore } from 'vedit/server'
 
 const handle = createVeditHandler({
-  store: fileStore('./content'),                 // swap for your database
-  authorize: async (request) => isEditor(request), // REQUIRED in production
+  store: fileStore('./content'),                   // swap for your database
+  authorize: async (request) => isEditor(request), // required — omitting it throws
 })
+
+// Locally, where you want the endpoint open, say so on purpose:
+//   import { createUnsafeLocalHandler } from 'vedit/server'
+//   const handle = createUnsafeLocalHandler({ store: fileStore('./content') })
 
 export { handle as GET, handle as PUT, handle as POST }
 ```

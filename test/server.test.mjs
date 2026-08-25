@@ -1,6 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createVeditHandler, emptyDocument, veditStyleTag } from '../dist/server.js'
+import {
+  createUnsafeLocalHandler,
+  createVeditHandler,
+  emptyDocument,
+  veditStyleTag,
+} from '../dist/server.js'
 
 function fakeStore() {
   const documents = new Map()
@@ -16,7 +21,7 @@ function fakeStore() {
 }
 
 test('GET returns an empty document for an unknown key', async () => {
-  const handle = createVeditHandler({ store: fakeStore() })
+  const handle = createUnsafeLocalHandler({ store: fakeStore() })
   const response = await handle(new Request('https://site.test/api/vedit?key=home'))
   const body = await response.json()
   assert.equal(response.status, 200)
@@ -26,7 +31,7 @@ test('GET returns an empty document for an unknown key', async () => {
 
 test('PUT stores the document and GET reads it back', async () => {
   const store = fakeStore()
-  const handle = createVeditHandler({ store })
+  const handle = createUnsafeLocalHandler({ store })
   const doc = { ...emptyDocument('home'), nodes: { a: { text: 'hello' } } }
   const put = await handle(
     new Request('https://site.test/api/vedit', { method: 'PUT', body: JSON.stringify(doc) }),
@@ -50,7 +55,7 @@ test('writes are refused when authorize says no', async () => {
 })
 
 test('malformed payloads are rejected', async () => {
-  const handle = createVeditHandler({ store: fakeStore() })
+  const handle = createUnsafeLocalHandler({ store: fakeStore() })
   const response = await handle(
     new Request('https://site.test/api/vedit', { method: 'PUT', body: JSON.stringify({ nope: true }) }),
   )
@@ -73,7 +78,7 @@ test('drafts and published documents are kept apart', async () => {
       documents.set(`${doc.key}:${stage}`, doc)
     },
   }
-  const handle = createVeditHandler({ store })
+  const handle = createUnsafeLocalHandler({ store })
   const draft = { ...emptyDocument('home'), nodes: { a: { text: 'draft copy' } } }
 
   await handle(new Request('https://s.test/api?key=home', { method: 'PUT', body: JSON.stringify(draft) }))
@@ -99,7 +104,7 @@ test('version listing and reading route through the store', async () => {
       return id === 'v1' ? { ...emptyDocument(key), nodes: { a: { text: 'old' } } } : null
     },
   }
-  const handle = createVeditHandler({ store })
+  const handle = createUnsafeLocalHandler({ store })
 
   const list = await (await handle(new Request('https://s.test/api?key=home&versions=1'))).json()
   assert.equal(list.items[0].id, 'v1')
@@ -122,4 +127,39 @@ test('publishing is refused when authorize says no', async () => {
   )
   assert.equal(response.status, 403)
   assert.equal(written, 0)
+})
+
+test('a handler without authorize is refused at construction', () => {
+  const store = fakeStore()
+  assert.throws(() => createVeditHandler({ store }), /authorize/)
+  assert.throws(() => createVeditHandler({ store, authorize: true }), /authorize/)
+  // The escape hatch exists, but you have to name it.
+  assert.doesNotThrow(() => createUnsafeLocalHandler({ store }))
+})
+
+test('an authorized write lands', async () => {
+  const store = fakeStore()
+  const seen = []
+  const handle = createVeditHandler({
+    store,
+    authorize: (request) => {
+      seen.push(request.method)
+      return true
+    },
+  })
+  const doc = { ...emptyDocument('home'), nodes: { a: { text: 'hello' } } }
+  const put = await handle(new Request('https://s.test/api', { method: 'PUT', body: JSON.stringify(doc) }))
+  assert.equal(put.status, 200)
+  assert.equal(store.documents.get('home').nodes.a.text, 'hello')
+  assert.deepEqual(seen, ['PUT'])
+})
+
+test('the unsafe local handler writes for anyone', async () => {
+  const store = fakeStore()
+  const handle = createUnsafeLocalHandler({ store })
+  const response = await handle(
+    new Request('https://s.test/api', { method: 'PUT', body: JSON.stringify(emptyDocument('home')) }),
+  )
+  assert.equal(response.status, 200)
+  assert.equal(store.documents.size, 1)
 })

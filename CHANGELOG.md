@@ -9,6 +9,40 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## Unreleased
+
+### Breaking
+
+- **`authorize` is required on `createVeditHandler`.** It was optional, which made
+  the open configuration the default one: leave the field off and every request
+  could write to your store. The type now requires it, and a call without it
+  throws a `TypeError` at startup rather than serving — JavaScript callers never
+  hear the type.
+
+  If you were relying on the old default, either pass the callback you already
+  meant to:
+
+  ```ts
+  createVeditHandler({ store, authorize: (request) => isEditor(request) })
+  ```
+
+  or, where an open endpoint genuinely is what you want, say so by name:
+
+  ```ts
+  import { createUnsafeLocalHandler } from 'vedit/server'
+  const handle = createUnsafeLocalHandler({ store })  // every request may write
+  ```
+
+  `createUnsafeLocalHandler` is the same handler with the check opted out of, and
+  warns on `console` when it finds itself in a `NODE_ENV=production` build.
+  `createVeditApi` already required `authorize`; the two now agree.
+
+  `createRealtimeHandler` is unchanged — its `authorize` stays optional. It relays
+  messages between peers rather than writing to your store, so an unauthorized
+  relay is a different, smaller problem than an unauthorized write.
+
+---
+
 ## 0.3.0 — 2026-08-25
 
 Pages can now be built, not only edited. Register your components and a
