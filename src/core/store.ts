@@ -1,6 +1,6 @@
 import type { RealtimeSession } from './session'
 import { inspectDocument } from './migrate'
-import { INSERTED_DEFAULTS, applyOperations, newInsertedId, type VeditOperation } from './operations'
+import { applyOperations, newInsertedId, type VeditOperation } from './operations'
 import {
   deleteStyles,
   mergeStyles,
@@ -376,20 +376,26 @@ export class VeditStore {
     this.commit({ ...this.state.doc, tokens })
   }
 
-  /** Drop every override for a node. */
+  /** Drop every override for a node, and anything the editor placed inside it. */
   reset(id: string) {
-    const nodes = { ...this.state.doc.nodes }
-    delete nodes[id]
-    const inserted = this.state.doc.inserted.filter((n) => n.id !== id)
-    this.commit({ ...this.state.doc, nodes, inserted })
+    this.apply([{ op: 'reset-node', id }])
   }
 
-  insert(parentId: string, kind: InsertedNode['kind']): string {
-    const id = newInsertedId(parentId)
-    const siblings = this.state.doc.inserted.filter((n) => n.parentId === parentId)
-    const node: InsertedNode = { id, parentId, kind, index: siblings.length }
-    const nodes = { ...this.state.doc.nodes, [id]: INSERTED_DEFAULTS[kind] }
-    this.commit({ ...this.state.doc, nodes, inserted: [...this.state.doc.inserted, node] })
+  /**
+   * Place something inside a container: a primitive, or one of the components the
+   * host registered. Goes through the same operation the API and MCP use, so
+   * there is one definition of what inserting means.
+   */
+  insert(
+    parentId: string,
+    kind: InsertedNode['kind'],
+    options: { component?: string; index?: number } = {},
+  ): string {
+    const { doc, created } = applyOperations(this.state.doc, [
+      { op: 'insert-node', parentId, kind, component: options.component, index: options.index },
+    ])
+    this.commit(doc)
+    const id = created[0]
     this.select(id)
     return id
   }
@@ -411,21 +417,20 @@ export class VeditStore {
     return copyId
   }
 
-  /** Move an inserted element into a different container. */
-  moveInserted(id: string, parentId: string) {
-    const inserted = this.state.doc.inserted.map((node) =>
-      node.id === id
-        ? { ...node, parentId, index: this.state.doc.inserted.filter((n) => n.parentId === parentId).length }
-        : node,
-    )
-    this.commit({ ...this.state.doc, inserted })
+  /** Move an inserted element into a different container, or along its siblings. */
+  moveInserted(id: string, parentId?: string, index?: number) {
+    this.apply([{ op: 'move-node', id, parentId, index }])
+  }
+
+  /** Shift an inserted element one place earlier or later among its siblings. */
+  nudgeOrder(id: string, delta: number) {
+    const node = this.state.doc.inserted.find((candidate) => candidate.id === id)
+    if (!node) return
+    this.apply([{ op: 'move-node', id, index: Math.max(0, node.index + delta) }])
   }
 
   removeInserted(id: string) {
-    const inserted = this.state.doc.inserted.filter((n) => n.id !== id)
-    const nodes = { ...this.state.doc.nodes }
-    delete nodes[id]
-    this.commit({ ...this.state.doc, nodes, inserted })
+    this.apply([{ op: 'remove-node', id }])
     this.set({ selection: this.state.selection.filter((s) => s !== id) })
   }
 

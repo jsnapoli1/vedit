@@ -794,6 +794,9 @@ function InsertedActions({ id }: { id: string }) {
   const store = useVeditStore()
   const nodes = useVeditNodes()
   const inserted = useVeditState((state) => state.doc.inserted.find((node) => node.id === id))
+  const siblingCount = useVeditState(
+    (state) => state.doc.inserted.filter((node) => node.parentId === inserted?.parentId).length,
+  )
   if (!inserted) return null
 
   const containers = nodes.filter((node) => node.container && !node.auto)
@@ -815,6 +818,28 @@ function InsertedActions({ id }: { id: string }) {
             <option value={inserted.parentId}>{inserted.parentId}</option>
           )}
         </select>
+      </Row>
+      <Row label="Order">
+        <button
+          type="button"
+          className="vedit-btn"
+          style={{ flex: 1 }}
+          aria-label="Move earlier"
+          disabled={inserted.index === 0}
+          onClick={() => store.nudgeOrder(id, -1)}
+        >
+          Move up
+        </button>
+        <button
+          type="button"
+          className="vedit-btn"
+          style={{ flex: 1 }}
+          aria-label="Move later"
+          disabled={inserted.index >= siblingCount - 1}
+          onClick={() => store.nudgeOrder(id, 1)}
+        >
+          Move down
+        </button>
       </Row>
       <Row>
         <button

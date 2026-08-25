@@ -21,6 +21,14 @@ export {
 } from './core/context'
 
 export { Editable, InsertedChildren } from './components/Editable'
+export { VeditSlot } from './components/Slot'
+export type { VeditSlotProps } from './components/Slot'
+export { defineComponents, defineComponent, componentManifest } from './core/registry'
+export type {
+  ComponentDefinition,
+  ComponentRegistry,
+  ComponentSummary,
+} from './core/registry'
 export type { EditableProps } from './components/Editable'
 export { EditableText, EditableImage, EditableBox, EditableLink } from './components/presets'
 export { useEditable, labelFromId } from './components/useEditable'

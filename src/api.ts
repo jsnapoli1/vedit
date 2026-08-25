@@ -16,6 +16,7 @@ import {
   type VeditDocument,
   type VeditVersion,
 } from './core/types'
+import type { ComponentSummary } from './core/registry'
 import type { VeditServerStore } from './server'
 
 /**
@@ -32,6 +33,7 @@ import type { VeditServerStore } from './server'
  * `/pricing` is `documents/%2Fpricing`.
  *
  *     GET    /v1                                    what this server supports
+ *     GET    /v1/components                         the components a page may be composed from
  *     GET    /v1/documents                          list keys (if the store can)
  *     GET    /v1/documents/{key}?stage=draft        read a document
  *     PUT    /v1/documents/{key}                    replace a document
@@ -75,6 +77,12 @@ export interface VeditApiOptions {
   /** Used when rendering `/css`. Match your `VeditProvider`. */
   breakpoints?: BreakpointWidths
   /**
+   * The components a page may be composed from — `componentManifest(registry)`,
+   * or the JSON it produces. Served at `/v1/components` so a client that isn't the
+   * editor knows what it may place.
+   */
+  components?: ComponentSummary[]
+  /**
    * Sent as `Access-Control-Allow-Origin`, and makes the handler answer preflight
    * requests. Leave unset unless a browser on another origin has to call this.
    */
@@ -99,7 +107,7 @@ export interface ApiChange {
  * Remix, Hono, Workers, Deno and Bun all take it as-is.
  */
 export function createVeditApi(options: VeditApiOptions) {
-  const { store, authorize, breakpoints = DEFAULT_BREAKPOINTS, cors, onChange } = options
+  const { store, authorize, breakpoints = DEFAULT_BREAKPOINTS, cors, onChange, components } = options
 
   return async function handle(request: Request): Promise<Response> {
     const url = new URL(request.url)
@@ -123,7 +131,7 @@ export function createVeditApi(options: VeditApiOptions) {
       const allowed = await authorize(request, { method, key: match.key, write, stage, route: match.route })
       if (!allowed) return fail(403, 'Not allowed', cors)
 
-      return await run(match, { request, url, method, stage, store, breakpoints, cors, onChange })
+      return await run(match, { request, url, method, stage, store, breakpoints, cors, onChange, components })
     } catch (error) {
       if (error instanceof OperationError) {
         return json({ error: { message: error.message, operation: error.index } }, 400, cors)
@@ -154,6 +162,9 @@ function routeSegments(pathname: string): string[] | null {
 
 function matchRoute(segments: string[]): RouteMatch | null {
   if (segments.length === 0) return { route: '', key: null, id: null, action: null }
+  if (segments[0] === 'components' && segments.length === 1) {
+    return { route: 'components', key: null, id: null, action: null }
+  }
   if (segments[0] !== 'documents') return null
   if (segments.length === 1) return { route: 'documents', key: null, id: null, action: null }
 
@@ -182,6 +193,7 @@ interface Context {
   breakpoints: BreakpointWidths
   cors?: string
   onChange?: (change: ApiChange) => void | Promise<void>
+  components?: ComponentSummary[]
 }
 
 async function run(match: RouteMatch, context: Context): Promise<Response> {
@@ -195,11 +207,17 @@ async function run(match: RouteMatch, context: Context): Promise<Response> {
         capabilities: {
           list: typeof store.list === 'function',
           versions: typeof store.listVersions === 'function' && typeof store.readVersion === 'function',
+          components: (context.components?.length ?? 0) > 0,
         },
       },
       200,
       cors,
     )
+  }
+
+  if (match.route === 'components') {
+    if (method !== 'GET') return notAllowed(cors)
+    return json({ items: context.components ?? [] }, 200, cors)
   }
 
   if (match.route === 'documents') {
@@ -417,6 +435,10 @@ export function remoteStore(options: RemoteStoreOptions): VeditServerStore {
     },
     async list() {
       const body = (await call('/documents')) as { items?: Array<{ key: string; updatedAt?: string }> } | null
+      return body?.items ?? []
+    },
+    async listComponents() {
+      const body = (await call('/components')) as { items?: ComponentSummary[] } | null
       return body?.items ?? []
     },
     async listVersions(key) {

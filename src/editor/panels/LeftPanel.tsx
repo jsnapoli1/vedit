@@ -2,15 +2,17 @@ import { useRef, useState } from 'react'
 import { useVeditState, useVeditStore } from '../../core/context'
 import { moveFocus } from '../focus'
 import { CommentsPanel } from './Comments'
+import { InsertPanel } from './Insert'
 import { HistoryPanel } from './History'
 import { IssuesPanel } from './Issues'
 import { LayersTree } from './Layers'
 import { TokensPanel } from './Tokens'
 
-type Tab = 'layers' | 'tokens' | 'issues' | 'notes' | 'history'
+type Tab = 'layers' | 'insert' | 'tokens' | 'issues' | 'notes' | 'history'
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'layers', label: 'Layers' },
+  { id: 'insert', label: 'Insert' },
   { id: 'tokens', label: 'Tokens' },
   { id: 'issues', label: 'Checks' },
   { id: 'notes', label: 'Notes' },
@@ -57,6 +59,7 @@ export function LeftPanel() {
       </div>
       <div id="vedit-tabpanel" role="tabpanel" aria-labelledby={`vedit-tab-${tab}`} style={{ display: 'contents' }}>
       {tab === 'layers' ? <LayersTree /> : null}
+      {tab === 'insert' ? <InsertPanel /> : null}
       {tab === 'tokens' ? <TokensPanel /> : null}
       {tab === 'issues' ? <IssuesPanel /> : null}
       {tab === 'notes' ? <CommentsPanel /> : null}

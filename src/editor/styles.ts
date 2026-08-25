@@ -122,11 +122,17 @@ export const EDITOR_CSS = `
 .vedit-layer:hover .vedit-layer-eye, .vedit-layer[data-hidden="true"] .vedit-layer-eye { opacity: .8; }
 
 /* ------------------------------------------------------------------ tabs */
+/*
+ * Wraps rather than squeezing: with six tabs in a 268px panel, one row turns
+ * every label into "Lay…", "Tok…", "Che…". A second row costs 30px and keeps the
+ * names readable, which is the whole job of a tab.
+ */
 .vedit-tabs {
-  display: flex; flex: none; padding: 6px; gap: 2px; border-bottom: 1px solid var(--vedit-border);
+  display: flex; flex: none; flex-wrap: wrap;
+  padding: 6px; gap: 2px; border-bottom: 1px solid var(--vedit-border);
 }
 .vedit-tabs button {
-  flex: 1; min-width: 0; height: 24px; padding: 0 2px; border: 0; border-radius: 5px;
+  flex: 1 1 auto; min-width: 62px; height: 24px; padding: 0 6px; border: 0; border-radius: 5px;
   background: transparent; cursor: pointer; color: var(--vedit-muted); font-weight: 600;
   font-size: 11px; letter-spacing: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -235,6 +241,17 @@ export const EDITOR_CSS = `
 .vedit-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .vedit-label { color: var(--vedit-muted); flex: none; width: 58px; }
 .vedit-hint { color: var(--vedit-muted); line-height: 1.5; }
+
+/* ------------------------------------------------------------------ insert */
+.vedit-insert-item {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--vedit-panel-2); border: 1px solid transparent; border-radius: var(--vedit-radius);
+  padding: 7px 9px; margin-top: 4px;
+}
+.vedit-insert-item:hover:not(:disabled) { border-color: var(--vedit-accent); }
+.vedit-insert-item:disabled { opacity: .45; cursor: default; }
+.vedit-insert-name { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+.vedit-insert-note { display: block; margin-top: 3px; color: var(--vedit-muted); line-height: 1.45; }
 
 .vedit-field {
   display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0;

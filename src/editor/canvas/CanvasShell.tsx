@@ -52,7 +52,13 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
   const hostStore = useVeditStore()
   const frames = useRef(new Map<string, HTMLIFrameElement>())
   const [bridges, setBridges] = useState<Record<string, CanvasBridge>>({})
-  const [activePath, setActivePath] = useState(pages[0]?.path ?? '/')
+  // The panels start on the page the editor was opened from, not on whichever
+  // page happens to be first in the list — opening the editor on /pricing and
+  // finding the inspector pointed at the home page is its own small betrayal.
+  const [activePath, setActivePath] = useState(() => {
+    const here = typeof window === 'undefined' ? '' : window.location.pathname
+    return pages.some((page) => page.path === here) ? here : pages[0]?.path ?? '/'
+  })
   const [heights, setHeights] = useState<Record<string, number>>({})
   const [view, setView] = useState<View>({ zoom: 1, panX: 0, panY: 0 })
   const [frameWidth, setFrameWidth] = useState(() => defaultFrameWidth(config))
@@ -68,6 +74,13 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
     [pages, bridges],
   )
   const active = bridges[activePath]
+
+  // The panels belong to the artboard they are pointed at, including which
+  // components that page knows how to place.
+  const configForArtboard = useMemo(
+    () => (active?.components ? { ...config, components: active.components } : config),
+    [config, active],
+  )
 
   useEffect(() => {
     document.documentElement.classList.add('vedit-canvas-host')
@@ -497,7 +510,7 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
       ))}
 
       {active ? (
-        <VeditContext.Provider value={{ store: active.store, config }}>
+        <VeditContext.Provider value={{ store: active.store, config: configForArtboard, registry: {} }}>
           <EditorTargetProvider value={targetFor(activePath)}>
             <EditorRoot toolbarExtras={zoomControls} interactive={false} />
           </EditorTargetProvider>

@@ -1,3 +1,4 @@
+import type { ComponentSummary } from './registry'
 import type { VeditStore } from './store'
 
 export const CANVAS_PARAM = 'vedit-canvas'
@@ -8,6 +9,8 @@ export interface CanvasBridge {
   breakpoints: Record<string, number>
   /** Which artboard this is, so the editor can tell several frames apart. */
   path: string
+  /** Components this page's provider registered, so the chrome can offer them. */
+  components?: ComponentSummary[]
 }
 
 interface CanvasGlobals {

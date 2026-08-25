@@ -56,6 +56,20 @@ test.describe('how it looks', () => {
     await shot(page, 'inspector-component-hover.png')
   })
 
+  test('the insert panel, on a page that is a slot', async ({ page }) => {
+    await openEditor(page, { path: '/campaign' })
+    await page.locator('.vedit-left .vedit-tabs button:has-text("Insert")').click()
+    await shot(page, 'panel-insert.png')
+  })
+
+  test('a page composed from the site\'s own components', async ({ page }) => {
+    await openEditor(page, { path: '/campaign' })
+    await page.locator('.vedit-left .vedit-tabs button:has-text("Insert")').click()
+    await page.locator('.vedit-insert-item', { hasText: 'Banner' }).first().click()
+    await page.locator('.vedit-insert-item', { hasText: 'FeatureRow' }).first().click()
+    await shot(page, 'authored-page.png')
+  })
+
   test('the tokens panel', async ({ page }) => {
     await openEditor(page)
     await page.locator('.vedit-left .vedit-tabs button:has-text("Tokens")').click()

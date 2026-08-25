@@ -4,6 +4,7 @@ import {
   EditableImage,
   EditableText,
   VeditProvider,
+  VeditSlot,
   useEditable,
   useVeditEditing,
   broadcastChannelRealtime,
@@ -13,6 +14,7 @@ import {
   type VeditAdapter,
   type VeditDocument,
 } from 'vedit'
+import { blocks } from './blocks'
 
 /** Inline so the demo works with no network. Swap in a real photo through the editor. */
 const PLACEHOLDER_ART =
@@ -186,13 +188,14 @@ function recordVersion(doc: VeditDocument, stage: 'draft' | 'published') {
 const PAGES = [
   { path: '/', label: 'Home' },
   { path: '/pricing', label: 'Pricing' },
+  { path: '/campaign', label: 'Campaign' },
 ]
 
 export function App() {
   // The demo can run either editing mode: `?mode=overlay` edits the page in
   // place instead of loading it into the canvas.
   const canvas = new URLSearchParams(window.location.search).get('mode') !== 'overlay'
-  const pricing = window.location.pathname.startsWith('/pricing')
+  const path = window.location.pathname
 
   return (
     <VeditProvider
@@ -202,9 +205,33 @@ export function App() {
       pages={PAGES}
       realtime={demoRealtime()}
       user={demoUser()}
+      components={blocks}
     >
-      {pricing ? <Pricing /> : <Site />}
+      {path.startsWith('/pricing') ? <Pricing /> : path.startsWith('/campaign') ? <Campaign /> : <Site />}
     </VeditProvider>
+  )
+}
+
+/**
+ * A page with no page in it. Everything between the nav and the footer comes from
+ * the document, composed out of the components in `blocks.tsx` — the same site,
+ * the same design system, assembled by whoever is editing rather than by this
+ * file.
+ */
+function Campaign() {
+  return (
+    <>
+      <Nav />
+      <VeditSlot id="campaign.sections" as="main" label="Campaign page">
+        <section className="block block-banner">
+          <h2>Nothing here yet</h2>
+          <p className="block-body">Open the editor and place a section to start this page.</p>
+        </section>
+      </VeditSlot>
+      <footer className="footer">
+        <p>© Northwind. This page is stored as a document, not as JSX.</p>
+      </footer>
+    </>
   )
 }
 

@@ -41,6 +41,8 @@ export type VeditOperation =
       op: 'insert-node'
       parentId: string
       kind: InsertedNode['kind']
+      /** Required for `kind: 'component'`: which registered component to place. */
+      component?: string
       /** Optional explicit id, so a caller can insert idempotently. */
       id?: string
       index?: number
@@ -171,9 +173,14 @@ export function applyOperations(doc: VeditDocument, operations: VeditOperation[]
 
       case 'reset-node': {
         const id = requireId(operation.id, fail)
-        delete next.nodes[id]
-        next.inserted = next.inserted.filter((node) => node.id !== id)
-        touch(id)
+        // Whatever the editor placed inside it goes too, whether `id` is a source
+        // element or a placed one.
+        const gone = withDescendants(next.inserted, id)
+        next.inserted = next.inserted.filter((node) => !gone.has(node.id))
+        for (const removed of gone) {
+          delete next.nodes[removed]
+          touch(removed)
+        }
         break
       }
 
@@ -183,11 +190,19 @@ export function applyOperations(doc: VeditDocument, operations: VeditOperation[]
         if (!INSERTED_KINDS.has(kind)) {
           fail(`\`kind\` must be one of ${[...INSERTED_KINDS].join(', ')}`)
         }
+        // The name is stored, not resolved: the registry lives in the running app,
+        // and a document has to be writable without one — from a script, a
+        // migration, or an agent that only has the manifest.
+        if (kind === 'component' && !operation.component) {
+          fail('`component` is required when kind is `component`')
+        }
         const id = operation.id ?? newInsertedId(parentId)
         if (next.inserted.some((node) => node.id === id)) fail(`\`${id}\` already exists`)
         const siblings = next.inserted.filter((node) => node.parentId === parentId)
         const at = clampIndex(operation.index, siblings.length)
-        next.inserted = reindex(next.inserted, parentId, at, { id, parentId, kind, index: at })
+        const node: InsertedNode = { id, parentId, kind, index: at }
+        if (operation.component) node.component = operation.component
+        next.inserted = reindex(next.inserted, parentId, at, node)
         writeNode(next, id, { ...INSERTED_DEFAULTS[kind], ...operation.override })
         touch(id)
         created.push(id)
@@ -212,9 +227,15 @@ export function applyOperations(doc: VeditDocument, operations: VeditOperation[]
         if (!next.inserted.some((node) => node.id === id)) {
           fail(`\`${id}\` is not an inserted node — use reset-node to clear a source element's overrides`)
         }
-        next.inserted = next.inserted.filter((node) => node.id !== id)
-        delete next.nodes[id]
-        touch(id)
+        // Anything placed inside it goes too. A node whose parent is gone renders
+        // nowhere and can't be reached from the editor: that isn't deleted, it's
+        // lost, and it would sit in the document forever.
+        const gone = withDescendants(next.inserted, id)
+        next.inserted = next.inserted.filter((node) => !gone.has(node.id))
+        for (const removed of gone) {
+          delete next.nodes[removed]
+          touch(removed)
+        }
         break
       }
 
@@ -252,6 +273,8 @@ export function applyOperations(doc: VeditDocument, operations: VeditOperation[]
 
 /** What a newly inserted node looks like before anyone styles it. */
 export const INSERTED_DEFAULTS: Record<InsertedNode['kind'], NodeOverride> = {
+  // A component arrives styled by its own code; the editor adds nothing.
+  component: {},
   text: { text: 'New text', style: { fontSize: '16px', color: 'inherit' } },
   image: {
     src: 'https://placehold.co/600x400/e2e8f0/64748b?text=Image',
@@ -282,6 +305,11 @@ export interface DocumentSummary {
     /** Which parts of the override are set: `text`, `style`, `hover`, `md`, … */
     overrides: string[]
     inserted: boolean
+    /** Where a placed node sits, so it can be re-ordered or added next to. */
+    parentId?: string
+    index?: number
+    /** For a placed component, which one. */
+    component?: string
     text?: string
   }>
   tokens: DesignToken[]
@@ -294,8 +322,13 @@ export interface DocumentSummary {
  * with a context window to spend.
  */
 export function describeDocument(doc: VeditDocument): DocumentSummary {
-  const insertedIds = new Set(doc.inserted.map((node) => node.id))
-  const nodes = Object.entries(doc.nodes).map(([id, override]) => {
+  const inserted = new Map(doc.inserted.map((node) => [node.id, node]))
+  // Every id the document knows about, not only the ones carrying overrides: a
+  // component placed with its defaults has nothing overridden yet, and leaving it
+  // out would tell a reader the page is emptier than it is.
+  const ids = [...new Set([...Object.keys(doc.nodes), ...inserted.keys()])]
+  const nodes = ids.map((id) => {
+    const override = doc.nodes[id] ?? {}
     const overrides: string[] = []
     for (const field of CONTENT_FIELDS) if (override[field as keyof NodeOverride] !== undefined) overrides.push(field)
     if (override.props) overrides.push('props')
@@ -311,10 +344,13 @@ export function describeDocument(doc: VeditDocument): DocumentSummary {
         overrides.push(state === 'default' ? breakpoint : `${state}:${breakpoint}`)
       }
     }
+    const placed = inserted.get(id)
     return {
       id,
       overrides,
-      inserted: insertedIds.has(id),
+      inserted: !!placed,
+      ...(placed ? { parentId: placed.parentId, index: placed.index } : {}),
+      ...(placed?.component ? { component: placed.component } : {}),
       ...(override.text === undefined ? {} : { text: override.text }),
     }
   })
@@ -332,7 +368,7 @@ export function describeDocument(doc: VeditDocument): DocumentSummary {
 /* ------------------------------------------------------------------ util */
 
 const CONTENT_FIELDS = new Set(['text', 'html', 'src', 'alt', 'href', 'target', 'className', 'hidden'])
-const INSERTED_KINDS = new Set<string>(['text', 'image', 'box', 'button', 'link'])
+const INSERTED_KINDS = new Set<string>(['text', 'image', 'box', 'button', 'link', 'component'])
 const TOKEN_KINDS = new Set<string>(['color', 'length', 'font', 'shadow'])
 
 function writeNode(doc: VeditDocument, id: string, override: NodeOverride) {
@@ -369,6 +405,23 @@ function cell(operation: Cell, fail: (message: string) => never): { state: Style
 function clampIndex(index: number | undefined, length: number): number {
   if (typeof index !== 'number' || !Number.isFinite(index)) return length
   return Math.max(0, Math.min(Math.floor(index), length))
+}
+
+/** A node and everything placed inside it, however deep. */
+function withDescendants(inserted: InsertedNode[], id: string): Set<string> {
+  const gone = new Set([id])
+  // Repeat until nothing new is found: children can appear before their parents.
+  let growing = true
+  while (growing) {
+    growing = false
+    for (const node of inserted) {
+      if (!gone.has(node.id) && gone.has(node.parentId)) {
+        gone.add(node.id)
+        growing = true
+      }
+    }
+  }
+  return gone
 }
 
 /** Put `node` at `at` among its siblings and renumber the rest so indexes stay dense. */

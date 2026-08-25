@@ -21,14 +21,15 @@ library changes show up without rebuilding.
 
 ## The one idea
 
-**The product is a JSON document of overrides.** Everything else — the canvas,
-the panels, the collaboration — is a way to produce that document or a way to
-apply it. If you keep that in mind, the shape of the codebase follows.
+**The product is a JSON document.** It says two things: what to override on the
+UI your code already renders, and which of your registered components to place
+inside the slots you opened. Everything else — the canvas, the panels, the
+collaboration, the API — is a way to produce that document or a way to apply it.
 
 ```
 your components  ─┐
                   ├─►  the page a visitor sees
-overrides.json   ─┘    (applied as a stylesheet + swapped text/props)
+document.json    ─┘    (a stylesheet + swapped text/props, and components placed in slots)
 ```
 
 The library never rewrites your components, never touches your DOM structure,
@@ -47,6 +48,7 @@ src/
     layers.ts      the state × breakpoint matrix — the only file that knows its shape
     migrate.ts     bringing a stored document to the shape this build expects
     operations.ts  every change to a document as data — the API and MCP speak this
+    registry.ts    the components a page may be built from, and their schema
     store.ts       an observable document with undo/redo and persistence
     context.tsx    VeditProvider: store, config, guards, lazy editor mount
     canvas.ts      the parent ↔ artboard handshake
@@ -56,7 +58,8 @@ src/
     adapters/      localStorage, http, memory, broadcast, sse
 
   components/      what a host site imports
-    Editable.tsx   the general case
+    Editable.tsx   the general case, plus rendering placed components
+    Slot.tsx       VeditSlot: a region whose contents live in the document
     presets.tsx    EditableText / Image / Box / Link
     useEditable.ts registration + prop merging
 
@@ -69,7 +72,7 @@ src/
     target.tsx     "which document am I editing, and where is it on screen"
     interactions.ts every page-level gesture
     Overlay/Presence/CommentsLayer   things drawn over the page
-    panels/        toolbar, layers, inspector, tokens, checks, notes, history
+    panels/        toolbar, layers, insert, inspector, tokens, checks, notes, history
     a11y.ts        the contrast and structure checks
 
   server.ts          vedit/server: document handler, file store, SSR helper
@@ -238,6 +241,15 @@ uses it:
 7. `session.ts` `diffDocuments` — if it should travel to other editors
 8. A unit test against `dist/`, and a line in the README's document example
 
+### Add something the editor can place
+
+1. `types.ts` — a new `NodeKind`, if it isn't a registered component
+2. `operations.ts` — `INSERTED_DEFAULTS` and the `insert-node` validation
+3. `migrate.ts` — `normalizeInserted`'s allowed kinds, or a stored node is dropped
+   on load and the bug looks like "my page went blank"
+4. `components/Editable.tsx` — `InsertedView`, which turns a stored node into UI
+5. `panels/Insert.tsx` — so a person can reach it
+
 ### Add an MCP tool
 
 `mcp.ts`, in the `all` array: a name, a description a model can act on, a JSON
@@ -275,7 +287,12 @@ These are the things that make the library safe to drop into someone else's
 site. Breaking one is a bug even if the tests pass.
 
 - **Never rewrite the host's DOM structure.** Overrides are CSS, attributes and
-  React children. Re-ordering uses the `order` property; it does not move nodes.
+  React children. Re-ordering source elements uses the `order` property; it does
+  not move nodes. Inside a slot the tree is ours, so placed nodes really do move —
+  those are the only two behaviours, and the editor says which one applies.
+- **Never render a component the registry doesn't have.** A document can name one
+  that no longer exists. Draw the placeholder; don't drop the node, and don't
+  throw.
 - **Never let the editor take the page down.** Everything the library renders
   sits behind `VeditErrorBoundary`. New top-level renders get one too.
 - **Never trust the document.** It is data from a store; treat values like user
@@ -293,15 +310,15 @@ site. Breaking one is a bug even if the tests pass.
 
 ## Testing
 
-**`npm test`** — 130 unit tests, run against `dist/` rather than `src/`, so they
+**`npm test`** — 147 unit tests, run against `dist/` rather than `src/`, so they
 check what actually ships. Pure logic lives here: the CSS emitter, the layer
 matrix, the store, migration, the operations vocabulary, the open API, the MCP
 server, diffing, contrast maths, the relay, the escaping rules.
 
-**`npm run test:e2e`** — 41 browser tests over the real editor: selection,
-breakpoints, states, component props, re-ordering, publishing, two people
-collaborating, driving it all from a keyboard, and what happens when the editor
-throws.
+**`npm run test:e2e`** — 50 browser tests over the real editor: selection,
+breakpoints, states, component props, re-ordering, publishing, composing a page
+out of registered components, two people collaborating, driving it all from a
+keyboard, and what happens when the editor throws.
 
 **Visual regression** comes in two forms because they catch different things:
 
@@ -351,7 +368,7 @@ git push --follow-tags
 `prepare` builds on install, so a git dependency needs no publish step:
 
 ```bash
-npm install github:jsnapoli1/vedit#v0.2.0
+npm install github:jsnapoli1/vedit#v0.3.0
 ```
 
 Every release gets a [CHANGELOG.md](./CHANGELOG.md) entry, written for someone

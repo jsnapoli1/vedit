@@ -9,7 +9,7 @@ import { artboard, openEditor } from './fixtures'
 test.describe('when the editor breaks', () => {
   test('the host page survives, and says what happened', async ({ page }) => {
     await openEditor(page)
-    await expect(page.locator('.vedit-artboard')).toHaveCount(2)
+    await expect(page.locator('.vedit-artboard')).toHaveCount(3)
 
     // Break something the inspector calls while rendering.
     await artboard(page).evaluate(() => {
@@ -68,7 +68,7 @@ test.describe('when the editor breaks', () => {
     await page.getByRole('alert').getByRole('button', { name: 'Reopen' }).click()
     await expect(page.locator('.vedit-toolbar')).toBeVisible()
     await expect(page.getByRole('alert')).toHaveCount(0)
-    await expect(page.locator('.vedit-artboard')).toHaveCount(2)
+    await expect(page.locator('.vedit-artboard')).toHaveCount(3)
 
     await page.waitForTimeout(1500)
     await artboard(page).locator('[data-vedit-id="home.hero.title"]').click()

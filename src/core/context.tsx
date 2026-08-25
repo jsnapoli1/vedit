@@ -25,6 +25,7 @@ import { documentToCss } from '../runtime/css'
 import { AutoScanner } from '../auto/scanner'
 import { isCanvasChild, publishCanvasBridge } from './canvas'
 import { VeditErrorBoundary, type VeditErrorBoundaryProps } from './ErrorBoundary'
+import { componentManifest, type ComponentRegistry, type ComponentSummary } from './registry'
 import { RealtimeSession, type SessionSnapshot } from './session'
 import type { Peer, VeditRealtime } from './realtime'
 
@@ -35,11 +36,19 @@ export interface VeditConfig {
   enabled: boolean
   /** Artboards to show on the canvas. */
   pages: Array<{ path: string; label?: string }>
+  /**
+   * The components the editor may place, without the components themselves. The
+   * panels run in the parent window while the page runs in an artboard, so what
+   * they share has to survive being read across that boundary.
+   */
+  components: ComponentSummary[]
 }
 
 export interface VeditContextValue {
   store: VeditStore
   config: VeditConfig
+  /** The real components, for rendering. Empty in the window that only draws chrome. */
+  registry: ComponentRegistry
 }
 
 /** Exported so the canvas can point the editor UI at the framed page's store. */
@@ -154,6 +163,13 @@ export interface VeditProviderProps {
   /** Save automatically this many ms after the last change. 0 disables it. */
   autosaveMs?: number
   onSave?: (doc: VeditDocument) => void
+  /**
+   * Components the editor may place on a page, keyed by the name stored in the
+   * document. Declare them with `defineComponents`. Without this the editor can
+   * still change what your code renders; with it, people can compose pages out of
+   * your components.
+   */
+  components?: ComponentRegistry
 }
 
 /**
@@ -168,6 +184,9 @@ const DEFAULT_AUTO_SELECTOR = [
 ].join(',')
 
 const LOCAL_HOSTS = /^(localhost|127\.0\.0\.1|\[::1\]|.*\.local)$/
+
+/** Stable identity, so a provider with no components doesn't churn the context. */
+const EMPTY_REGISTRY: ComponentRegistry = {}
 
 /**
  * Production visitors should never be able to open the editor, so it stays off
@@ -205,6 +224,7 @@ export function VeditProvider({
   autosaveMs = 0,
   onError,
   onSave,
+  components,
 }: VeditProviderProps) {
   const key = documentKey ?? (typeof window !== 'undefined' ? window.location.pathname : 'default')
   const [store] = useState(
@@ -216,6 +236,8 @@ export function VeditProvider({
   const [framedByEditor] = useState(isCanvasChild)
 
   const pagesKey = pages ? JSON.stringify(pages) : ''
+  const registry = components ?? EMPTY_REGISTRY
+  const manifest = useMemo(() => componentManifest(registry), [registry])
   const config = useMemo<VeditConfig>(
     () => ({
       breakpoints,
@@ -225,9 +247,10 @@ export function VeditProvider({
       pages: pages ?? [
         { path: typeof window === 'undefined' ? '/' : window.location.pathname, label: 'This page' },
       ],
+      components: manifest,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [breakpoints, auto, autoSelector, isEnabled, pagesKey],
+    [breakpoints, auto, autoSelector, isEnabled, pagesKey, manifest],
   )
 
   const hydrated = useRef(false)
@@ -247,9 +270,16 @@ export function VeditProvider({
 
   useEffect(() => {
     if (framedByEditor) {
-      publishCanvasBridge({ store, breakpoints, path: window.location.pathname })
+      // The manifest travels with the store: the chrome in the parent window can
+      // then offer this page's components without importing the app that has them.
+      publishCanvasBridge({
+        store,
+        breakpoints,
+        path: window.location.pathname,
+        components: manifest,
+      })
     }
-  }, [framedByEditor, store, breakpoints])
+  }, [framedByEditor, store, breakpoints, manifest])
 
   // Collaboration belongs to whichever store is actually being edited: the framed
   // page on the canvas, or this one when editing in place. Attaching it to both
@@ -296,7 +326,10 @@ export function VeditProvider({
     [store, onSave],
   )
 
-  const value = useMemo<VeditContextValue>(() => ({ store, config }), [store, config])
+  const value = useMemo<VeditContextValue>(
+    () => ({ store, config, registry }),
+    [store, config, registry],
+  )
 
   // Each piece is guarded separately: a broken panel shouldn't cost you the
   // override styles, and none of it should cost the host their page.

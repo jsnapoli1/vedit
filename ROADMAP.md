@@ -6,15 +6,16 @@ Feature-wise, this is past what most 1.0s ship with. That isn't the question a
 version number answers.
 
 **1.0 is a promise**: the public API and the saved document format won't change
-without a major version. As of 0.2 the mechanics of that promise exist — the
-format is migrated on load, and the supported surface is separated from the
-internals. What's missing is the evidence:
+without a major version. The mechanics of that promise exist — the format is
+migrated on load, and the supported surface is separated from the internals. As of
+0.3 the product is also the whole shape it was aiming at: editing an existing page
+and building a new one out of the same components. What's missing is the evidence:
 
 **Nobody has used this on a site the author didn't write.** Every test runs
 against a demo written by the same person as the features it exercises, which is
-circular. That is now the whole gap.
+circular. That is very nearly the whole gap.
 
-Suggested path: **0.2 is out, real use next, then 1.0.**
+Suggested path: **0.3 is out, real use next, then 1.0.**
 
 ---
 
@@ -22,11 +23,13 @@ Suggested path: **0.2 is out, real use next, then 1.0.**
 
 Worth being specific, because the gaps below are easier to read against it.
 
-- **The override model has held.** Interaction states, design tokens, component
-  props, multi-page, collaboration, and then a whole programmatic API and an MCP
-  server, were all added after the fact. None needed the document shape or the
-  store reworked. That's the real signal that the core is the right shape — not
-  that it works, but that it absorbed seven large features without a rewrite.
+- **The document model has held.** Interaction states, design tokens, component
+  props, multi-page, collaboration, a programmatic API, an MCP server, and then
+  authoring — composing pages out of the host's own components — were all added
+  after the fact. Authoring needed one new field on a node type that already
+  existed, and the format version didn't move. That's the real signal that the
+  core is the right shape: not that it works, but that it absorbed eight large
+  features without a rewrite.
 - **Overrides are CSS.** Media queries and `:hover` behave for visitors exactly
   as they do in the editor, and server rendering produces the same paint.
 - **Documents are safe to keep.** The format is versioned, migrated on load, and
@@ -35,10 +38,13 @@ Worth being specific, because the gaps below are easier to read against it.
 - **One vocabulary for changes.** The editor, the HTTP API, MCP and any script
   all go through the same operations, so an agent can do exactly what a person
   can — and no more.
+- **Authoring didn't cost the invariant.** Pages can be built out of registered
+  components without the library rewriting, wrapping or owning any of them, and a
+  site can adopt it one slot at a time instead of migrating.
 - **Security has had a real pass.** Stored values reach every visitor's page;
   CSS injection, `<style>` escape and executable URL schemes are closed and
   regression-tested. The new surfaces go through the same door.
-- **The tests check what ships.** 130 unit tests against `dist/`, 41 browser
+- **The tests check what ships.** 147 unit tests against `dist/`, 50 browser
   tests against the real editor, plus screenshot baselines and layout invariants.
 - **Failures are contained.** A throw inside the editor unmounts the editor, not
   the host's site.
@@ -60,7 +66,7 @@ produce a list of small wrong assumptions. That list is what 1.0 should be.
 ### 2. Installable by name
 
 `vedit` is taken on npm, the package has never been published, and the work is on
-a branch. Today: `npm install github:jsnapoli1/vedit#v0.2.0`. For 1.0 it needs a
+a branch. Today: `npm install github:jsnapoli1/vedit#v0.3.0`. For 1.0 it needs a
 scoped name, a merge to `main`, and a tagged release.
 
 ### 3. The framework matrix is claimed, not tested
@@ -79,6 +85,27 @@ everything has a name and a visible ring. What is still missing is naming the
 inspector's own fields — their labels are visual, not `<label>` elements, so a
 screen reader announces the control without saying what it is. Cheaper than it
 sounds, and worth doing before promising accessibility rather than after.
+
+### 5. Authoring is one release old
+
+0.3 made pages composable, and the parts a real team would reach for next are
+visible from here:
+
+- **Dragging.** Placement is by click — the Insert panel puts a component in the
+  selected container and the inspector moves it up and down. Dragging from the
+  panel onto the canvas, and dragging to re-order on the page, is the obvious next
+  interaction and the one people will expect first.
+- **Slot-typed props.** A `<Card header={…}>` can't yet take other components as a
+  named prop; a component either has children or it doesn't. `EditableField` needs
+  a `blocks` type for that.
+- **Component schema versioning.** A prop gets renamed and every saved page still
+  carries the old one. The document has a migration story; component schemas
+  don't. This is the one I'd do first — it's the same class of problem the format
+  version solves, one level down, and it gets expensive the moment real content
+  exists.
+- **Repeating over data.** Static props only, deliberately. A repeater over an
+  array is the smallest useful step; expression evaluation is where page builders
+  turn into bad programming languages, and I'd stay out of it.
 
 ---
 
@@ -106,12 +133,16 @@ sounds, and worth doing before promising accessibility rather than after.
 ## A proposed shape
 
 **0.2** — *done*: migration on load, the operations model, the open API, MCP,
-keyboard navigation, a trimmed public surface, a changelog. Publishable, honest
-about being young.
+keyboard navigation, a trimmed public surface, a changelog.
 
-**0.3–0.9** — real integrations. Fix what they turn up. One example app per
-framework in CI. Resist adding features; the gap between here and 1.0 is
-confidence, not surface area.
+**0.3** — *done*: the component registry, `<VeditSlot>`, placed components, the
+Insert panel, and composition over the API and MCP. Pages can be built, not only
+edited.
+
+**0.4–0.9** — real integrations. Fix what they turn up. One example app per
+framework in CI. Component schema versioning, and dragging, because authoring
+without them will be the first thing anyone says. Otherwise resist adding
+features: the gap between here and 1.0 is confidence, not surface area.
 
 **1.0** — when a second team has shipped a site with it and the API hasn't had to
 change to let them.
@@ -122,8 +153,8 @@ change to let them.
 
 The temptation is more features, because features are the fun part and the list of
 things this doesn't do is easy to write. But every one of them widens the API that
-1.0 promises to keep. Character-level merging, a component library browser, i18n
-variants, a hosted backend — all defensible, none of them the reason someone would
-or wouldn't trust this.
+1.0 promises to keep. Character-level merging, i18n variants, a hosted backend,
+data bindings and expressions — all defensible, none of them the reason someone
+would or wouldn't trust this.
 
 The version number is a promise about stability. Earn it with use, not scope.

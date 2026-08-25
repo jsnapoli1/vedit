@@ -43,7 +43,40 @@ test('the root says what this server can do', async () => {
   const body = await response.json()
   assert.equal(body.api, 1)
   assert.equal(body.documentVersion, 1)
-  assert.deepEqual(body.capabilities, { list: true, versions: true })
+  assert.deepEqual(body.capabilities, { list: true, versions: true, components: false })
+})
+
+test('the components a page can be built from are served, and shown as a capability', async () => {
+  const components = [{ id: 'Hero', name: 'Hero', group: 'Sections', fields: [{ name: 'align', type: 'select' }] }]
+  const handle = api(testStore(), { components })
+
+  assert.equal((await (await call(handle, 'GET', '')).json()).capabilities.components, true)
+  assert.deepEqual((await (await call(handle, 'GET', '/components')).json()).items, components)
+})
+
+test('a component is placed into a slot and comes back in the summary', async () => {
+  const store = testStore()
+  const handle = api(store)
+
+  const placed = await call(handle, 'POST', '/documents/home/operations', {
+    operations: [{ op: 'insert-node', parentId: 'home.sections', kind: 'component', component: 'Hero' }],
+  })
+  const { created } = await placed.json()
+  assert.equal(created.length, 1)
+
+  const summary = await (await call(handle, 'GET', '/documents/home/summary')).json()
+  assert.deepEqual(summary.nodes, [
+    { id: created[0], overrides: [], inserted: true, parentId: 'home.sections', index: 0, component: 'Hero' },
+  ])
+  assert.equal(store.stages.get('published:home').inserted[0].component, 'Hero')
+})
+
+test('a component node with no component name is refused', async () => {
+  const response = await call(api(testStore()), 'POST', '/documents/home/operations', {
+    operations: [{ op: 'insert-node', parentId: 'home.sections', kind: 'component' }],
+  })
+  assert.equal(response.status, 400)
+  assert.match((await response.json()).error.message, /`component` is required/)
 })
 
 test('a document that was never saved reads as an empty one', async () => {

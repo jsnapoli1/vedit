@@ -1,6 +1,7 @@
 import { createElement, forwardRef, useMemo, type ElementType, type ReactNode, type Ref } from 'react'
 import { useEditable } from './useEditable'
-import { useVeditState } from '../core/context'
+import { useVeditContext, useVeditState } from '../core/context'
+import { findComponent, type AnyComponentDefinition } from '../core/registry'
 import { safeUrl, sanitizeHtml } from '../runtime/sanitize'
 import type { EditableField, InsertedNode, NodeKind } from '../core/types'
 
@@ -142,6 +143,7 @@ export function InsertedChildren({ parentId }: { parentId: string }) {
 }
 
 function InsertedView({ node }: { node: InsertedNode }) {
+  if (node.kind === 'component') return <PlacedComponent node={node} />
   switch (node.kind) {
     case 'image':
       return <Editable id={node.id} as="img" kind="image" label="Image" src="" alt="" />
@@ -167,3 +169,97 @@ function InsertedView({ node }: { node: InsertedNode }) {
       return <Editable id={node.id} as="div" kind="box" label="Box" container />
   }
 }
+
+/**
+ * One of the host's own components, placed by the editor.
+ *
+ * The component is ordinary React and knows nothing about any of this. What it
+ * gets is its declared props with the editor's overrides applied; what it gives
+ * back is whatever it renders. By default it is wrapped in an element the editor
+ * owns, so there is something to select, outline and style without the component
+ * having to cooperate — `wrap: false` in the registry turns that off for a
+ * component that spreads the props it is handed onto its own root.
+ */
+function PlacedComponent({ node }: { node: InsertedNode }) {
+  const { registry } = useVeditContext()
+  const definition = findComponent(registry, node.component)
+  if (!definition) return <MissingComponent node={node} known={Object.keys(registry)} />
+  if (definition.wrap === false) {
+    // The component takes responsibility for the props it is handed, including
+    // the ones that make it selectable.
+    return (
+      <Editable
+        id={node.id}
+        kind="component"
+        label={definition.name ?? node.component}
+        fields={definition.fields}
+        container={definition.container}
+        as={definition.component}
+        {...definition.defaults}
+      />
+    )
+  }
+  return <WrappedComponent node={node} definition={definition} />
+}
+
+function WrappedComponent({
+  node,
+  definition,
+}: {
+  node: InsertedNode
+  definition: AnyComponentDefinition
+}) {
+  const defaults = definition.defaults as Record<string, unknown> | undefined
+  const { ref, veditProps, override, props } = useEditable({
+    id: node.id,
+    kind: 'component',
+    label: definition.name ?? node.component,
+    container: definition.container,
+    fields: definition.fields,
+    props: defaults,
+  })
+
+  // The wrapper carries only the editor's own attributes. Whatever the component
+  // wants — including props that aren't valid DOM attributes — goes to the
+  // component, not onto an element React would complain about.
+  return (
+    <div
+      ref={ref as unknown as Ref<HTMLDivElement>}
+      {...veditProps}
+      className={['vedit-placed', override.className].filter(Boolean).join(' ')}
+    >
+      {createElement(
+        definition.component as ElementType,
+        props,
+        definition.container ? <InsertedChildren key="vedit-inserted" parentId={node.id} /> : undefined,
+      )}
+    </div>
+  )
+}
+
+/**
+ * A component the document names and the registry doesn't have — renamed,
+ * removed, or simply not registered on this page. The page still renders, and the
+ * placeholder says exactly what is missing, because deleting someone's content
+ * because their code moved is the wrong answer.
+ */
+function MissingComponent({ node, known }: { node: InsertedNode; known: string[] }) {
+  return (
+    <Editable id={node.id} as="div" kind="box" label={`${node.component ?? 'Component'} (missing)`}>
+      <span data-vedit-missing="" style={MISSING_STYLE}>
+        <strong>{node.component}</strong> isn't registered on this page.
+        {known.length ? ` Registered here: ${known.join(', ')}.` : ' No components are registered here.'}
+      </span>
+    </Editable>
+  )
+}
+
+const MISSING_STYLE = {
+  display: 'block',
+  padding: '12px 14px',
+  border: '1px dashed #f24822',
+  borderRadius: 6,
+  background: 'rgba(242, 72, 34, .06)',
+  color: '#8a2a12',
+  font: '12px/1.5 ui-sans-serif, system-ui, sans-serif',
+} as const

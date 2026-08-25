@@ -178,7 +178,8 @@ test.describe('editing on the canvas', () => {
 
   test('each artboard edits its own document', async ({ page }) => {
     await openEditor(page)
-    await expect(page.locator('.vedit-artboard')).toHaveCount(2)
+    // Home, Pricing and the slot-driven Campaign page.
+    await expect(page.locator('.vedit-artboard')).toHaveCount(3)
 
     await select(page, 'pricing.title', '/pricing')
     await expect(page.locator('.vedit-artboard[data-active="true"] .vedit-artboard-label')).toContainText(

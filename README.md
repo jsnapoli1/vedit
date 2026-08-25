@@ -1,12 +1,17 @@
 # vedit
 
-A Figma-like visual editor you drop into any React site.
+A Figma-like visual editor you drop into any React site — and a page builder that
+composes your own components.
 
 Import one provider, open the editor with `⌘E`, and your pages become artboards on
 a zoomable canvas: click straight into them to rewrite copy, swap images, restyle
 hover states, re-order sections, change a component's variant, tune type and
-spacing per breakpoint. Changes are saved as a small JSON document of
-**overrides** — your components stay exactly as you wrote them.
+spacing per breakpoint. Register your components and a `<VeditSlot>` becomes a
+region people can build: place a Hero, configure it, add a pricing table, publish.
+
+Everything is saved as a small JSON document — **overrides** on what your code
+renders, and **placements** of components your code owns. Your components stay
+exactly as you wrote them.
 
 ```bash
 npm install github:jsnapoli1/vedit
@@ -63,6 +68,66 @@ Use it to get moving, and wrap the elements that matter in `<Editable>` when you
 want ids that survive a refactor. Scanner ids look like `auto:#app>section>h1`;
 they change if you restructure the markup around them. An explicit
 `<Editable id="home.hero.title">` never does.
+
+---
+
+## Building pages, not just editing them
+
+Register the components a page may be built from. They are ordinary React — the
+schema next to them says which props a person may change, and nothing else about
+them changes:
+
+```tsx
+import { defineComponents, VeditProvider, VeditSlot } from 'vedit'
+import { Hero, FeatureRow, Pricing } from './blocks'
+
+export const components = defineComponents({
+  Hero: {
+    component: Hero,
+    group: 'Sections',
+    description: 'A headline with an optional image.',
+    fields: [
+      { name: 'headline', type: 'text' },
+      { name: 'align', type: 'select', options: ['left', 'center'] },
+    ],
+    defaults: { headline: 'A headline worth reading', align: 'left' },
+  },
+  FeatureRow: { component: FeatureRow, group: 'Sections', fields: [...] },
+  Pricing: { component: Pricing, group: 'Sections', fields: [...] },
+})
+
+<VeditProvider components={components}>
+  <Nav />
+  <VeditSlot id="campaign.sections" as="main">
+    <p>Nothing here yet.</p>
+  </VeditSlot>
+  <Footer />
+</VeditProvider>
+```
+
+Open the editor, pick **Insert**, and the panel offers exactly those components.
+Place one and it renders through your code — your CSS, your behaviour, your
+accessibility — with its props in the inspector and everything else the editor
+does (styling, breakpoints, states, comments) available on top.
+
+- **A whole page** is a slot with nothing around it.
+- **A section of an existing page** is a slot in the middle of hand-written JSX.
+- **A layout component** (`container: true`) holds whatever is placed inside it,
+  as its `children`.
+
+By default the editor wraps a placed component in an element it owns, so nothing
+in your component has to know about any of this. Set `wrap: false` when the
+component spreads the props it is handed onto its own root and you'd rather not
+have the extra element.
+
+A component the registry no longer has — renamed, deleted, not registered on this
+page — renders a placeholder saying which name is missing. Content outlives code;
+losing someone's page because a component moved is the wrong answer.
+
+Placed components are still pages: with the DOM scanner on, the heading inside a
+Hero can be clicked and rewritten like any other element, and the override is
+stored against that instance. Configure through props where the component offers
+them; reach past them when you need to.
 
 ---
 
@@ -417,6 +482,9 @@ a CJS consumer gets the whole thing, editor included.)
 - `<VeditProvider>` — `documentKey`, `adapter`, `enabled`, `defaultEditing`, `auto`, `autoSelector`, `breakpoints`, `initialDocument`, `canvas`, `pages`, `realtime`, `user`, `realtimeRoom`, `autosaveMs`, `onSave`
 - `<Editable id as kind label container fields>` — the general case; renders any tag or component
 - `<EditableText>` `<EditableImage>` `<EditableBox>` `<EditableLink>` — presets
+- `<VeditSlot id as label>` — a region whose contents live in the document
+- `defineComponents({...})` / `defineComponent({...})` — the components a page may be built from
+- `componentManifest(registry)` — the same list without the components, for the API and MCP
 
 **Hooks**
 
@@ -473,7 +541,10 @@ in [API.md](./API.md).
     },
     "home.hero.cta": { "props": { "variant": "outline", "size": "lg" } }
   },
-  "inserted": []
+  "inserted": [
+    { "id": "campaign.sections::added-7f2", "parentId": "campaign.sections",
+      "kind": "component", "component": "Hero", "index": 0 }
+  ]
 }
 ```
 
@@ -536,9 +607,12 @@ content of your own.
 - **Re-ordering needs a flex or grid parent.** Block children fall back to a
   nudge (with a one-click offer to convert the parent), because CSS `order`
   doesn't apply to them and the library never rewrites your DOM.
-- **Structural editing is limited to what the editor created.** You can duplicate,
-  re-parent and delete inserted elements; you can't duplicate, wrap or unwrap
-  elements that came from your code.
+- **Structural editing is limited to what the editor created.** Inside a slot you
+  can place, re-order, nest and delete freely; elements that came from your JSX
+  can be re-ordered and hidden, but not duplicated, wrapped or unwrapped.
+- **Placement is by click, not by drag.** The Insert panel puts a component into
+  the selected container, and the inspector moves it up and down. Dragging a
+  component from the panel onto the canvas is not there yet.
 - **Links are inert while editing**, so you navigate between routes by putting
   them on the canvas as artboards rather than by clicking through.
 - **The frames reload the page.** Client state (an open modal, a filled form, a

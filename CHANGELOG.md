@@ -9,6 +9,73 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.3.0 — 2026-08-25
+
+Pages can now be built, not only edited. Register your components and a
+`<VeditSlot>` becomes a region people — or an agent — compose out of them.
+
+### Added
+
+- **A component registry.** `defineComponents({...})` and the `components` prop on
+  `VeditProvider`. Components stay ordinary React; the schema beside them says
+  which props may be changed. `defineComponent` types one entry against its own
+  props; `componentManifest(registry)` is the serialisable half.
+- **`<VeditSlot>`.** A region whose contents live in the document. A whole page is
+  a slot with nothing around it; a section of an existing page is a slot in the
+  middle of your JSX. `children` render while it is empty.
+- **Placed components.** `InsertedNode` gained `kind: 'component'` and
+  `component`, so a document can hold a tree of your components with their props.
+  Nesting is a parent id pointing at another placed node, which is how a layout
+  component (`container: true`) holds what is put inside it.
+- **An Insert panel**, listing registered components grouped as the registry says,
+  plus the primitives. It shows where the new node will land — the selected
+  container, the nearest one above it, or the page's slot.
+- **Re-ordering.** Move up / move down in the inspector, through the same
+  `move-node` operation the API and MCP use.
+- **Composition for agents.** `list_components`, `place_component` and `move_node`
+  over MCP; `GET /v1/components` and a `components` option on `createVeditApi`;
+  `--components manifest.json` on `vedit-mcp`. A component name the site doesn't
+  have is refused with the list of names it does.
+- A `/campaign` page in the example: a slot and nothing else, with four registered
+  blocks to build it from.
+
+### Changed
+
+- `describeDocument` lists every node the document knows about, not only those
+  carrying overrides, and reports `parentId`, `index` and `component` for placed
+  ones. A component placed with its defaults used to be invisible to it.
+- `VeditStore.insert` takes `{ component, index }`, and `moveInserted` takes an
+  index. Both now go through `applyOperations`, so the editor and the API agree
+  on what placing and moving mean.
+- `VeditConfig` gained `components` (the manifest) and the context gained
+  `registry` (the components themselves). The canvas bridge carries the manifest,
+  so the panels can offer what the framed page knows how to render.
+- The canvas opens on the page you opened the editor from, rather than the first
+  page in `pages`.
+- The left panel's tab strip wraps to two rows. Six tabs in 268px turned every
+  label into "Lay…", "Tok…", "Che…"; the layout invariant caught it.
+- `VeditContextValue` gained `registry`. Only code that builds the context by
+  hand is affected — the provider fills it in.
+
+### Fixed
+
+- A stored node with an unknown kind was dropped on load. `component` is now a
+  known kind in `migrate.ts`; without that fix a page of placed components would
+  have come back empty.
+- Deleting a container left everything placed inside it in the document, rendering
+  nowhere and reachable from nothing. `remove-node` and `reset-node` now take the
+  whole subtree. This only became possible when nodes could nest, so no released
+  document can carry the orphans.
+
+### Notes
+
+- The document format is still version 1. Placement is an additive field on a
+  node type that already existed, so 0.2 reads a 0.3 document — it draws a box
+  where a component would be, rather than failing.
+- Screenshot baselines were regenerated: the left panel has one more tab.
+
+---
+
 ## 0.2.0 — 2026-08-24
 
 Documents are safe to keep, the public surface is the supported one, the editor

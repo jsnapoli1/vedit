@@ -31,6 +31,7 @@ if (flag('help', false) || argv.includes('-h')) {
   --endpoint <url>      or: a vedit open API to work through
   --token <token>       bearer token for --endpoint
   --key <key>           document to use when a tool call omits one
+  --components <file>   component manifest JSON, so an agent can compose pages
   --stage draft|published   which copy to write (default draft)
   --read-only           expose only the tools that read
   --realtime <url>      relay to notify, so open editors update live
@@ -46,6 +47,20 @@ const store =
     ? remoteStore({ endpoint, headers: token ? { authorization: `Bearer ${token}` } : undefined })
     : fileStore(typeof flag('dir', './content') === 'string' ? flag('dir', './content') : './content')
 
+// The manifest is data, not code: an app can write `componentManifest(registry)`
+// to a file at build time, and this command never has to import the site.
+const manifestPath = flag('components', null)
+let components
+if (typeof manifestPath === 'string') {
+  const { readFile } = await import('node:fs/promises')
+  const parsed = JSON.parse(await readFile(manifestPath, 'utf8'))
+  components = Array.isArray(parsed) ? parsed : parsed.items
+  if (!Array.isArray(components)) {
+    process.stderr.write(`vedit-mcp: ${manifestPath} is not a component manifest\n`)
+    process.exit(1)
+  }
+}
+
 const realtime = flag('realtime', null)
 const room = flag('room', null)
 
@@ -54,6 +69,7 @@ const server = createVeditMcpServer({
   stage: flag('stage', 'draft') === 'published' ? 'published' : 'draft',
   defaultKey: typeof flag('key', null) === 'string' ? flag('key', null) : undefined,
   writable: !flag('read-only', false),
+  components,
   version: createRequire(import.meta.url)('../package.json').version,
   onChange:
     typeof realtime === 'string'
@@ -61,7 +77,8 @@ const server = createVeditMcpServer({
       : undefined,
 })
 
-process.stderr.write(`vedit-mcp ready — ${server.tools.length} tools\n`)
+const composable = components?.length ?? (typeof endpoint === 'string' ? '?' : 0)
+process.stderr.write(`vedit-mcp ready — ${server.tools.length} tools, ${composable} components\n`)
 
 process.stdin.setEncoding('utf8')
 await serveStdio(server, { input: process.stdin, output: { write: (chunk) => process.stdout.write(chunk) } })

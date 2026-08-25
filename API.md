@@ -9,8 +9,9 @@ CI job, an agent. Three ways in, all speaking the same vocabulary.
 | **Open API** | `vedit/api` | Something over the network should change the site |
 | **MCP** | `vedit/mcp`, or `npx vedit-mcp` | You want an AI agent to design |
 
-The thing being changed is always the same JSON document of overrides. Your
-components are never rewritten.
+The thing being changed is always the same JSON document: overrides on what your
+code renders, and placements of components your code owns. Your components are
+never rewritten.
 
 ---
 
@@ -38,7 +39,7 @@ const { doc, changed, created } = applyOperations(current, [
 | `set-content` | `id`, `content` — `text`, `html`, `src`, `alt`, `href`, `target`, `className`, `hidden`. `null` removes one |
 | `set-props` | `id`, `props` — values for props a component declared editable |
 | `reset-node` | `id` — drop every override |
-| `insert-node` | `parentId`, `kind`, `id?`, `index?`, `override?` |
+| `insert-node` | `parentId`, `kind`, `component?`, `id?`, `index?`, `override?` — `kind: 'component'` requires `component`, the registered name |
 | `move-node` | `id`, `parentId?`, `index?` |
 | `remove-node` | `id` — inserted nodes only |
 | `set-token` / `remove-token` | `token` / `id` |
@@ -81,6 +82,7 @@ Routes are versioned in the path and mount anywhere — the handler finds its ow
 
 ```
 GET    /v1                                     what this server supports
+GET    /v1/components                          the components a page may be built from
 GET    /v1/documents                           list keys (stores that can)
 GET    /v1/documents/{key}[?stage=draft]       read a document
 PUT    /v1/documents/{key}                     replace a document
@@ -155,6 +157,7 @@ claude mcp add vedit -- npx -y vedit-mcp --dir ./content
 | `--dir <path>` | documents on disk (default `./content`) |
 | `--endpoint <url>` `--token <t>` | work through a deployed site's open API instead |
 | `--key <key>` | the document to use when a tool call omits one |
+| `--components <file>` | component manifest JSON, so an agent can compose pages |
 | `--stage draft\|published` | which copy to write (default `draft`) |
 | `--read-only` | expose only the tools that read |
 | `--realtime <url>` `--room <room>` | notify a relay, so open editors update live |
@@ -162,11 +165,39 @@ claude mcp add vedit -- npx -y vedit-mcp --dir ./content
 ### The tools
 
 **Reading** — `list_documents`, `describe_document`, `get_document`, `get_node`,
-`render_css`, `list_tokens`, `list_versions`.
+`render_css`, `list_tokens`, `list_components`, `list_versions`.
 
-**Writing** — `set_styles`, `clear_styles`, `set_content`, `insert_node`,
-`reset_node`, `set_token`, `apply_operations`, `publish_document`,
-`restore_version`.
+**Writing** — `set_styles`, `clear_styles`, `set_content`, `place_component`,
+`insert_node`, `move_node`, `reset_node`, `set_token`, `apply_operations`,
+`publish_document`, `restore_version`.
+
+### Composing a page
+
+`list_components` and `place_component` are what turn an agent from something that
+restyles a page into something that builds one. The components are the team's own,
+so a page an agent assembles has the site's design, behaviour and accessibility in
+it rather than an approximation:
+
+```jsonc
+// list_components
+{ "items": [
+  { "id": "Hero", "group": "Sections", "description": "A headline with an optional image.",
+    "fields": [{ "name": "headline", "type": "text" },
+               { "name": "align", "type": "select", "options": ["left", "center"] }] }
+] }
+
+// place_component
+{ "parentId": "campaign.sections", "component": "Hero",
+  "props": { "headline": "Spring, in one afternoon", "align": "center" } }
+```
+
+A name the site doesn't have is refused with the list of names it does have, so a
+model corrects itself instead of writing a placeholder someone finds later.
+
+The server needs the manifest to offer any of this: pass `components` to
+`createVeditMcpServer`, or `--components manifest.json` to `vedit-mcp`. Write that
+file at build time with `componentManifest(registry)` — the command never has to
+import your app.
 
 `describe_document` is the one to start from: node ids and which cells each one
 sets (`style`, `md`, `hover:lg`), without the declarations. It is a fraction of
@@ -183,6 +214,8 @@ import { fileStore } from 'vedit/server'
 const server = createVeditMcpServer({
   store: fileStore('./content'),
   stage: 'draft',
+  components: componentManifest(registry),   // what it may place
+
   allowKey: (key) => key.startsWith('/marketing'),   // keep an agent in its lane
   onChange: notifyEditors({ endpoint: 'https://example.com/api/vedit/realtime' }),
 })
@@ -200,6 +233,8 @@ guards the rest of your API.
 - **Ids are the contract.** An agent can only change what has an id, so the
   elements you wrapped in `<Editable>` are the ones it can work on precisely.
   Scanner ids work too, and move when the markup does.
+- **The registry is the fence.** An agent can place the components you registered
+  and no others. Registering fewer is a real way to narrow what it can do.
 - **It cannot touch your code.** The worst case is a bad-looking draft, which
   `reset_node` or a version restore undoes.
 - **Give it a token.** `set_token` plus `var(--vedit-brand)` in a style is how a

@@ -5,11 +5,14 @@ import {
   type VeditVersion,
 } from './core/types'
 import { migrateDocument } from './core/migrate'
+import type { ComponentSummary } from './core/registry'
 import { documentToCss } from './runtime/css'
 import { DEFAULT_BREAKPOINTS, type BreakpointWidths } from './core/types'
 
 export { createRealtimeHandler } from './realtime-server'
 export { migrateDocument, inspectDocument, DOCUMENT_VERSION } from './core/migrate'
+export { componentManifest } from './core/registry'
+export type { ComponentSummary } from './core/registry'
 export { applyOperations, describeDocument, OperationError } from './core/operations'
 export type {
   ContentPatch,
@@ -32,6 +35,12 @@ export interface VeditServerStore {
   write(doc: VeditDocument, stage?: DocumentStage): Promise<void>
   /** Optional: which documents exist. Switches on `GET /v1/documents` in the API. */
   list?(): Promise<Array<{ key: string; updatedAt?: string }>>
+  /**
+   * Optional: the components pages may be composed from. A store that fetches
+   * documents from a site can fetch its manifest too, which is how `vedit-mcp
+   * --endpoint` learns what an agent is allowed to place.
+   */
+  listComponents?(): Promise<ComponentSummary[]>
   /** Optional history. Implement both to switch on the editor's History panel. */
   listVersions?(key: string): Promise<VeditVersion[]>
   readVersion?(key: string, versionId: string): Promise<VeditDocument | null>

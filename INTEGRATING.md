@@ -18,7 +18,7 @@ npm install github:jsnapoli1/vedit
 nothing else to run. Pin a tag or commit for anything you deploy:
 
 ```bash
-npm install github:jsnapoli1/vedit#v0.2.0
+npm install github:jsnapoli1/vedit#v0.3.0
 ```
 
 To publish it under your own scope instead, set `"name": "@your-scope/vedit"` in
@@ -108,7 +108,53 @@ overrides.
 
 ---
 
-## 5. Store the edits somewhere real
+## 5. Optional: let people build pages, not just edit them
+
+Register the components a page may be composed from, and put a slot where they go.
+The components stay ordinary React; the schema says which props a person may
+change.
+
+```tsx
+import { defineComponents, VeditProvider, VeditSlot } from 'vedit'
+import { Hero, FeatureRow, Pricing } from './blocks'
+
+export const components = defineComponents({
+  Hero: {
+    component: Hero,
+    group: 'Sections',
+    fields: [{ name: 'headline', type: 'text' }, { name: 'align', type: 'select', options: ['left', 'center'] }],
+    defaults: { headline: 'A headline worth reading', align: 'left' },
+  },
+  FeatureRow: { component: FeatureRow, group: 'Sections', fields: [] },
+})
+
+<VeditProvider components={components}>
+  <Nav />
+  <VeditSlot id="campaign.sections" as="main">
+    <p>Nothing here yet.</p>
+  </VeditSlot>
+  <Footer />
+</VeditProvider>
+```
+
+**Check**: open the editor, choose **Insert**, place a Hero. It renders through
+your component, and its props are in the inspector.
+
+Worth knowing:
+
+- A whole page is a slot with nothing around it; a section of an existing page is
+  a slot in the middle of your JSX. Adopt one region at a time.
+- `container: true` on a component makes it hold whatever is placed inside it, as
+  its `children`.
+- The editor wraps a placed component in a `<div>` it owns unless you set
+  `wrap: false` — do that when the component spreads its props onto its own root
+  and the extra element would break a flex or grid layout.
+- Name components for what they are, not where they go: the name is stored in
+  every document that places one.
+
+---
+
+## 6. Store the edits somewhere real
 
 `localStorage` is for trying it out. For anything shared, point the provider at
 your backend and add the matching route.
@@ -154,7 +200,7 @@ reload — it changed.
 
 ---
 
-## 6. Pick document keys
+## 7. Pick document keys
 
 One document per editable page. The default is `window.location.pathname`, which
 is usually right. Set `documentKey` explicitly when:
@@ -172,7 +218,7 @@ const doc = await store.read(pathname)
 
 ---
 
-## 7. Decide who can open it
+## 8. Decide who can open it
 
 Without `enabled`, the editor is available on `localhost`, in development
 builds, and to anyone who adds `?vedit=1`. That last one is fine for a staging
@@ -187,7 +233,7 @@ enabled={session?.user?.role === 'editor'}
 
 ---
 
-## 8. Optional: several pages at once, and collaboration
+## 9. Optional: several pages at once, and collaboration
 
 ```tsx
 <VeditProvider
@@ -212,7 +258,7 @@ export { relay as GET, relay as POST }
 
 ---
 
-## 9. Optional: let an agent design too
+## 10. Optional: let an agent design too
 
 Everything the editor does is also reachable without it — useful for scripted
 changes, and for handing a page to an AI agent.
@@ -223,9 +269,11 @@ claude mcp add vedit -- npx -y vedit-mcp --dir ./content
 
 Point it at the same documents your adapter writes (`--dir` for files,
 `--endpoint` for a deployed site's API). The agent works on the **draft**, so
-nothing reaches visitors until someone publishes. Steps 3 and 4 pay off here: an
-agent can only change what has an id, and it picks a declared variant rather than
-inventing one.
+nothing reaches visitors until someone publishes. Steps 3, 4 and 5 pay off here:
+an agent can only change what has an id, it picks a declared variant rather than
+inventing one, and with `--components manifest.json` — written at build time with
+`componentManifest(registry)` — it can assemble a page out of your components and
+no others.
 
 The matching HTTP surface is one more route:
 
@@ -282,6 +330,7 @@ machine; anything shared needs an endpoint.
 
 - [ ] Installed, `<VeditProvider>` wraps the app, `⌘E` opens the editor
 - [ ] The elements that matter have explicit `<Editable>` ids
+- [ ] Optional: components registered and a `<VeditSlot>` where pages get built
 - [ ] Components with variants declare `fields`
 - [ ] An adapter points at a real endpoint, with `authorize` on the handler
 - [ ] `enabled` is wired to your own auth

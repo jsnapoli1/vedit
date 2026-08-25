@@ -98,9 +98,19 @@ export interface NodeOverride extends StyleLayer {
 /** A visual the editor added that does not exist in source code. */
 export interface InsertedNode {
   id: string
-  /** Id of the `Editable` container it lives in. */
+  /**
+   * Id of the container it lives in — an `Editable` with `container`, a
+   * `VeditSlot`, or another inserted node that accepts children. Nesting is just
+   * a parent id pointing at another inserted node, so this flat list is a tree.
+   */
   parentId: string
-  kind: Exclude<NodeKind, 'component'>
+  kind: NodeKind
+  /**
+   * For `kind: 'component'`, which registered component to render. A name the
+   * registry no longer knows draws a placeholder rather than failing: content
+   * outlives the code that renders it.
+   */
+  component?: string
   /** Sort order inside the parent. */
   index: number
 }

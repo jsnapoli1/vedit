@@ -69,10 +69,10 @@ test.describe('driving the editor from a keyboard', () => {
 
     await page.locator('.vedit-tabs button', { hasText: 'Layers' }).focus()
     await page.keyboard.press('ArrowRight')
-    expect(await focused(page)).toContain('Tokens')
+    expect(await focused(page)).toContain('Insert')
 
     await page.keyboard.press('Enter')
-    await expect(page.locator('.vedit-tabs button[aria-selected="true"]')).toHaveText('Tokens')
+    await expect(page.locator('.vedit-tabs button[aria-selected="true"]')).toHaveText('Insert')
     expect(await page.locator('.vedit-tabs button[tabindex="0"]').count()).toBe(1)
   })
 

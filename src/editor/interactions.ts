@@ -41,7 +41,7 @@ function isChromeControl(target: EventTarget | null): boolean {
  * skipped: nothing renders their children, so dropping something inside one would
  * silently do nothing.
  */
-function containerFor(store: VeditStore, id: string): string | null {
+export function containerFor(store: VeditStore, id: string): string | null {
   let current: string | null = id
   while (current) {
     const node = store.getNode(current)

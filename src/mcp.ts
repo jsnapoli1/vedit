@@ -5,6 +5,7 @@ import {
   describeDocument,
   type VeditOperation,
 } from './core/operations'
+import type { ComponentSummary } from './core/registry'
 import { documentToCss } from './runtime/css'
 import {
   DEFAULT_BREAKPOINTS,
@@ -45,6 +46,12 @@ export interface VeditMcpOptions {
   writable?: boolean
   /** Reported in `initialize`, so a client can tell builds apart. */
   version?: string
+  /**
+   * The components an agent may place — `componentManifest(registry)`, or the
+   * JSON it produces. Without these, an agent can restyle a page but not compose
+   * one; with them it builds pages out of the team's own components.
+   */
+  components?: ComponentSummary[]
   /** Called after a write lands — `notifyEditors` turns this into a live update. */
   onChange?: (change: { key: string; stage: DocumentStage; doc: VeditDocument; changed: string[] }) => void | Promise<void>
 }
@@ -83,8 +90,9 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
     defaultKey,
     allowKey,
     writable = true,
-    version = '0.2.0',
+    version = '0.3.0',
     onChange,
+    components,
   } = options
 
   const keyOf = (args: Record<string, unknown>): string => {
@@ -160,6 +168,21 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
       inputSchema: object({ key: KEY }),
       async run(args) {
         return { items: (await read(keyOf(args))).tokens }
+      },
+    },
+    {
+      name: 'list_components',
+      description:
+        "The components this site is built from, with the props each one accepts. These are the team's own components — placing one gives you their design and behaviour rather than an approximation of it. Read this before composing a page.",
+      inputSchema: object({}),
+      async run() {
+        const list = components ?? (store.listComponents ? await store.listComponents() : [])
+        if (!list.length) {
+          throw new Error(
+            'No components are registered for this site — you can restyle what exists, but not compose new sections',
+          )
+        }
+        return { items: list }
       },
     },
     {
@@ -284,6 +307,60 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
       },
     },
     {
+      name: 'place_component',
+      description:
+        'Put one of the site\'s components into a slot or container, with its props. Call list_components first for the names and what each prop accepts, and describe_document for the container ids. Returns the id it was given, which is what you style or configure afterwards.',
+      write: true,
+      inputSchema: object(
+        {
+          key: KEY,
+          parentId: {
+            type: 'string',
+            description: 'Container to place it in — a slot id, or another container from describe_document',
+          },
+          component: { type: 'string', description: 'Registered component name, from list_components' },
+          props: { type: 'object', description: 'Values for the props that component declares' },
+          index: { type: 'number', description: 'Position among its siblings; appended by default' },
+        },
+        ['parentId', 'component'],
+      ),
+      async run(args) {
+        const known = components ?? (store.listComponents ? await store.listComponents() : [])
+        const name = String(args.component)
+        // Refuse a name the site doesn't have rather than storing a placeholder
+        // someone has to find later.
+        if (known.length && !known.some((item) => item.id === name)) {
+          throw new Error(`No component named \`${name}\`. Available: ${known.map((item) => item.id).join(', ')}`)
+        }
+        return write(keyOf(args), [
+          {
+            op: 'insert-node',
+            parentId: String(args.parentId),
+            kind: 'component',
+            component: name,
+            index: args.index as number | undefined,
+            override: args.props ? { props: args.props as Record<string, unknown> } : undefined,
+          },
+        ])
+      },
+    },
+    {
+      name: 'move_node',
+      description: 'Re-order a placed node among its siblings, or move it into a different container.',
+      write: true,
+      inputSchema: object({ key: KEY, id: ID, parentId: { type: 'string' }, index: { type: 'number' } }, ['id']),
+      async run(args) {
+        return write(keyOf(args), [
+          {
+            op: 'move-node',
+            id: String(args.id),
+            parentId: args.parentId as string | undefined,
+            index: args.index as number | undefined,
+          },
+        ])
+      },
+    },
+    {
       name: 'reset_node',
       description:
         'Drop every override for one element, back to exactly what the source code renders. Also removes it if it was inserted.',
@@ -402,8 +479,10 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
             capabilities: { tools: { listChanged: false } },
             serverInfo: { name: SERVER_NAME, version },
             instructions:
-              'Edits go to a document of overrides, not to source code. describe_document first; ' +
-              'render_css to check what a change produces; publishing is a separate, deliberate step.',
+              'Edits go to a document of overrides and placed components, not to source code. ' +
+              'describe_document first to see what a page has; list_components to see what it can be ' +
+              'built from, then place_component into a slot; render_css to check what a change ' +
+              'produces. Publishing is a separate, deliberate step.',
           })
 
         case 'ping':
