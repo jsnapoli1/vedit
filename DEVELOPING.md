@@ -324,7 +324,19 @@ keyboard, and what happens when the editor throws.
 
 - Screenshot baselines in `e2e/visual.spec.ts-snapshots/`. Sensitive to browser
   build (pinned by the `@playwright/test` version) and to fonts (CI runs in the
-  matching container). Regenerate deliberately: `npm run test:e2e:update`.
+  matching container). Regenerate deliberately, and **inside that container** —
+  the font stack is a system one, so a baseline captured on macOS renders in SF
+  Pro and will never match the DejaVu the Linux image falls back to:
+
+  ```bash
+  docker run --rm -v "$PWD":/work -w /work -e CI=true --user root \
+    mcr.microsoft.com/playwright:v1.56.0-noble \
+    bash -lc 'npm ci && npm ci --prefix example && npm run build \
+      && npm run test:e2e:update'
+  ```
+
+  A bare `npm run test:e2e:update` on a Mac will produce baselines that pass
+  locally and fail every CI run.
 - Layout invariants in the same file — nothing covers the toolbar, no fixed
   label is clipped, the panels leave room for the artboards. These are geometry,
   not pixels, so they hold anywhere. Both bugs they were written to catch were
@@ -368,7 +380,7 @@ git push --follow-tags
 `prepare` builds on install, so a git dependency needs no publish step:
 
 ```bash
-npm install github:jsnapoli1/vedit#v0.4.0
+npm install github:jsnapoli1/vedit#v0.4.1
 ```
 
 Every release gets a [CHANGELOG.md](./CHANGELOG.md) entry, written for someone

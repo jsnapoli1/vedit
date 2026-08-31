@@ -9,6 +9,29 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.4.1 — 2026-08-31
+
+No change to anything you install — this release only fixes the test suite.
+
+### Fixed
+
+- **The visual regression baselines are generated where CI runs them.** Every CI
+  run since the browser suite landed had failed on all ten screenshots, about
+  2-4% of pixels against a 1% tolerance. The baselines had been captured on
+  macOS, and both the demo site and the editor chrome ask for a system font
+  stack (`ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif`).
+  That resolves to SF Pro on a Mac and falls through to DejaVu in the Linux
+  container, because none of the named faces are installed there — different
+  metrics, different line breaks, a headline wrapping to three lines in the
+  baseline and two in CI.
+
+  They are now regenerated inside `mcr.microsoft.com/playwright:v1.56.0-noble`,
+  the image the workflow already pins. If you regenerate them yourself, do it in
+  that container rather than with a local `npm run test:e2e:update`, or you will
+  reintroduce this — see [DEVELOPING.md](./DEVELOPING.md#testing).
+
+---
+
 ## 0.4.0 — 2026-08-25
 
 One change, and it is a breaking one: the two server constructors no longer let
