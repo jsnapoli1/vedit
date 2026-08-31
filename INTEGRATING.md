@@ -47,7 +47,7 @@ npm install github:jsnapoli1/vedit
 nothing else to run. Pin a tag or commit for anything you deploy:
 
 ```bash
-npm install github:jsnapoli1/vedit#v0.3.0
+npm install github:jsnapoli1/vedit#v0.5.0
 ```
 
 To publish it under your own scope instead, set `"name": "@your-scope/vedit"` in
