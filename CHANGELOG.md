@@ -9,6 +9,109 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.5.0 — 2026-08-31
+
+The document format is unchanged at version 1. Everything here is additive:
+`version`/`migrate` on a component are optional, `data-vedit-skip` is new, and a
+document written by 0.4 opens untouched.
+
+Prompted by an integration that took eleven rounds — not because anything was
+broken, but because every failure looked identical: nothing on screen, nothing
+in the console. Most of this release is the library learning to say what went
+wrong.
+
+### Added
+
+- **Focus one page on the canvas.** A dropdown in the toolbar shows a single
+  artboard instead of all of them. Hidden pages stay loaded and keep their
+  unsaved edits, so switching focus costs nothing and loses nothing. Only
+  appears when `pages` has more than one entry.
+
+- **`data-vedit-skip`** — hides an element and its subtree from the DOM scanner
+  and does nothing else. Reach for this for generated markup, such as a heading
+  split into per-word spans by an animation library.
+
+  `data-vedit-ui`, which is easy to find first and sounds like it does this job,
+  marks the editor's *own chrome*: it also makes that subtree ignore editor
+  clicks, so setting it inside a page silently makes that whole region
+  unselectable. A development build now warns when it appears inside page
+  content.
+
+- **Component schema versioning.** A definition can now carry a `version` and a
+  `migrate`, so renaming or retyping a prop stops stranding every page that
+  already stores the old one. Documents have had `migrateDocument` since 0.2;
+  without this, a component's own schema was the one part of a saved page that
+  could silently rot.
+
+  ```ts
+  Hero: {
+    component: Hero,
+    version: 2,
+    fields: [{ name: 'title', type: 'text' }],
+    migrate: (props, from) => (from < 2 ? { ...props, title: props.headline } : props),
+  }
+  ```
+
+  Migrations run on read, so an old page renders correctly straight away, and the
+  new shape is written back the next time someone saves for their own reasons —
+  opening a page never writes to it, and never makes it look edited. Props stored
+  at a *newer* version than the code are left alone rather than guessed at, and a
+  migration that throws costs one component's appearance rather than the page.
+
+- **Drag a component from the Insert panel onto the page.** Clicking still places
+  into the selected container; dragging aims for itself, showing the same
+  insertion line used for re-ordering and dropping between two existing blocks.
+  Dropping somewhere nothing accepts an element says so rather than placing it
+  somewhere you weren't looking.
+
+- **`seedFromDom` and `applySeed`** — build a document from a rendered region,
+  so converting it to a `<VeditSlot>` doesn't blank the page on day one. Ids are
+  derived from position rather than randomly, so a seed script is re-runnable
+  and its output diffs cleanly; `applySeed` refuses to touch a slot that already
+  has content. See [INTEGRATING.md](./INTEGRATING.md#converting-a-region-that-already-has-content).
+
+### Fixed
+
+- **The Position toggle now shows which mode is active.** "In flow" and "Free"
+  wrote through the cell for the current breakpoint but read back from the base
+  one, so at any breakpoint other than `base` — including the width the canvas
+  opens at — clicking "Free" genuinely repositioned the element while the
+  control kept showing "In flow".
+
+### Accessibility
+
+- **Every inspector field says what it sets.** The panel's labels were laid out
+  rather than associated — a span beside the control, or a one-letter prefix
+  inside it — so a screen reader announced "edit text" and left you to work out
+  which of nine numeric fields you were in. Each row now names the controls
+  inside it, and fields whose visible label is an abbreviation ("W", "T") carry a
+  spoken name ("width", "Padding top"). 0.2 made the editor keyboard-drivable;
+  this is the half that was missing.
+
+### Diagnostics
+
+Four failures that used to be silent now say something, once, in development
+builds only:
+
+- The editor being disabled on a hostname that isn't local, which is why ⌘E can
+  do nothing at all on a deployed staging site.
+- The editor's chunk failing to load — usually a stale reference after a deploy.
+  It also stops pretending to be open, and reports through `onError`.
+- `data-vedit-ui` set inside page content, which makes that region unselectable.
+- A selected node with no box, `display: contents` being the usual cause. It can
+  never be outlined, dragged or resized, which reads as the editor ignoring it.
+
+### Documentation
+
+- [INTEGRATING.md](./INTEGRATING.md) opens with the path through the library,
+  and says plainly that stopping after the override steps is a finished
+  integration rather than a half-measure.
+- Step 5 now says what adopting a slot changes about *maintaining* the site:
+  the region leaves your repository, stops appearing in pull requests, and is
+  recovered through the History panel rather than `git revert`.
+
+---
+
 ## 0.4.1 — 2026-08-31
 
 No change to anything you install — this release only fixes the test suite.

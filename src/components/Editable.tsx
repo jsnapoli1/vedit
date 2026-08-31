@@ -217,6 +217,7 @@ function WrappedComponent({
     container: definition.container,
     fields: definition.fields,
     props: defaults,
+    definition,
   })
 
   // The wrapper carries only the editor's own attributes. Whatever the component

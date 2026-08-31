@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useVeditContext, useVeditState } from '../core/context'
+import { migrateProps, type AnyComponentDefinition } from '../core/registry'
 import type { EditableField, NodeKind, NodeOverride } from '../core/types'
 
 const EMPTY: NodeOverride = {}
@@ -19,6 +20,11 @@ export interface UseEditableOptions {
   fields?: EditableField[]
   /** The prop values your code passed in. Overrides are layered on top. */
   props?: Record<string, unknown>
+  /**
+   * For a placed component: its registry entry, so stored props written against
+   * an older schema are brought forward before the component sees them.
+   */
+  definition?: Pick<AnyComponentDefinition, 'version' | 'migrate'>
 }
 
 export interface UseEditableResult<P = Record<string, unknown>> {
@@ -54,6 +60,7 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
     disabled = false,
     fields,
     props: sourceProps,
+    definition,
   } = options
   const { store } = useVeditContext()
   const [element, setElement] = useState<HTMLElement | null>(null)
@@ -86,10 +93,27 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
 
   const ref = useCallback((next: HTMLElement | null) => setElement(next), [])
 
-  const props = useMemo(
-    () => ({ ...(sourceProps ?? {}), ...(override.props ?? {}) }) as P,
+  // Stored props are migrated on the way out, so a page written against an older
+  // schema renders correctly straight away. The migrated shape is written back on
+  // the next save rather than here: rendering a page should never write to it.
+  const stored = useMemo(
+    () =>
+      definition
+        ? migrateProps(definition, override.props, override.propsVersion)
+        : { props: override.props ?? {}, version: 0, changed: false },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [propsKey, override.props],
+    [definition, override.props, override.propsVersion],
+  )
+
+  useEffect(() => {
+    if (!stored.changed || disabled) return
+    store.stageMigratedProps(id, stored.props, stored.version)
+  }, [store, id, stored, disabled])
+
+  const props = useMemo(
+    () => ({ ...(sourceProps ?? {}), ...stored.props }) as P,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [propsKey, stored.props],
   )
 
   return {

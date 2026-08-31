@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { artboard, openEditor } from './fixtures'
+import { artboard, openEditor, select } from './fixtures'
 
 /** What has focus right now, as something a failure message can be read from. */
 function focused(page: Page) {
@@ -138,5 +138,42 @@ test.describe('driving the editor from a keyboard', () => {
     )
 
     expect(unnamed).toEqual([])
+  })
+
+  /**
+   * The inspector's labels are laid out rather than associated — a span beside
+   * the control, or a one-letter prefix inside it. That reads fine and tells a
+   * screen reader nothing, which matters most here because the panel is dense
+   * with near-identical numeric fields.
+   */
+  test('every inspector field says what it sets', async ({ page }) => {
+    await openEditor(page)
+    await select(page, 'home.hero.title')
+
+    const unnamed = await page.evaluate(() =>
+      [...document.querySelectorAll('.vedit-right input, .vedit-right select, .vedit-right textarea')]
+        .filter((field) => {
+          if (field.getAttribute('aria-label')?.trim()) return false
+          if (field.getAttribute('aria-labelledby')) return false
+          // A wrapping <label> names the control without an attribute.
+          if (field.closest('label')) return false
+          const id = field.getAttribute('id')
+          return !(id && document.querySelector(`label[for="${id}"]`))
+        })
+        .map((field) => `${field.tagName.toLowerCase()}.${field.className}`),
+    )
+
+    expect(unnamed).toEqual([])
+  })
+
+  test('fields whose label is an abbreviation are named in full', async ({ page }) => {
+    await openEditor(page)
+    await select(page, 'home.hero.title')
+
+    // "W" and "T" are legible in a grid and useless to hear.
+    const named = (label: string) => page.locator(`.vedit-right input[aria-label="${label}"]`)
+    await expect(named('width')).toHaveCount(1)
+    await expect(named('min width')).toHaveCount(1)
+    await expect(named('Padding top')).toHaveCount(1)
   })
 })

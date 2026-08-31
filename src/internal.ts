@@ -28,6 +28,7 @@ export type { TransformParts } from './runtime/transform'
 export { parseGradient, serializeGradient, DEFAULT_GRADIENT } from './runtime/gradient'
 export type { Gradient, GradientStop } from './runtime/gradient'
 
+export { warnOnce, resetWarnings, isProductionLike } from './core/env'
 export { scanDom } from './auto/scanner'
 export { computeAutoId } from './auto/ids'
 export { auditPage, contrastRatio, effectiveBackground, parseColor, luminance } from './editor/a11y'

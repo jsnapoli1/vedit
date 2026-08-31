@@ -24,6 +24,7 @@ import {
 import { documentToCss } from '../runtime/css'
 import { AutoScanner } from '../auto/scanner'
 import { isCanvasChild, publishCanvasBridge } from './canvas'
+import { warnOnce } from './env'
 import { VeditErrorBoundary, type VeditErrorBoundaryProps } from './ErrorBoundary'
 import { componentManifest, type ComponentRegistry, type ComponentSummary } from './registry'
 import { RealtimeSession, type SessionSnapshot } from './session'
@@ -198,6 +199,15 @@ function defaultEnabled(): boolean {
   const params = new URLSearchParams(window.location.search)
   if (params.has('vedit')) return params.get('vedit') !== '0'
   if (LOCAL_HOSTS.test(window.location.hostname)) return true
+  // Falling through to `false` here is the library's most confusing outcome:
+  // the provider mounts, the page renders, ⌘E does nothing, and nothing is
+  // logged. Say so rather than letting it be discovered by reading this file.
+  warnOnce(
+    'disabled',
+    `the editor is disabled on this hostname (${window.location.hostname}), so ⌘E will do nothing. ` +
+      'It turns itself on for localhost and for NODE_ENV=development. ' +
+      'To use it here, add ?vedit=1 to the URL, or pass `enabled` to <VeditProvider> to decide yourself.',
+  )
   try {
     if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development') return true
   } catch {
@@ -345,7 +355,7 @@ export function VeditProvider({
       {children}
       {auto ? guard('the DOM scanner', <AutoScanner />) : null}
       {isEnabled && !framedByEditor
-        ? guard('the editor', <EditorHost canvas={canvas} />, (error, retry) => (
+        ? guard('the editor', <EditorHost canvas={canvas} onError={onError} />, (error, retry) => (
             <EditorCrashed store={store} error={error} onRetry={retry} />
           ))
         : null}
@@ -433,7 +443,13 @@ function OverrideStyles() {
  * Loads the editor chrome only once someone actually opens it, so the bundle a
  * visitor downloads stays small.
  */
-function EditorHost({ canvas }: { canvas: boolean }) {
+function EditorHost({
+  canvas,
+  onError,
+}: {
+  canvas: boolean
+  onError?: (error: Error, info: { part: string }) => void
+}) {
   const store = useVeditStore()
   const editing = useVeditState((state) => state.editing)
   const [Editor, setEditor] = useState<ComponentType<{ canvas: boolean }> | null>(null)
@@ -455,9 +471,25 @@ function EditorHost({ canvas }: { canvas: boolean }) {
   useEffect(() => {
     if (!editing || Editor) return
     let cancelled = false
-    void import('../editor/mount').then((module) => {
-      if (!cancelled) setEditor(() => module.EditorMount as ComponentType<{ canvas: boolean }>)
-    })
+    void import('../editor/mount')
+      .then((module) => {
+        if (!cancelled) setEditor(() => module.EditorMount as ComponentType<{ canvas: boolean }>)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        // Without this the chunk fails, `Editor` stays null, and the component
+        // renders null forever — indistinguishable from the editor being off.
+        // A stale hashed chunk after a deploy is the usual cause.
+        store.setEditing(false)
+        const reason = error instanceof Error ? error : new Error(String(error))
+        warnOnce(
+          'chunk',
+          "the editor's code failed to load, so it could not open. " +
+            'If this followed a deploy, the page may be holding a stale chunk reference — a reload usually fixes it.',
+          reason,
+        )
+        onError?.(reason, { part: 'the editor' })
+      })
     return () => {
       cancelled = true
     }

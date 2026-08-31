@@ -85,7 +85,7 @@ function EmptySlot({ registered, onSelect }: { registered: number; onSelect: () 
   // editor's own furniture, not content — so selecting the slot it stands in has
   // to be wired up by hand.
   return (
-    <button type="button" data-vedit-ui="" style={EMPTY_STYLE} onClick={onSelect}>
+    <button type="button" data-vedit-ui="" data-vedit-own="" style={EMPTY_STYLE} onClick={onSelect}>
       {registered
         ? 'Empty slot — select it and use the Insert panel to place a component here.'
         : 'Empty slot — no components are registered. Pass `components` to VeditProvider.'}

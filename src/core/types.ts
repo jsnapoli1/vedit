@@ -93,6 +93,12 @@ export interface NodeOverride extends StyleLayer {
   states?: Partial<Record<Exclude<StyleState, 'default'>, StyleLayer>>
   /** Values for the props a component declared as editable. */
   props?: Record<string, unknown>
+  /**
+   * Which version of its component's schema `props` were written against. Absent
+   * means version 1, which is what every document written before schemas could be
+   * versioned carries. Read by the registry's migration, never assumed.
+   */
+  propsVersion?: number
 }
 
 /** A visual the editor added that does not exist in source code. */

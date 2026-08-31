@@ -4,6 +4,8 @@ import type { ComponentSummary } from '../../core/registry'
 import type { VeditStore } from '../../core/store'
 import type { NodeKind, RegisteredNode } from '../../core/types'
 import { containerFor } from '../interactions'
+import { startPlacementDrag } from '../dragToPlace'
+import { useEditorTarget } from '../target'
 import { IconImage, IconPlus, IconSquare, IconType } from '../icons'
 
 const PRIMITIVES: Array<{ kind: Exclude<NodeKind, 'component'>; label: string; icon: JSX.Element }> = [
@@ -25,6 +27,7 @@ const PRIMITIVES: Array<{ kind: Exclude<NodeKind, 'component'>; label: string; i
 export function InsertPanel() {
   const store = useVeditStore()
   const { config } = useVeditContext()
+  const editorTarget = useEditorTarget()
   const nodes = useVeditNodes()
   const selection = useVeditState((state) => state.selection)
   const target = useMemo(() => insertionTarget(store, selection, nodes), [store, selection, nodes])
@@ -38,6 +41,11 @@ export function InsertPanel() {
     }
     store.insert(target.id, kind, { component })
   }
+
+  // Dragging aims for itself, so unlike clicking it does not need a selection —
+  // the drop point comes from wherever the pointer is when it is let go.
+  const drag = (event: React.PointerEvent, kind: NodeKind, component?: string) =>
+    startPlacementDrag(event, store, editorTarget, { kind, component })
 
   return (
     <div className="vedit-panel-body">
@@ -64,6 +72,8 @@ export function InsertPanel() {
               type="button"
               className="vedit-insert-item"
               disabled={!target}
+              title={`Click to add to ${target?.label ?? 'the page'}, or drag it where you want it`}
+              onPointerDown={(event) => drag(event, 'component', item.id)}
               onClick={() => place('component', item.id)}
             >
               <span className="vedit-insert-name">
@@ -84,6 +94,8 @@ export function InsertPanel() {
             type="button"
             className="vedit-insert-item"
             disabled={!target}
+            title={`Click to add to ${target?.label ?? 'the page'}, or drag it where you want it`}
+            onPointerDown={(event) => drag(event, item.kind)}
             onClick={() => place(item.kind)}
           >
             <span className="vedit-insert-name">

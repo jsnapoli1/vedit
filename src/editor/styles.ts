@@ -107,6 +107,14 @@ export const EDITOR_CSS = `
 .vedit-btn-primary:hover:not(:disabled) { background: #0b8ae6; }
 .vedit-btn-icon { width: 28px; padding: 0; }
 .vedit-divider { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--vedit-border); }
+/* Sits in the toolbar's button row, so it wears the same clothes as a button. */
+.vedit-page-focus {
+  max-width: 132px; color: inherit; font: inherit;
+  appearance: none; -webkit-appearance: none;
+  border: 1px solid var(--vedit-border); padding-right: 9px;
+}
+.vedit-page-focus:focus-visible { outline: 2px solid var(--vedit-accent); outline-offset: 1px; }
+.vedit-page-focus option { background: var(--vedit-panel); color: var(--vedit-text); }
 
 /* ----------------------------------------------------------------- layers */
 .vedit-layer {
@@ -243,13 +251,15 @@ export const EDITOR_CSS = `
 .vedit-hint { color: var(--vedit-muted); line-height: 1.5; }
 
 /* ------------------------------------------------------------------ insert */
+/* A grab cursor, because these can be dragged onto the page as well as clicked. */
 .vedit-insert-item {
-  display: block; width: 100%; text-align: left; cursor: pointer;
+  display: block; width: 100%; text-align: left; cursor: grab;
   background: var(--vedit-panel-2); border: 1px solid transparent; border-radius: var(--vedit-radius);
   padding: 7px 9px; margin-top: 4px;
 }
 .vedit-insert-item:hover:not(:disabled) { border-color: var(--vedit-accent); }
 .vedit-insert-item:disabled { opacity: .45; cursor: default; }
+.vedit-insert-item:active:not(:disabled) { cursor: grabbing; }
 .vedit-insert-name { display: flex; align-items: center; gap: 6px; font-weight: 500; }
 .vedit-insert-note { display: block; margin-top: 3px; color: var(--vedit-muted); line-height: 1.45; }
 
@@ -333,6 +343,13 @@ export const EDITOR_CSS = `
 .vedit-canvas[data-panning="true"]:active { cursor: grabbing; }
 .vedit-artboards { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 .vedit-artboard { position: absolute; top: 0; }
+/*
+ * A page that isn't in focus is hidden, not unmounted — its frame keeps its
+ * document, its bridge and its unsaved edits. Hidden by visibility rather than
+ * display so the frame still lays out and still reports its height, which is
+ * what lets the canvas fit it correctly the moment it comes back.
+ */
+.vedit-artboard[data-hidden="true"] { visibility: hidden; pointer-events: none; }
 .vedit-artboard[data-active="true"] .vedit-artboard-label { color: var(--vedit-text); }
 .vedit-artboard[data-active="true"] iframe { box-shadow: 0 0 0 1.5px var(--vedit-accent), 0 30px 80px rgba(0,0,0,.55); }
 .vedit-artboard iframe {

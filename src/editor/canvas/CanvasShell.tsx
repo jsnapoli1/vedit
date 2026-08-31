@@ -59,6 +59,9 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
     const here = typeof window === 'undefined' ? '' : window.location.pathname
     return pages.some((page) => page.path === here) ? here : pages[0]?.path ?? '/'
   })
+  // Which single page fills the canvas, or null for all of them side by side.
+  // View state, like zoom and pan: it starts fresh every time the editor opens.
+  const [focusPath, setFocusPath] = useState<string | null>(null)
   const [heights, setHeights] = useState<Record<string, number>>({})
   const [view, setView] = useState<View>({ zoom: 1, panX: 0, panY: 0 })
   const [frameWidth, setFrameWidth] = useState(() => defaultFrameWidth(config))
@@ -73,6 +76,18 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
     () => pages.map((page) => bridges[page.path]).filter(Boolean),
     [pages, bridges],
   )
+
+  // Hidden artboards stay mounted and bridged — only the layout ignores them —
+  // so a page with unsaved work is untouched while you look at another one.
+  const visiblePages = useMemo(
+    () => (focusPath ? pages.filter((page) => page.path === focusPath) : pages),
+    [pages, focusPath],
+  )
+  const columnOf = useMemo(() => {
+    const columns = new Map<string, number>()
+    visiblePages.forEach((page, index) => columns.set(page.path, index))
+    return columns
+  }, [visiblePages])
   const active = bridges[activePath]
 
   // The panels belong to the artboard they are pointed at, including which
@@ -224,8 +239,8 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
     return target
   }, [])
 
-  const totalWidth = pages.length * frameWidth + (pages.length - 1) * GAP
-  const maxHeight = Math.max(600, ...pages.map((page) => heights[page.path] ?? 0))
+  const totalWidth = visiblePages.length * frameWidth + (visiblePages.length - 1) * GAP
+  const maxHeight = Math.max(600, ...visiblePages.map((page) => heights[page.path] ?? 0))
 
   const fit = useCallback(() => {
     const availableWidth = window.innerWidth - INSETS.left - INSETS.right
@@ -242,8 +257,9 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
   const resizing = useRef(false)
   const ready = bridgeList.length > 0
 
-  // Fit when the canvas opens, and again whenever the artboards change width —
-  // you switched to a breakpoint to look at it, so put it in front of you.
+  // Fit when the canvas opens, and again whenever the artboards change width or
+  // which of them are showing — you focused a page to look at it, so put it in
+  // front of you.
   useEffect(() => {
     if (!ready) return
     if (resizing.current) {
@@ -252,7 +268,7 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
     }
     fit()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, frameWidth, pages.length])
+  }, [ready, frameWidth, pages.length, focusPath])
 
   const zoomAt = useCallback((factor: number, clientX: number, clientY: number) => {
     setView((current) => {
@@ -406,6 +422,28 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
 
   const zoomControls = (
     <>
+      {pages.length > 1 ? (
+        <select
+          className="vedit-btn vedit-page-focus"
+          title="Show one page, or all of them"
+          aria-label="Page in focus"
+          value={focusPath ?? ''}
+          onChange={(event) => {
+            const next = event.target.value || null
+            setFocusPath(next)
+            // Point the panels at what you just chose to look at, so the
+            // inspector is never editing a page you can no longer see.
+            if (next) setActivePath(next)
+          }}
+        >
+          <option value="">All pages</option>
+          {pages.map((page) => (
+            <option key={page.path} value={page.path}>
+              {page.label ?? page.path}
+            </option>
+          ))}
+        </select>
+      ) : null}
       <button
         type="button"
         className="vedit-btn vedit-btn-icon"
@@ -462,46 +500,52 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
         className="vedit-artboards"
         style={{ transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})` }}
       >
-        {pages.map((page, index) => (
-          <div
-            key={page.path}
-            className="vedit-artboard"
-            data-active={page.path === activePath ? 'true' : 'false'}
-            style={{ left: index * (frameWidth + GAP) }}
-          >
+        {pages.map((page) => {
+          const column = columnOf.get(page.path)
+          const hidden = column === undefined
+          return (
             <div
-              className="vedit-artboard-label"
-              style={{ fontSize: 11 / view.zoom, transform: `translateY(${-8 / view.zoom}px)` }}
-              onPointerDown={(event) => {
-                event.stopPropagation()
-                setActivePath(page.path)
-              }}
+              key={page.path}
+              className="vedit-artboard"
+              data-active={page.path === activePath ? 'true' : 'false'}
+              data-hidden={hidden ? 'true' : 'false'}
+              aria-hidden={hidden ? 'true' : undefined}
+              style={{ left: (column ?? 0) * (frameWidth + GAP) }}
             >
-              {page.label ?? page.path} — {frameWidth} × {heights[page.path] ?? '…'}
-            </div>
-            <iframe
-              ref={(element) => {
-                if (element) frames.current.set(page.path, element)
-                else frames.current.delete(page.path)
-              }}
-              title={page.label ?? page.path}
-              src={canvasUrl(page.path)}
-              style={{
-                width: frameWidth,
-                height: heights[page.path] ?? 900,
-                pointerEvents: panning ? 'none' : 'auto',
-              }}
-            />
-            {index === pages.length - 1 ? (
               <div
-                className="vedit-frame-handle"
-                style={{ width: 10 / view.zoom }}
-                title="Drag to change the artboard width"
-                onPointerDown={startFrameResize}
+                className="vedit-artboard-label"
+                style={{ fontSize: 11 / view.zoom, transform: `translateY(${-8 / view.zoom}px)` }}
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                  setActivePath(page.path)
+                }}
+              >
+                {page.label ?? page.path} — {frameWidth} × {heights[page.path] ?? '…'}
+              </div>
+              <iframe
+                ref={(element) => {
+                  if (element) frames.current.set(page.path, element)
+                  else frames.current.delete(page.path)
+                }}
+                title={page.label ?? page.path}
+                src={canvasUrl(page.path)}
+                style={{
+                  width: frameWidth,
+                  height: heights[page.path] ?? 900,
+                  pointerEvents: panning ? 'none' : 'auto',
+                }}
               />
-            ) : null}
-          </div>
-        ))}
+              {column === visiblePages.length - 1 ? (
+                <div
+                  className="vedit-frame-handle"
+                  style={{ width: 10 / view.zoom }}
+                  title="Drag to change the artboard width"
+                  onPointerDown={startFrameResize}
+                />
+              ) : null}
+            </div>
+          )
+        })}
       </div>
 
       {/* Every artboard listens for its own edits, so a click anywhere is live. */}

@@ -3,6 +3,7 @@ import { useVeditContext, useVeditState } from '../core/context'
 import type { VeditStore } from '../core/store'
 import type { NodeKind, RegisteredNode } from '../core/types'
 import { safeUrl, sanitizeHtml } from '../runtime/sanitize'
+import { warnOnce } from '../core/env'
 import { computeAutoId } from './ids'
 
 const TEXT_TAGS = new Set([
@@ -54,6 +55,29 @@ export interface ScanOptions {
   minBoxSize?: number
 }
 
+/**
+ * The editor's own chrome is portalled into `<body>` or lives inside the canvas
+ * frame; it is never nested inside the page's own content. So a `data-vedit-ui`
+ * found under a heading, a section or a link is almost certainly a page trying
+ * to hide generated markup — and paying for it by making that whole subtree
+ * unclickable, which is not what the attribute name suggests.
+ */
+function warnIfChromeMarkedInPage(chrome: Element): void {
+  // The library renders a little chrome inside the page itself — an empty slot's
+  // prompt, for one — and marks it so this check can tell it apart from a page
+  // that borrowed the attribute.
+  if (chrome.hasAttribute('data-vedit-own')) return
+  // Inside the page's own content means: something above it is editable.
+  if (!chrome.parentElement?.closest('[data-vedit-id]')) return
+  warnOnce(
+    'ui-in-page',
+    '`data-vedit-ui` is set on an element inside your page, which also makes ' +
+      'everything around it unselectable — it marks the editor\'s own chrome, not markup to ignore. ' +
+      'If you meant "hide this from the scanner but keep the page editable", use `data-vedit-skip`.',
+    chrome,
+  )
+}
+
 /** Walk the DOM and describe every element the editor could plausibly target. */
 export function scanDom({ root, selector, minBoxSize = 8 }: ScanOptions): RegisteredNode[] {
   const found: RegisteredNode[] = []
@@ -62,7 +86,17 @@ export function scanDom({ root, selector, minBoxSize = 8 }: ScanOptions): Regist
   for (const element of elements) {
     const tag = element.tagName.toLowerCase()
     if (SKIP_TAGS.has(tag)) continue
-    if (element.closest('[data-vedit-ui]')) continue
+    // Two different jobs, deliberately two different attributes. `data-vedit-ui`
+    // marks the editor's own chrome, which is also inert to clicks; a page that
+    // borrows it to hide markup from the scanner makes that whole subtree
+    // unselectable. `data-vedit-skip` hides from the scanner and nothing else,
+    // so the elements around it stay editable.
+    const chrome = element.closest('[data-vedit-ui]')
+    if (chrome) {
+      warnIfChromeMarkedInPage(chrome)
+      continue
+    }
+    if (element.closest('[data-vedit-skip]')) continue
     // Nodes wrapped in <Editable> register themselves with richer metadata.
     if (element.hasAttribute('data-vedit-id') && element.dataset.veditAuto !== 'true') continue
 

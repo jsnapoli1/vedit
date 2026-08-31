@@ -275,6 +275,21 @@ function Pricing() {
           </EditableText>
         </div>
       </EditableBox>
+      {/*
+        * Two shapes that used to be silent dead ends, kept here so the tests can
+        * see the warnings fire: markup hidden from the scanner, and a wrapper
+        * that generates no box.
+        */}
+      <section className="hero" style={{ paddingTop: 0 }}>
+        <h2 data-vedit-skip className="split-heading">
+          {'Split into words'.split(' ').map((word) => (
+            <span key={word}>{word} </span>
+          ))}
+        </h2>
+        <EditableBox id="pricing.contents" style={{ display: 'contents' }} container>
+          <span>This span renders; its wrapper generates no box of its own.</span>
+        </EditableBox>
+      </section>
       <EditableBox id="pricing.plans" as="section" className="features" container>
         {PLANS.map((plan) => (
           <div className="card" key={plan.id}>

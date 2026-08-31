@@ -3,6 +3,35 @@
 A short, complete recipe. It is written to be followed by a person or handed to a
 coding agent — the steps are in dependency order and each one is checkable.
 
+## The path
+
+Steps 2–4 are where most sites stop, and stopping there is a finished
+integration, not a half-measure. The override model is what makes this droppable
+into an existing site in an afternoon: your components stay exactly as you wrote
+them, the content stays in your repository, and edits are a layer on top.
+
+Steps 5 and after trade some of that for the ability to build pages rather than
+only edit them. That is a bigger commitment — see [what you are actually
+deciding](#what-you-are-actually-deciding) — and it is an option, not the
+destination.
+
+Each step is worth shipping on its own, and each one is a reasonable place to
+stop:
+
+1. **Drop the provider onto a real page** and edit copy with no ids at all. An
+   afternoon's work, and it either helps immediately or it doesn't.
+2. **Add explicit ids** to the things that matter, so their edits survive the
+   markup being refactored around them.
+3. **Register components** when people start wanting variants of a section
+   rather than new words in it.
+4. **Open one region as a slot** — the one that already changes most often, and
+   that breaks nothing when it is empty.
+5. **Convert a whole page** only once a slot has proven itself on a real region
+   with real editors.
+
+Steps 4 and 5 hand ownership of that content to the editor. Get there when the
+earlier steps make it obvious you want to, not before.
+
 ---
 
 ## 1. Install
@@ -46,6 +75,23 @@ Open the site on `localhost` and press `⌘E` (`Ctrl+E`). Edits go to
 
 **Check**: the editor opens, clicking a heading selects it, and typing in the
 inspector changes the page.
+
+### Hiding things from the scanner
+
+Animation libraries and the like generate markup that has no business being
+editable — `SplitText` wrapping every word in a `<span>`, for instance. Mark the
+wrapper and the scanner walks past the whole subtree:
+
+```tsx
+<h1 data-vedit-skip>{splitIntoWords(title)}</h1>
+```
+
+There is a second attribute, `data-vedit-ui`, which the editor puts on its own
+chrome. **Don't reach for it here.** It means "this is the editor's UI", so it
+also makes the subtree ignore editor clicks — set it inside your page and that
+region stops being selectable at all, including the elements around it. Use
+`data-vedit-skip` for your own markup; a development build warns if the two get
+confused.
 
 ---
 
@@ -140,6 +186,65 @@ export const components = defineComponents({
 **Check**: open the editor, choose **Insert**, place a Hero. It renders through
 your component, and its props are in the inspector.
 
+### What you are actually deciding
+
+This is the one step in this guide that changes how the site is maintained, so
+decide it deliberately rather than because the API is available.
+
+Inside a slot, the content is no longer in your repository. That has consequences
+worth saying out loud:
+
+| | Overrides (steps 2–4) | A slot |
+|---|---|---|
+| Where the content lives | Your JSX, with edits layered on top | The document, entirely |
+| Shows up in a pull request | Yes — the markup is code | No |
+| Recovering a bad change | `git revert` | The **History** panel, or your backup of the document |
+| Who can restructure the page | Whoever can edit the code | Whoever can open the editor |
+| If vedit is removed | The page still renders | The region renders empty |
+
+None of that is a reason to avoid slots — it is the point of them. A marketing
+team that can add a section without a deploy is the whole idea. But it means a
+slot is a decision about ownership, not a refactor, and the region you choose
+should be one you are willing to stop reviewing in diffs.
+
+A good first slot is a region that already changes often and breaks nothing when
+it is empty: a campaign band, a promo strip, a list of testimonials. A poor first
+slot is your navigation.
+
+Back the document up the way you would back up a database, because after this
+step that is what it is. `GET /api/vedit/documents/:key` returns it as JSON.
+
+### Converting a region that already has content
+
+A slot renders what the document says, and a new document is empty — so
+converting a region that currently renders real JSX blanks it until someone
+rebuilds it by hand. Seed the document first, from the rendered page:
+
+```ts
+import { seedFromDom, applySeed } from 'vedit'
+
+const seed = seedFromDom({
+  root: document.querySelector('#home-body')!,
+  slotId: 'home.body',
+  components: [
+    { component: 'Hero', selector: '[data-block="hero"]',
+      props: (el) => ({ headline: el.querySelector('h1')?.textContent ?? '' }) },
+    { component: 'Pricing', selector: '[data-block="pricing"]' },
+  ],
+})
+
+// Anything unmatched is content the slot will not render. Treat it as a failure.
+if (seed.unmatched.length) throw new Error(`unmapped: ${JSON.stringify(seed.unmatched)}`)
+
+await save(applySeed(await load('home'), seed))
+```
+
+Run it against a real render of the page as it is today, commit the JSON it
+returns, and the slot comes up on day one identical to the region it replaced.
+Ids are derived from position rather than randomly, so the script is re-runnable
+and its output diffs cleanly. `applySeed` refuses to touch a slot that already
+has content, so re-running it can't overwrite anyone's work.
+
 Worth knowing:
 
 - A whole page is a slot with nothing around it; a section of an existing page is
@@ -151,6 +256,29 @@ Worth knowing:
   and the extra element would break a flex or grid layout.
 - Name components for what they are, not where they go: the name is stored in
   every document that places one.
+
+### When a component's props change
+
+Field names are stored in every document that places the component, so renaming
+one strands the pages that already exist. Bump `version` and say what moved:
+
+```ts
+Hero: {
+  component: Hero,
+  version: 2,
+  fields: [{ name: 'title', type: 'text' }],
+  migrate: (props, from) => (from < 2 ? { ...props, title: props.headline } : props),
+}
+```
+
+Old props are brought forward when the page renders, so nothing has to be
+migrated ahead of time, and the new shape is written back the next time someone
+saves. Opening a page never writes to it.
+
+Keep `migrate` pure and total — it may be handed props from any earlier version,
+including ones you have stopped thinking about. Props stored at a version newer
+than your code are left alone rather than guessed at, which is what makes a
+rollback safe.
 
 ---
 
@@ -322,7 +450,11 @@ machine; anything shared needs an endpoint.
 | Symptom | Cause |
 | --- | --- |
 | Editor opens on a grey canvas that never loads | The page refuses to be framed. `X-Frame-Options: DENY` or a `frame-ancestors` CSP. Allow same-origin framing, or pass `canvas={false}` to edit in place. |
-| The editor never opens | `enabled` is false. Check your auth expression, or add `?vedit=1` on a staging build. |
+| The editor never opens | `enabled` is false — it defaults to on only for localhost and `NODE_ENV=development`. The console says so in a development build. Add `?vedit=1`, or pass `enabled` yourself. |
+| ⌘E does nothing on a deployed staging site | Same cause as above: the hostname isn't local. `?vedit=1` is the quickest check. |
+| The editor was working, then stopped after a deploy | The page is holding a stale reference to the editor's chunk, which now 404s. The console says so; a reload fixes it. |
+| A whole region of the page became unclickable | Something in your markup carries `data-vedit-ui`. That marks the editor's *own chrome* and makes the subtree inert. To hide generated markup from the scanner while keeping the page editable, use `data-vedit-skip`. |
+| An element selects but can never be outlined or dragged | It has no box — `display: contents` is the usual cause. The console names the id. Put the id on the child that actually renders. |
 | Edits vanish after a deploy | Ids moved. Scanner ids follow markup; wrap those elements in `<Editable>` with explicit ids. |
 | Edits save but visitors don't see them | `staged: true` without pressing Publish, or the visitor is reading `published` while you saved a `draft`. |
 | Styles don't apply | Something in your CSS uses `!important`. Overrides use high specificity, not `!important`. |

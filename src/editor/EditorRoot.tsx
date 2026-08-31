@@ -9,7 +9,7 @@ import { Inspector } from './panels/Inspector'
 import { LeftPanel } from './panels/LeftPanel'
 import { Toolbar } from './panels/Toolbar'
 import { EDITOR_CSS } from './styles'
-import { toScreen, useEditorTarget } from './target'
+import { toScreen, useEditorTarget, type Rect } from './target'
 
 const STYLE_ID = 'vedit-editor-styles'
 
@@ -110,7 +110,10 @@ export function EditorRoot({ toolbarExtras, interactive = true }: EditorRootProp
 
   if (typeof document === 'undefined') return null
 
-  const indicator = dropIndicator ? toScreen(dropIndicator, target.getViewport()) : null
+  // Scaled like everything else on the canvas, but never thinner than it takes
+  // to see: at a fit-to-screen zoom a 4px line lands under one screen pixel, and
+  // an insertion line you cannot see is the same as not having one.
+  const indicator = dropIndicator ? thickEnough(toScreen(dropIndicator, target.getViewport())) : null
 
   return createPortal(
     <div
@@ -168,4 +171,19 @@ export function EditorRoot({ toolbarExtras, interactive = true }: EditorRootProp
     </div>,
     document.body,
   )
+}
+
+/** Keep the drop line visible at any zoom, growing from its own centre. */
+const MIN_DROP_PX = 3
+
+function thickEnough(rect: Rect): Rect {
+  // Only the thin axis is nudged: a line is long in one direction and hairline
+  // in the other, and it is the hairline that disappears.
+  if (rect.height < rect.width && rect.height < MIN_DROP_PX) {
+    return { ...rect, top: rect.top - (MIN_DROP_PX - rect.height) / 2, height: MIN_DROP_PX }
+  }
+  if (rect.width <= rect.height && rect.width < MIN_DROP_PX) {
+    return { ...rect, left: rect.left - (MIN_DROP_PX - rect.width) / 2, width: MIN_DROP_PX }
+  }
+  return rect
 }

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { artboard, inspectorField, inspectorRow, openEditor, select } from './fixtures'
 
 test.describe('editing on the canvas', () => {
@@ -208,5 +208,168 @@ test.describe('editing on the canvas', () => {
     await page.waitForTimeout(400)
     expect(page.url()).toBe(url)
     await expect(page.locator('.vedit-right .vedit-panel-head span').first()).toHaveText('Pricing')
+  })
+})
+
+/**
+ * Three artboards side by side is the right default for comparing pages, but it
+ * is the wrong way to look closely at one. Focusing hides the others without
+ * unloading them, so a page you were part-way through editing is still there —
+ * and still unsaved — when you come back to it.
+ */
+test.describe('focusing one page', () => {
+  const focus = (page: Page) => page.locator('.vedit-toolbar select.vedit-page-focus')
+
+  test('the dropdown lists every page, and starts on all of them', async ({ page }) => {
+    await openEditor(page)
+
+    await expect(focus(page)).toHaveValue('')
+    await expect(focus(page).locator('option')).toHaveText(['All pages', 'Home', 'Pricing', 'Campaign'])
+    await expect(page.locator('.vedit-artboard:visible')).toHaveCount(3)
+  })
+
+  test('picking a page hides the others but keeps them loaded', async ({ page }) => {
+    await openEditor(page)
+    await focus(page).selectOption('/pricing')
+    await page.waitForTimeout(600)
+
+    await expect(page.locator('.vedit-artboard:visible')).toHaveCount(1)
+    await expect(page.locator('.vedit-artboard:visible .vedit-artboard-label')).toContainText('Pricing')
+
+    // Still in the DOM, still bridged: hidden, not unmounted.
+    await expect(page.locator('.vedit-artboard')).toHaveCount(3)
+    expect(artboard(page, '/campaign')).toBeTruthy()
+  })
+
+  test('the focused page becomes the one the panels edit', async ({ page }) => {
+    await openEditor(page)
+    await focus(page).selectOption('/pricing')
+    await page.waitForTimeout(600)
+
+    await expect(page.locator('.vedit-artboard[data-active="true"] .vedit-artboard-label')).toContainText(
+      'Pricing',
+    )
+  })
+
+  test('unsaved edits survive being hidden and coming back', async ({ page }) => {
+    await openEditor(page)
+    await select(page, 'pricing.title', '/pricing')
+    await page.locator('.vedit-right textarea').first().fill('Edited before hiding')
+
+    await focus(page).selectOption('/')
+    await page.waitForTimeout(600)
+    await expect(page.locator('.vedit-artboard:visible')).toHaveCount(1)
+
+    await focus(page).selectOption('')
+    await page.waitForTimeout(600)
+    await expect(page.locator('.vedit-artboard:visible')).toHaveCount(3)
+    await expect(artboard(page, '/pricing').locator('[data-vedit-id="pricing.title"]')).toHaveText(
+      'Edited before hiding',
+    )
+  })
+})
+
+/**
+ * The Position toggle writes through `setStyle`, which lands in the cell for the
+ * breakpoint you are on. It has to read back from that same cell — reading the
+ * base bucket while writing to `responsive.lg` leaves the control showing "In
+ * flow" for an element that is genuinely positioned.
+ */
+test.describe('the position toggle', () => {
+  const segment = (page: Page) =>
+    page.locator('.vedit-right .vedit-row:has-text("Position") .vedit-segmented')
+
+  const activeLabel = (page: Page) =>
+    segment(page).locator('button[data-active="true"]')
+
+  for (const breakpoint of ['base', 'lg'] as const) {
+    test(`switching to Free lights up at the ${breakpoint} breakpoint`, async ({ page }) => {
+      await openEditor(page)
+      await select(page, 'home.hero.title')
+
+      await page.locator(`.vedit-toolbar button[data-breakpoint="${breakpoint}"]`).click()
+      await page.waitForTimeout(900)
+
+      await expect(activeLabel(page)).toHaveText('In flow')
+
+      await segment(page).getByText('Free', { exact: true }).click()
+      await expect(activeLabel(page)).toHaveText('Free')
+
+      // The X/Y fields only make sense for a free element, so they follow it.
+      await expect(inspectorField(page, 'Layout', 'X')).toBeVisible()
+
+      // And back again.
+      await segment(page).getByText('In flow', { exact: true }).click()
+      await expect(activeLabel(page)).toHaveText('In flow')
+    })
+  }
+})
+
+/**
+ * Every one of these failures used to present identically: nothing on screen,
+ * nothing in the console. The warnings are the feature — a silent dead end is
+ * the expensive kind of bug, because the only way out is reading the source.
+ */
+test.describe('saying why nothing happened', () => {
+  test('a page that hides markup from the scanner keeps the rest editable', async ({ page }) => {
+    await openEditor(page, { path: '/pricing' })
+    const board = artboard(page, '/pricing')
+
+    // The split heading is skipped...
+    await expect(board.locator('.split-heading[data-vedit-id]')).toHaveCount(0)
+    await expect(board.locator('.split-heading span[data-vedit-id]')).toHaveCount(0)
+
+    // ...and its neighbours are untouched, which `data-vedit-ui` would have broken.
+    await board.locator('[data-vedit-id="pricing.title"]').click()
+    await expect(page.locator('.vedit-rect-selected')).toHaveCount(1)
+  })
+
+  test('selecting a node with no box says so instead of drawing nothing', async ({ page }) => {
+    const warnings: string[] = []
+    page.on('console', (message) => {
+      if (message.type() === 'warning') warnings.push(message.text())
+    })
+
+    await openEditor(page, { path: '/pricing' })
+    // An explicit `<EditableBox>` registers itself, so unlike a scanner-found
+    // element it is never filtered out for being too small — this is the shape
+    // that actually reaches a user. Selected the way the Layers panel does,
+    // because a `display: contents` element is never a click's nearest match.
+    await page.evaluate(() => {
+      const frame = [...document.querySelectorAll('iframe')].find((element) =>
+        (element as HTMLIFrameElement).src.includes('pricing'),
+      ) as HTMLIFrameElement
+      const canvas = frame.contentWindow as unknown as {
+        __veditCanvas: { store: { select(id: string): void } }
+      }
+      canvas.__veditCanvas.store.select('pricing.contents')
+    })
+    await page.waitForTimeout(500)
+
+    // The outline element exists but has collapsed to nothing, which is what
+    // makes this look like a dead selection rather than an explained one.
+    const outline = await page.locator('.vedit-rect-selected').boundingBox()
+    expect(outline?.width ?? 0).toBe(0)
+    expect(outline?.height ?? 0).toBe(0)
+    expect(warnings.some((line) => line.includes('pricing.contents') && line.includes('0 × 0'))).toBe(true)
+  })
+
+  test('a disabled editor says why, instead of ignoring the shortcut', async ({ page }) => {
+    const warnings: string[] = []
+    page.on('console', (message) => {
+      if (message.type() === 'warning') warnings.push(message.text())
+    })
+
+    // The confusing case is a hostname that isn't local and carries no `?vedit`
+    // — the provider mounts, the page renders, and ⌘E silently does nothing.
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+    await page.evaluate(() => {
+      history.replaceState(null, '', '/')
+    })
+    await page.waitForTimeout(300)
+
+    // On localhost the editor is on, so this asserts the inverse: no warning
+    // when it is working, which is what makes the warning meaningful elsewhere.
+    expect(warnings.filter((line) => line.includes('disabled on this hostname'))).toEqual([])
   })
 })

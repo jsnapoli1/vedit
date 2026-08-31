@@ -337,6 +337,23 @@ export class VeditStore {
     return readStyleValue(this.state.doc.nodes[id], state, breakpoint, property)
   }
 
+  /**
+   * Record props a component's own `migrate` brought forward.
+   *
+   * Not an edit: nobody asked for it, so it must not make the document dirty,
+   * must not schedule an autosave, and must not land in undo history. Writing it
+   * into `saved` as well as `doc` is what keeps all three true — the page now
+   * holds the migrated shape, and it goes to the backend the next time someone
+   * saves for their own reasons. Opening a page must never write to it.
+   */
+  stageMigratedProps(id: string, props: Record<string, unknown>, version: number) {
+    const override = this.state.doc.nodes[id] ?? {}
+    if (override.propsVersion === version) return
+    const next: NodeOverride = { ...override, props, propsVersion: version }
+    const write = (doc: VeditDocument): VeditDocument => ({ ...doc, nodes: { ...doc.nodes, [id]: next } })
+    this.set({ doc: write(this.state.doc), saved: write(this.state.saved) })
+  }
+
   /** Set one of the props a component declared as editable. */
   setProp(id: string, name: string, value: unknown) {
     this.writeNode(id, (override) => {

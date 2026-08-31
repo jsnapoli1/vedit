@@ -98,18 +98,36 @@ export function BoxSides({ id, prefix, label }: { id: string; prefix: 'padding' 
       </div>
       <div className="vedit-grid4">
         {sides.map((side) => (
-          <SideField key={side} id={id} property={`${prefix}${side}`} label={side[0]} />
+          <SideField
+            key={side}
+            id={id}
+            property={`${prefix}${side}`}
+            label={side[0]}
+            name={`${label} ${side.toLowerCase()}`}
+          />
         ))}
       </div>
     </div>
   )
 }
 
-function SideField({ id, property, label }: { id: string; property: string; label: string }) {
+/** One side of the box. The visible label is a single letter; `name` is what it is called. */
+function SideField({
+  id,
+  property,
+  label,
+  name,
+}: {
+  id: string
+  property: string
+  label: string
+  name: string
+}) {
   const style = useStyleValue(id, property)
   return (
     <LengthField
       label={label}
+      name={name}
       value={style.value}
       computed={style.mixed ? 'Mixed' : style.computed}
       onChange={style.set}

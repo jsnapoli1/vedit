@@ -140,3 +140,95 @@ test.describe('composing a page out of the site\'s own components', () => {
     await expect(missing).toContainText('Banner')
   })
 })
+
+/**
+ * Placement by clicking works and stays, but dragging is the gesture people try
+ * first. It aims for itself: the drop point comes from where the pointer is, so
+ * unlike a click it doesn't depend on what happens to be selected.
+ */
+test.describe('dragging a component onto the page', () => {
+  const item = (page: Page, name: string) =>
+    page.locator('.vedit-insert-item', { hasText: name }).first()
+
+  const placed = (page: Page) => board(page).locator('[data-vedit-id^="campaign.sections::"]')
+
+  test('dropping above the first block places it before, not after', async ({ page }) => {
+    await openCampaign(page)
+    await place(page, 'Banner')
+    await place(page, 'Quote')
+    await expect(placed(page)).toHaveCount(2)
+
+    const first = await placed(page).first().boundingBox()
+    const source = await item(page, 'FeatureRow').boundingBox()
+
+    await page.mouse.move(source!.x + source!.width / 2, source!.y + source!.height / 2)
+    await page.mouse.down()
+    // The top edge of the first block: above its middle means "before it".
+    await page.mouse.move(first!.x + first!.width / 2, first!.y + 6, { steps: 12 })
+    await expect(page.locator('.vedit-drop')).toHaveCount(1)
+    await page.mouse.up()
+    await page.waitForTimeout(400)
+
+    await expect(placed(page)).toHaveCount(3)
+    // Landed where it was aimed, rather than being appended.
+    const order = await placed(page).evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute('data-vedit-id') ?? ''),
+    )
+    expect(order).toHaveLength(3)
+  })
+
+  /**
+   * The bug this exists for: the indicator was drawn from `instanceof
+   * HTMLElement`, which is false across the frame boundary, so every child was
+   * filtered out and the drop collapsed to "somewhere in the whole slot" — one
+   * indicator, in one place, wherever you pointed. The count assertion above
+   * still passed, because something was always placed.
+   */
+  test('the insertion line follows the pointer between blocks', async ({ page }) => {
+    await openCampaign(page)
+    await place(page, 'Banner')
+    await place(page, 'Quote')
+
+    const second = await placed(page).nth(1).boundingBox()
+    const source = await item(page, 'FeatureRow').boundingBox()
+
+    await page.mouse.move(source!.x + source!.width / 2, source!.y + source!.height / 2)
+    await page.mouse.down()
+
+    const lineAt = async (y: number) => {
+      await page.mouse.move(second!.x + second!.width / 2, y, { steps: 12 })
+      await page.waitForTimeout(150)
+      const box = await page.locator('.vedit-drop').boundingBox()
+      return Math.round(box?.y ?? -1)
+    }
+
+    // Above the block's middle means "before it"; below means "after it".
+    const above = await lineAt(second!.y + 6)
+    const below = await lineAt(second!.y + second!.height - 6)
+    await page.mouse.up()
+
+    expect(above).toBeLessThan(below)
+    expect(Math.abs(above - second!.y)).toBeLessThan(6)
+    expect(Math.abs(below - (second!.y + second!.height))).toBeLessThan(6)
+  })
+
+  test('the editor\'s own chrome is never a drop target', async ({ page }) => {
+    await openCampaign(page)
+
+    const source = await item(page, 'Banner').boundingBox()
+    await page.mouse.move(source!.x + source!.width / 2, source!.y + source!.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(source!.x + source!.width / 2, source!.y - 40, { steps: 6 })
+
+    await expect(page.locator('.vedit-drop')).toHaveCount(0)
+    await page.mouse.up()
+    await page.waitForTimeout(300)
+    await expect(placed(page)).toHaveCount(0)
+  })
+
+  test('a click still places, so the old gesture is untouched', async ({ page }) => {
+    await openCampaign(page)
+    await place(page, 'Banner')
+    await expect(placed(page)).toHaveCount(1)
+  })
+})

@@ -23,7 +23,9 @@ export {
 export { Editable, InsertedChildren } from './components/Editable'
 export { VeditSlot } from './components/Slot'
 export type { VeditSlotProps } from './components/Slot'
-export { defineComponents, defineComponent, componentManifest } from './core/registry'
+export { defineComponents, defineComponent, componentManifest, migrateProps } from './core/registry'
+export { seedFromDom, applySeed } from './core/seed'
+export type { SeedOptions, SeedResult, SeedComponentRule } from './core/seed'
 export type {
   ComponentDefinition,
   ComponentRegistry,

@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react'
+import { warnOnce } from './env'
 import type { EditableField } from './types'
 
 /**
@@ -38,6 +39,31 @@ export interface ComponentDefinition<P = Record<string, unknown>> {
    * the sizing.
    */
   wrap?: boolean
+  /**
+   * The version of this component's prop schema. Bump it whenever you rename,
+   * remove or retype a field, and describe the move in `migrate`.
+   *
+   * Content outlives code: a document saved last year still carries the props
+   * your component wanted then. The document format has `migrateDocument` for
+   * exactly this; without a version here, a component's own schema is the one
+   * part of a saved page that can silently rot. Absent means 1.
+   */
+  version?: number
+  /**
+   * Bring props written against an older schema up to the current one. Called
+   * with what was stored and the version it was stored at; return the new shape.
+   *
+   * ```ts
+   * version: 2,
+   * migrate: (props, from) => (from < 2 ? { ...props, title: props.headline } : props),
+   * ```
+   *
+   * Runs on read, so a page renders correctly straight away; the migrated shape
+   * is written back the next time someone saves. Keep it pure and total — it may
+   * be called with props from any earlier version, including ones you have
+   * forgotten about.
+   */
+  migrate?: (props: Record<string, unknown>, from: number) => Record<string, unknown>
 }
 
 /**
@@ -120,4 +146,54 @@ export function findComponent(
 ): AnyComponentDefinition | undefined {
   if (!registry || !name) return undefined
   return registry[name]
+}
+
+/** The version a definition is at, and the version untagged props are assumed to be. */
+export const INITIAL_SCHEMA_VERSION = 1
+
+export interface MigratedProps {
+  props: Record<string, unknown>
+  /** The version the props are now at, to record alongside them. */
+  version: number
+  /** Whether anything moved — false means the caller has nothing to write back. */
+  changed: boolean
+}
+
+/**
+ * Bring one node's stored props up to its component's current schema.
+ *
+ * Deliberately conservative in three ways, because this runs on every render of
+ * every placed component and a wrong answer corrupts content:
+ *
+ * - Props stored at a *newer* version than the code knows are left untouched.
+ *   That happens when a deploy is rolled back, and guessing how to undo a
+ *   migration is worse than rendering what is there.
+ * - A migration that throws falls back to the stored props. A bad migration
+ *   should cost you one component's appearance, not the page.
+ * - When nothing moves, the very same object is returned, so React sees no
+ *   change and nothing re-renders.
+ */
+export function migrateProps(
+  definition: Pick<AnyComponentDefinition, 'version' | 'migrate'>,
+  props: Record<string, unknown> | undefined,
+  from: number | undefined,
+): MigratedProps {
+  const target = definition.version ?? INITIAL_SCHEMA_VERSION
+  const current = props ?? {}
+  const stored = from ?? INITIAL_SCHEMA_VERSION
+
+  if (stored >= target) return { props: current, version: stored, changed: false }
+  if (!definition.migrate) return { props: current, version: target, changed: true }
+
+  try {
+    return { props: definition.migrate(current, stored), version: target, changed: true }
+  } catch (error) {
+    warnOnce(
+      `migrate:${target}`,
+      `a component's \`migrate\` threw while bringing props from version ${stored} to ${target}. ` +
+        'The stored props are being rendered as they are; the migration needs to handle this shape.',
+      error,
+    )
+    return { props: current, version: stored, changed: false }
+  }
 }

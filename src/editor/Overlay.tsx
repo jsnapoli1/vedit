@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useVeditState, useVeditStore } from '../core/context'
 import type { VeditStore } from '../core/store'
 import { toScreen, useEditorTarget, type EditorTarget, type Rect } from './target'
+import { warnOnce } from '../core/env'
 
 interface Measured {
   id: string
@@ -38,11 +39,20 @@ function useMeasured(ids: string[], store: VeditStore, target: EditorTarget): Me
       for (const id of ids) {
         const node = store.getNode(id)
         if (!node?.element.isConnected) continue
-        next.push({
-          id,
-          label: node.label,
-          rect: toScreen(node.element.getBoundingClientRect(), viewport),
-        })
+        const box = node.element.getBoundingClientRect()
+        // A node with no box draws no outline, which reads as the editor
+        // ignoring the selection. It doesn't — there is simply nothing to draw
+        // around. Say which node and why, once.
+        if (!box.width || !box.height) {
+          warnOnce(
+            `zero-size:${id}`,
+            `"${id}" is selected but has no box (0 × 0), so it can't be outlined, dragged or resized. ` +
+              'An element with `display: contents` generates no box of its own — put the id on the child ' +
+              'that actually renders, or give this one a display that boxes.',
+            node.element,
+          )
+        }
+        next.push({ id, label: node.label, rect: toScreen(box, viewport) })
       }
       const signature = next.map((m) => `${m.id}:${round(m.rect)}`).join('|')
       if (signature !== previous) {

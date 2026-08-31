@@ -437,6 +437,7 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
     <Section title="Content">
       <textarea
         className="vedit-textarea"
+        aria-label="Copy for this element"
         value={text ?? node?.sourceText ?? ''}
         placeholder="Type the copy for this element"
         onChange={(event) => setText(event.target.value)}
@@ -672,12 +673,20 @@ function SizeField({ id, property, label }: { id: string; property: string; labe
   return (
     <LengthField
       label={label}
+      // These sit in a bare grid rather than a labelled row, and their labels are
+      // abbreviations, so the property name is the only thing worth announcing.
+      name={spokenName(property)}
       value={style.value}
       computed={style.computed}
       onChange={style.set}
       defaultUnit={unitless ? '' : 'px'}
     />
   )
+}
+
+/** `minWidth` -> "min width": a property name as it would be read out. */
+function spokenName(property: string): string {
+  return property.replace(/([A-Z])/g, ' $1').toLowerCase()
 }
 
 /**
@@ -687,9 +696,14 @@ function SizeField({ id, property, label }: { id: string; property: string; labe
  */
 function PositionControl({ id }: { id: string }) {
   const store = useVeditStore()
-  const override = useVeditState((state) => state.doc.nodes[id])
+  // Subscribes this control to the node, so the reads below re-run on every
+  // change to it. `styleValue` reads the store directly and would not on its own.
+  useVeditState((state) => state.doc.nodes[id])
   const node = store.getNode(id)
-  const free = override?.style?.position === 'absolute'
+  // Read from the same cell `setStyle` writes to. Reading the base bucket while
+  // the write lands in `responsive.lg` leaves this showing "In flow" for an
+  // element that is genuinely positioned.
+  const free = store.styleValue(id, 'position') === 'absolute'
   const offset = String(store.styleValue(id, 'transform') ?? '')
   const moved = parseTransform(offset)
   const nudged = moved.translateX !== 0 || moved.translateY !== 0
@@ -806,6 +820,7 @@ function InsertedActions({ id }: { id: string }) {
       <Row label="Parent">
         <select
           className="vedit-select"
+          aria-label="Parent container"
           value={inserted.parentId}
           onChange={(event) => store.moveInserted(id, event.target.value)}
         >
@@ -909,7 +924,13 @@ function TypographySection({ id }: { id: string }) {
 function WeightField({ id }: { id: string }) {
   const weight = useStyleValue(id, 'fontWeight')
   return (
-    <SelectField value={weight.value} computed={weight.computed} options={WEIGHTS} onChange={weight.set} />
+    <SelectField
+      name="Font weight"
+      value={weight.value}
+      computed={weight.computed}
+      options={WEIGHTS}
+      onChange={weight.set}
+    />
   )
 }
 
@@ -1138,6 +1159,7 @@ function TransitionRow({ id }: { id: string }) {
       />
       <select
         className="vedit-select"
+        aria-label="Transition easing"
         value={easing}
         onChange={(event) => write(duration || 200, event.target.value)}
       >

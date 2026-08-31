@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconChevron, IconReset } from './icons'
 
 export function Section({
@@ -27,6 +27,28 @@ export function Section({
   )
 }
 
+/**
+ * The name of the group a control sits in — "Size", "Padding", "Position".
+ *
+ * The inspector's labels are laid out, not associated: a row's label is a span
+ * beside the control, and a compact field carries its label as a prefix inside
+ * itself. Both read fine and neither reaches a screen reader, which announces
+ * "edit text" and leaves you to guess which of nine numeric fields you are in.
+ *
+ * Rather than have forty call sites each pass an `aria-label`, the row publishes
+ * its own label and the controls inside compose their name from it. A control
+ * that already names itself is left alone.
+ */
+const FieldGroup = createContext<string | undefined>(undefined)
+
+/** Compose an accessible name from the row this control sits in and its own label. */
+export function useFieldName(own?: ReactNode): string | undefined {
+  const group = useContext(FieldGroup)
+  const label = typeof own === 'string' ? own : undefined
+  if (group && label) return `${group} ${label}`
+  return group ?? label
+}
+
 export function Row({
   label,
   children,
@@ -41,7 +63,7 @@ export function Row({
   return (
     <div className="vedit-row">
       {label ? <span className="vedit-label">{label}</span> : null}
-      {children}
+      <FieldGroup.Provider value={label}>{children}</FieldGroup.Provider>
       {onReset ? (
         <button
           type="button"
@@ -74,6 +96,7 @@ export function TextField({
 }) {
   const [draft, setDraft] = useState(value)
   const focused = useRef(false)
+  const name = useFieldName(prefix)
   useEffect(() => {
     if (!focused.current) setDraft(value)
   }, [value])
@@ -83,6 +106,7 @@ export function TextField({
       {prefix ? <span className="vedit-field-prefix">{prefix}</span> : null}
       <input
         className="vedit-input"
+        aria-label={name}
         type={type}
         value={draft}
         placeholder={placeholder}
@@ -119,6 +143,7 @@ export function splitLength(value: string | number | undefined): { number: numbe
  */
 export function LengthField({
   label,
+  name: spoken,
   value,
   computed,
   onChange,
@@ -128,6 +153,11 @@ export function LengthField({
   defaultUnit = 'px',
 }: {
   label?: string
+  /**
+   * What to call this field out loud, when `label` is an abbreviation. "W" and
+   * "min W" are clear enough to read in a two-column grid and useless to hear.
+   */
+  name?: string
   value: string | number | undefined
   computed?: string
   onChange: (next: string | undefined) => void
@@ -139,6 +169,7 @@ export function LengthField({
 }) {
   const [draft, setDraft] = useState(value === undefined ? '' : String(value))
   const focused = useRef(false)
+  const name = useFieldName(spoken ?? label)
   useEffect(() => {
     if (!focused.current) setDraft(value === undefined ? '' : String(value))
   }, [value])
@@ -186,6 +217,7 @@ export function LengthField({
       ) : null}
       <input
         className="vedit-input"
+        aria-label={name}
         value={draft}
         placeholder={computed ? shorten(computed) : 'auto'}
         onFocus={() => (focused.current = true)}
@@ -215,15 +247,20 @@ export function SelectField({
   computed,
   options,
   onChange,
+  name: spoken,
 }: {
   value: string | number | undefined
   computed?: string
   options: Array<{ value: string; label: string }>
   onChange: (next: string | undefined) => void
+  /** For a field that sits outside a labelled row and must name itself. */
+  name?: string
 }) {
+  const name = useFieldName(spoken)
   return (
     <select
       className="vedit-select"
+      aria-label={name}
       value={value === undefined ? '' : String(value)}
       onChange={(event) => onChange(event.target.value || undefined)}
     >
@@ -246,8 +283,9 @@ export function Segmented<T extends string>({
   options: Array<{ value: T; label: ReactNode; title?: string }>
   onChange: (next: T | undefined) => void
 }) {
+  const name = useFieldName()
   return (
-    <div className="vedit-segmented">
+    <div className="vedit-segmented" role="group" aria-label={name}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -273,6 +311,7 @@ export function ColorField({
   onChange: (next: string | undefined) => void
 }) {
   const shown = typeof value === 'string' ? value : computed ?? ''
+  const name = useFieldName()
   return (
     <>
       <span className="vedit-swatch">
@@ -281,7 +320,7 @@ export function ColorField({
           type="color"
           value={toHex(shown)}
           onChange={(event) => onChange(event.target.value)}
-          aria-label="Color"
+          aria-label={name ?? 'Color'}
         />
       </span>
       <TextField
@@ -325,10 +364,12 @@ export function Slider({
   onChange: (next: string) => void
 }) {
   const current = value === undefined ? fallback : Number(value)
+  const name = useFieldName()
   return (
     <input
       type="range"
       className="vedit-input"
+      aria-label={name}
       style={{ accentColor: 'var(--vedit-accent)', cursor: 'pointer' }}
       min={min}
       max={max}
