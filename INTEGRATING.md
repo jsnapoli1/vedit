@@ -47,7 +47,7 @@ npm install github:jsnapoli1/vedit
 nothing else to run. Pin a tag or commit for anything you deploy:
 
 ```bash
-npm install github:jsnapoli1/vedit#v0.5.0
+npm install github:jsnapoli1/vedit#v0.6.0
 ```
 
 To publish it under your own scope instead, set `"name": "@your-scope/vedit"` in
@@ -115,6 +115,35 @@ For lists, key off a stable field — `product.${product.slug}.tagline`.
 
 Work outside-in: the hero, the nav, the footer, the repeated card component.
 There is no need to wrap everything.
+
+### Copy that quotes a live value
+
+Some sentences wrap a number your app computes — a price, a date, a count. Wrap
+one as ordinary text and the editor stores the sentence *as rendered*, so the
+saved copy still says `$250` after the price moves.
+
+Pass the values as `vars` and write the source text as a template:
+
+```tsx
+<Editable id="checkout.pay" vars={{ deposit: money(quote.depositCents) }}>
+  {'Pay {deposit} deposit'}
+</Editable>
+```
+
+The document stores `Pay {deposit} deposit`. The value is substituted on every
+render, so someone can reword the sentence in the browser and the number stays
+yours. vedit only ever learns the *name* — it never sees or stores what
+`{deposit}` is worth.
+
+The inspector lists the names that resolve. A name you did not supply renders
+literally rather than blanking, and is called out as a warning: a half-typed
+`{amo` should not make text vanish while someone is still typing, and a typo
+that ships silently is indistinguishable from deliberate copy. Write `{{` and
+`}}` for a literal brace.
+
+Reach for this whenever the alternative is a number frozen into saved copy —
+especially where the frozen figure could contradict something authoritative,
+like the amount a payment processor is about to charge.
 
 ---
 
@@ -456,6 +485,8 @@ machine; anything shared needs an endpoint.
 | A whole region of the page became unclickable | Something in your markup carries `data-vedit-ui`. That marks the editor's *own chrome* and makes the subtree inert. To hide generated markup from the scanner while keeping the page editable, use `data-vedit-skip`. |
 | An element selects but can never be outlined or dragged | It has no box — `display: contents` is the usual cause. The console names the id. Put the id on the child that actually renders. |
 | Edits vanish after a deploy | Ids moved. Scanner ids follow markup; wrap those elements in `<Editable>` with explicit ids. |
+| Saved copy quotes a number that is now wrong | The sentence was stored as rendered. Pass the value as `vars` and keep the template — see [copy that quotes a live value](#copy-that-quotes-a-live-value). |
+| `{name}` shows up on the live page | That name wasn't in `vars` for this element. The inspector flags it; unknown names render as written rather than blanking. |
 | Edits save but visitors don't see them | `staged: true` without pressing Publish, or the visitor is reading `published` while you saved a `draft`. |
 | Styles don't apply | Something in your CSS uses `!important`. Overrides use high specificity, not `!important`. |
 | A hover style does nothing | It was written at a breakpoint you aren't at. Check which breakpoint is selected in the toolbar. |

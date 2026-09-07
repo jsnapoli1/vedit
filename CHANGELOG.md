@@ -9,6 +9,58 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.6.0 — 2026-09-07
+
+The document format is unchanged at version 1. Everything here is additive:
+`vars` is a new optional prop, and a document written by 0.5 opens untouched.
+
+Both changes came from the same integration: a "Pay $250 deposit" button that
+could not be edited, and a trash icon that appeared to do nothing.
+
+### Added
+
+- **`vars` on `<Editable>`** — interpolate host values into editable copy.
+
+  Some sentences wrap a number your app computes. Wrapped as ordinary text, the
+  editor stores the sentence *as rendered*, so saved copy still says `$250`
+  after the price moves — and can end up contradicting whatever computed it.
+
+  ```tsx
+  <Editable id="checkout.pay" vars={{ deposit: money(quote.depositCents) }}>
+    {'Pay {deposit} deposit'}
+  </Editable>
+  ```
+
+  The document stores `Pay {deposit} deposit`; the value is substituted on every
+  render. The wording is editable and saved, the number stays live. vedit learns
+  the *name* and never what it is worth.
+
+  The inspector lists the names that resolve. An unknown name renders literally
+  rather than blanking — a half-typed `{amo` should not make text disappear
+  while someone is still typing — and is flagged, because a typo that ships
+  silently is indistinguishable from deliberate copy. `{{` and `}}` escape.
+
+### Changed
+
+- **The inspector's trash removes; a new undo arrow reverts.** They were one
+  trash icon that deleted an inserted node but merely reset overrides on
+  anything from source code. On an element nobody had edited yet there was
+  nothing to reset, so the obvious control for removing something did nothing at
+  all, with no error — the failure was indistinguishable from a broken button.
+
+  Removing a source element writes `hidden`: `display:none` for visitors, dimmed
+  and outlined in the editor so it can be found and brought back. That is what
+  Delete and Backspace already did; the button now agrees with the keyboard.
+  The key toggles, the button only hides — use the eye, or revert, to bring
+  something back.
+
+  The revert control is disabled when there is nothing to revert, and says so.
+
+  If you relied on the trash icon resetting overrides, that action moved to the
+  arrow beside it. Nothing about stored documents changed.
+
+---
+
 ## 0.5.0 — 2026-08-31
 
 The document format is unchanged at version 1. Everything here is additive:

@@ -373,3 +373,45 @@ test.describe('saying why nothing happened', () => {
     expect(warnings.filter((line) => line.includes('disabled on this hostname'))).toEqual([])
   })
 })
+
+test.describe('removing and reverting', () => {
+  /**
+   * These were one trash icon that deleted an inserted node but only reset
+   * overrides on anything from source code — so on an unedited element the
+   * obvious delete control did nothing at all, silently. Both halves of that
+   * are pinned here: the trash removes, and the revert says when it cannot.
+   */
+  test('the revert control is disabled, and says so, until something is changed', async ({ page }) => {
+    await openEditor(page)
+    await select(page, 'home.hero.title')
+
+    const revert = page.locator('.vedit-panel-head button[title*="revert" i]')
+    await expect(revert).toBeDisabled()
+    await expect(revert).toHaveAttribute('title', /nothing to revert/i)
+
+    await page.locator('.vedit-right textarea.vedit-textarea').fill('Reworded')
+    await expect(revert).toBeEnabled()
+    await expect(revert).toHaveAttribute('title', /revert/i)
+  })
+
+  test('the trash takes a source element off the page', async ({ page }) => {
+    await openEditor(page)
+    await select(page, 'home.hero.title')
+
+    const title = artboard(page).locator('[data-vedit-id="home.hero.title"]')
+    await expect(title).toBeVisible()
+
+    await page.locator('.vedit-panel-head button[title*="remove" i]').click()
+
+    // Still in the tree while editing — dimmed, so it can be brought back —
+    // but display:none for anyone not in the editor.
+    await expect(title).toHaveCSS('opacity', '0.35')
+    const hiddenForVisitors = await title.evaluate((el) => {
+      el.ownerDocument.documentElement.classList.remove('vedit-editing')
+      const display = getComputedStyle(el).display
+      el.ownerDocument.documentElement.classList.add('vedit-editing')
+      return display
+    })
+    expect(hiddenForVisitors).toBe('none')
+  })
+})

@@ -121,9 +121,12 @@ export function Inspector() {
           >
             <IconUndo />
           </button>
-          {/* Matches Delete/Backspace: an element the editor placed is removed
-              outright; one that comes from source code is hidden, because the
-              code will render it again on the next load either way. */}
+          {/* Same disposition as Delete/Backspace: an element the editor placed
+              is removed outright; one that comes from source code is hidden,
+              because the code will render it again on the next load either way.
+              Unlike the key, this only ever hides — a trash icon that puts the
+              element back on a second press would be a strange thing to click.
+              The eye beside it is the toggle, and revert brings it back. */}
           <button
             type="button"
             className="vedit-btn vedit-btn-icon"

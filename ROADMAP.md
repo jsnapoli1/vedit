@@ -66,7 +66,7 @@ produce a list of small wrong assumptions. That list is what 1.0 should be.
 ### 2. Installable by name
 
 `vedit` is taken on npm, the package has never been published, and the work is on
-a branch. Today: `npm install github:jsnapoli1/vedit#v0.5.0`. For 1.0 it needs a
+a branch. Today: `npm install github:jsnapoli1/vedit#v0.6.0`. For 1.0 it needs a
 scoped name, a merge to `main`, and a tagged release.
 
 ### 3. The framework matrix is claimed, not tested
