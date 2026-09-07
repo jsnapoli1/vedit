@@ -310,15 +310,16 @@ site. Breaking one is a bug even if the tests pass.
 
 ## Testing
 
-**`npm test`** — 147 unit tests, run against `dist/` rather than `src/`, so they
+**`npm test`** — 186 unit tests, run against `dist/` rather than `src/`, so they
 check what actually ships. Pure logic lives here: the CSS emitter, the layer
 matrix, the store, migration, the operations vocabulary, the open API, the MCP
 server, diffing, contrast maths, the relay, the escaping rules.
 
-**`npm run test:e2e`** — 50 browser tests over the real editor: selection,
-breakpoints, states, component props, re-ordering, publishing, composing a page
-out of registered components, two people collaborating, driving it all from a
-keyboard, and what happens when the editor throws.
+**`npm run test:e2e`** — 67 browser tests over the real editor. 52 of them cover
+behaviour: selection, breakpoints, states, component props, re-ordering,
+publishing, composing a page out of registered components, two people
+collaborating, driving it all from a keyboard, and what happens when the editor
+throws. The remaining 15 are the visual suite below.
 
 **`npm run test:frameworks`** — the matrix `INTEGRATING.md` promises. One minimal
 app per framework under `examples/` (Next App Router, Next Pages Router, Remix,
@@ -345,11 +346,12 @@ npm run test:frameworks
 
 **Visual regression** comes in two forms because they catch different things:
 
-- Screenshot baselines in `e2e/visual.spec.ts-snapshots/`. Sensitive to browser
-  build (pinned by the `@playwright/test` version) and to fonts (CI runs in the
-  matching container). Regenerate deliberately, and **inside that container** —
-  the font stack is a system one, so a baseline captured on macOS renders in SF
-  Pro and will never match the DejaVu the Linux image falls back to:
+- 10 screenshot baselines in `e2e/visual.spec.ts-snapshots/`. Sensitive to
+  browser build (pinned by the `@playwright/test` version) and to fonts (CI runs
+  in the matching container). Regenerate deliberately, and **inside that
+  container** — the font stack is a system one, so a baseline captured on macOS
+  renders in SF Pro and will never match the DejaVu the Linux image falls back
+  to:
 
   ```bash
   docker run --rm -v "$PWD":/work -w /work -e CI=true --user root \
@@ -360,7 +362,7 @@ npm run test:frameworks
 
   A bare `npm run test:e2e:update` on a Mac will produce baselines that pass
   locally and fail every CI run.
-- Layout invariants in the same file — nothing covers the toolbar, no fixed
+- 5 layout invariants in the same file — nothing covers the toolbar, no fixed
   label is clipped, the panels leave room for the artboards. These are geometry,
   not pixels, so they hold anywhere. Both bugs they were written to catch were
   real and already shipped, so prefer adding an invariant over adding a

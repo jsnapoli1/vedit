@@ -60,10 +60,10 @@ Worth being specific, because the gaps below are easier to read against it.
 - **Failures say something.** The 0.5 diagnostics turned four silent failures
   into one development-build warning each. This was the single largest finding
   from real use, and it was a usability problem, not a correctness one.
-- **The tests check what ships.** 186 unit tests against `dist/`, 66 browser
-  tests against the real editor, plus screenshot baselines and layout invariants.
-  CI also installs the packed tarball and resolves its types as a consumer would,
-  and checks the MCP binary answers on stdio.
+- **The tests check what ships.** 186 unit tests against `dist/`, 67 browser
+  tests against the real editor, including screenshot baselines and layout
+  invariants. CI also installs the packed tarball and resolves its types as a
+  consumer would, and checks the MCP binary answers on stdio.
 - **The framework matrix is tested, not claimed.** Next (App and Pages), Remix
   and Astro islands each have an example app under `examples/`, built for
   production against the packed tarball and driven in CI: server-rendered markup,
