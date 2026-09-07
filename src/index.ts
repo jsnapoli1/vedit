@@ -67,6 +67,7 @@ export type {
 export { migrateDocument, inspectDocument } from './core/migrate'
 export type { MigrationReport } from './core/migrate'
 export { documentToCss, tokenVariable, tokenReference } from './runtime/css'
+export { interpolate, placeholdersIn, unknownPlaceholders } from './runtime/interpolate'
 
 export {
   emptyDocument,

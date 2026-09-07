@@ -4,6 +4,7 @@ import {
   STYLE_STATES,
   type EditableField,
   type NodeKind,
+  type RegisteredNode,
   type StyleMap,
   type StyleState,
   type VeditAsset,
@@ -16,6 +17,7 @@ import {
   serializeGradient,
   type Gradient,
 } from '../../runtime/gradient'
+import { unknownPlaceholders } from '../../runtime/interpolate'
 import { parseTransform, withTransform } from '../../runtime/transform'
 import { TokenPicker } from './Tokens'
 import { useComputedStyle, useContentValue, useSelectedNode, useStyleValue } from '../hooks'
@@ -27,6 +29,7 @@ import {
   IconEye,
   IconEyeOff,
   IconTrash,
+  IconUndo,
 } from '../icons'
 import { BoxSides, ColorRow, LengthRow, SegmentRow, SelectRow } from './rows'
 import { dragModeFor, reorderBlocker } from '../interactions'
@@ -55,6 +58,9 @@ export function Inspector() {
   const { id, node, count } = useSelectedNode()
   const override = useVeditState((state) => (id ? state.doc.nodes[id] : undefined))
   const isInserted = useVeditState((state) => !!id && state.doc.inserted.some((n) => n.id === id))
+  // An inserted node always has something to remove; a source element only has
+  // something to revert once someone has actually changed it.
+  const hasOverride = isInserted || !!(override && Object.keys(override).length > 0)
   const multiple = count > 1
 
   if (!id) {
@@ -97,11 +103,36 @@ export function Inspector() {
           >
             {override?.hidden ? <IconEyeOff /> : <IconEye />}
           </button>
+          {/* Revert and delete are different questions — "put back what the code
+              says" versus "take this off the page" — so they get a control each.
+              One trash icon meaning both was the trap: on an element that came
+              from source code with nothing overridden yet, clicking it reset
+              nothing and looked broken. */}
           <button
             type="button"
             className="vedit-btn vedit-btn-icon"
-            title={isInserted ? 'Delete element' : 'Reset all changes to this element'}
-            onClick={() => (isInserted ? store.removeInserted(id) : store.reset(id))}
+            title={
+              hasOverride
+                ? 'Revert to what the code says'
+                : 'Nothing to revert — this element is unchanged'
+            }
+            disabled={!hasOverride}
+            onClick={() => store.reset(id)}
+          >
+            <IconUndo />
+          </button>
+          {/* Matches Delete/Backspace: an element the editor placed is removed
+              outright; one that comes from source code is hidden, because the
+              code will render it again on the next load either way. */}
+          <button
+            type="button"
+            className="vedit-btn vedit-btn-icon"
+            title={isInserted ? 'Delete element' : 'Remove from the page'}
+            onClick={() =>
+              isInserted
+                ? store.removeInserted(id)
+                : store.updateMany(store.getState().selection, { hidden: true })
+            }
           >
             <IconTrash />
           </button>
@@ -442,6 +473,7 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
         placeholder="Type the copy for this element"
         onChange={(event) => setText(event.target.value)}
       />
+      <VariableHints node={node} value={text ?? node?.sourceText ?? ''} />
       {text !== undefined ? (
         <Row>
           <button type="button" className="vedit-btn" style={{ flex: 1 }} onClick={() => setText(undefined)}>
@@ -467,6 +499,46 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
         </>
       ) : null}
     </Section>
+  )
+}
+
+/**
+ * What `{name}` means in this element's copy, and what it currently renders as.
+ *
+ * Shown only where the host offered values, so most elements are unaffected. The
+ * live value is displayed but never written into the document — seeing that
+ * `{amount}` is `$250` today is what makes the template legible, while storing
+ * `$250` is exactly the staleness this feature exists to avoid.
+ *
+ * A name the host did not offer renders as literal text, which looks deliberate
+ * on the page and is unrecoverable from a screenshot. Calling it out here is the
+ * only place a typo like `{amonut}` becomes visible.
+ */
+function VariableHints({ node, value }: { node: RegisteredNode | undefined; value: string }) {
+  const vars = node?.vars
+  const unknown = vars ? unknownPlaceholders(value, vars) : []
+  const names = vars ? Object.keys(vars) : []
+  if (!names.length && !unknown.length) return null
+
+  return (
+    <>
+      {names.length ? (
+        <div className="vedit-section vedit-hint" style={{ paddingTop: 6 }}>
+          Values you can use: {names.map((name) => `{${name}}`).join(', ')}. They are
+          filled in when the page renders, so the current number is never saved.
+        </div>
+      ) : null}
+      {unknown.length ? (
+        <div
+          className="vedit-section vedit-hint"
+          style={{ paddingTop: 6, color: 'var(--vedit-danger, #f24822)' }}
+        >
+          {unknown.map((name) => `{${name}}`).join(', ')}{' '}
+          {unknown.length === 1 ? 'is not a value here' : 'are not values here'} — it will
+          show on the page exactly as written.
+        </div>
+      ) : null}
+    </>
   )
 }
 

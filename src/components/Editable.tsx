@@ -2,6 +2,7 @@ import { createElement, forwardRef, useMemo, type ElementType, type ReactNode, t
 import { useEditable } from './useEditable'
 import { useVeditContext, useVeditState } from '../core/context'
 import { findComponent, type AnyComponentDefinition } from '../core/registry'
+import { interpolate } from '../runtime/interpolate'
 import { safeUrl, sanitizeHtml } from '../runtime/sanitize'
 import type { EditableField, InsertedNode, NodeKind } from '../core/types'
 
@@ -17,6 +18,22 @@ export interface EditableProps {
   label?: string
   /** Allow new text/images/boxes to be dropped inside. */
   container?: boolean
+  /**
+   * Values this element's text may interpolate, by name.
+   *
+   * Write the source text as a template and pass the current values:
+   *
+   * ```jsx
+   * <Editable id="register.pay" vars={{ amount: money(quote.depositCents) }}>
+   *   {`Pay {amount} deposit`}
+   * </Editable>
+   * ```
+   *
+   * Someone editing this in the browser sees `Pay {amount} deposit` and can move
+   * the words around, but the number itself stays yours — it is substituted on
+   * every render, so it can never go stale in the stored document.
+   */
+  vars?: Record<string, string>
   /**
    * Props the editor may change. Only props named here are editable, and the
    * schema decides which control the inspector shows for each one.
@@ -44,7 +61,7 @@ function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
  * clickable, selectable and inspectable.
  */
 export const Editable = forwardRef<HTMLElement, EditableProps>(function Editable(
-  { id, as, kind, label, container = false, fields, children, className, ...rest },
+  { id, as, kind, label, container = false, vars, fields, children, className, ...rest },
   forwardedRef,
 ) {
   const resolvedKind: NodeKind = kind ?? inferKind(as, children)
@@ -60,6 +77,7 @@ export const Editable = forwardRef<HTMLElement, EditableProps>(function Editable
     label,
     container: isContainer,
     sourceText,
+    vars,
     fields: schema,
     props: declared,
   })
@@ -77,12 +95,16 @@ export const Editable = forwardRef<HTMLElement, EditableProps>(function Editable
   if (override.target !== undefined) props.target = override.target
   if (props.target === '_blank' && props.rel === undefined) props.rel = 'noopener noreferrer'
 
-  let content: ReactNode = children
+  // Templates are resolved on the way out, never on the way in: what is stored
+  // stays `Pay {amount} deposit`, and only what renders carries the number. The
+  // source text goes through it too, so a component can be written as a template
+  // and read correctly before anyone has edited it.
+  let content: ReactNode = vars && sourceText !== undefined ? interpolate(sourceText, vars) : children
   if (override.html !== undefined) {
-    props.dangerouslySetInnerHTML = { __html: sanitizeHtml(override.html) }
+    props.dangerouslySetInnerHTML = { __html: sanitizeHtml(interpolate(override.html, vars)) }
     content = undefined
   } else if (override.text !== undefined) {
-    content = override.text
+    content = interpolate(override.text, vars)
   }
 
   if (isVoidElement(Component) || props.dangerouslySetInnerHTML) return createElement(Component, props)

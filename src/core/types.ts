@@ -205,6 +205,16 @@ export interface RegisteredNode {
   container: boolean
   /** Text content as authored in source, before overrides. */
   sourceText?: string
+  /**
+   * Values the host offers for interpolation into this node's text, by name.
+   *
+   * The stored override keeps the template (`Pay {amount} deposit`); these are
+   * substituted at render. That is the whole point: a price, a session date or a
+   * director's name is computed by the host on every render, so freezing the
+   * rendered string into the document would go stale the moment it changed.
+   * vedit stores names and never the values behind them.
+   */
+  vars?: Record<string, string>
   /** Props this node has declared as editable. */
   fields?: EditableField[]
   /** The prop values the source code passed, shown as the defaults. */

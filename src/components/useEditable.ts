@@ -14,6 +14,12 @@ export interface UseEditableOptions {
   container?: boolean
   /** Text as written in source, shown as the placeholder value in the inspector. */
   sourceText?: string
+  /**
+   * Values this node's text may interpolate, by name. The override stores
+   * `Pay {amount} deposit`; the value of `amount` comes from here on every
+   * render, so it is never frozen into the document.
+   */
+  vars?: Record<string, string>
   /** Skip registration entirely, e.g. for a node rendered in a portal you don't own. */
   disabled?: boolean
   /** Props the editor may change, and the controls to offer for them. */
@@ -57,6 +63,7 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
     label,
     container = false,
     sourceText,
+    vars,
     disabled = false,
     fields,
     props: sourceProps,
@@ -71,6 +78,9 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
   // the registry on every keystroke.
   const fieldsKey = fields ? JSON.stringify(fields) : ''
   const propsKey = sourceProps ? JSON.stringify(sourceProps) : ''
+  // Values change on nearly every render (a price, a date), so the identity of
+  // the object is useless as a dependency — compare what it says instead.
+  const varsKey = vars ? JSON.stringify(vars) : ''
 
   useEffect(() => {
     if (!element || disabled) return
@@ -84,12 +94,13 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
       auto: false,
       container,
       sourceText,
+      vars,
       fields,
       props: sourceProps,
     })
     return () => store.unregister(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, element, id, kind, label, container, sourceText, disabled, fieldsKey, propsKey])
+  }, [store, element, id, kind, label, container, sourceText, disabled, fieldsKey, propsKey, varsKey])
 
   const ref = useCallback((next: HTMLElement | null) => setElement(next), [])
 
