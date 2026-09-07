@@ -9,6 +9,28 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## Unreleased
+
+Nothing here changes the library. It changes what is known about it.
+
+### Added
+
+- **An example app per framework, exercised in CI.** `INTEGRATING.md` named Next
+  (App and Pages), Remix and Astro islands; only Vite was ever tested, and SSR
+  only through a synthetic `renderToString`. Each of those now has a minimal app
+  under `examples/`, built for production against the packed tarball and driven
+  by `npm run test:frameworks`: the markup is server-rendered, hydration is
+  silent, the editor opens on ⌘E, and an edit survives a reload.
+
+  The Next App Router case is the one that mattered. Its build fails outright if
+  the `'use client'` directive is missing from the shipped bundle — the exact
+  breakage the roadmap called a sharp edge, and one nothing else here caught.
+
+  No library code changed to make these pass, which is the useful part of the
+  result: the framework matrix was correct, it just wasn't checked.
+
+---
+
 ## 0.6.0 — 2026-09-07
 
 The document format is unchanged at version 1. Everything here is additive:

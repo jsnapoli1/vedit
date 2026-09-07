@@ -18,8 +18,9 @@ predicted here: a list of small wrong assumptions, none of them architectural.
 Diagnostics for failures that looked identical, `data-vedit-skip`, `vars`, a
 trash icon that did nothing. That is the loop working.
 
-What remains is narrower than it was: **publish under a name, prove the
-framework matrix, and get integrations by people who didn't write it.**
+What remains is narrower than it was: **publish under a name, and get
+integrations by people who didn't write it.** The framework matrix is no longer
+on that list — as of this change it is exercised in CI rather than asserted.
 
 Suggested path: **0.6 is out, a second team next, then 1.0.**
 
@@ -63,6 +64,13 @@ Worth being specific, because the gaps below are easier to read against it.
   tests against the real editor, plus screenshot baselines and layout invariants.
   CI also installs the packed tarball and resolves its types as a consumer would,
   and checks the MCP binary answers on stdio.
+- **The framework matrix is tested, not claimed.** Next (App and Pages), Remix
+  and Astro islands each have an example app under `examples/`, built for
+  production against the packed tarball and driven in CI: server-rendered markup,
+  a clean hydration, the editor opened from the keyboard, and an edit that
+  survives a reload. The App Router case is the one that earns its keep — strip
+  the `'use client'` directive and that build fails outright, which is what makes
+  it a test rather than a demo.
 - **Failures are contained.** A throw inside the editor unmounts the editor, not
   the host's site.
 
@@ -94,19 +102,7 @@ been published. Today: `npm install github:jsnapoli1/vedit#v0.6.0`. For 1.0 it
 needs a scoped name, and a published, tagged release. The branch part of this is
 done — `main` carries tags through v0.6.0.
 
-### 3. The framework matrix is claimed, not tested
-
-`INTEGRATING.md` names Next (App and Pages), Remix, Vite/CRA and Astro islands.
-Only Vite is exercised; SSR is verified with a synthetic `renderToString`. Next's
-App Router in particular has enough sharp edges — RSC boundaries, streaming,
-route groups — that "should work" isn't good enough to promise.
-
-This is now the strongest remaining blocker, because it's the one thing the
-README promises that nothing verifies. One example app per framework in CI would
-settle it. The CI scaffolding to hang them on already exists: the `check` job
-already installs the packed tarball into a scratch consumer.
-
-### 4. Authoring's remaining two
+### 3. Authoring's remaining two
 
 0.5 shipped the two that mattered most here — dragging from the Insert panel onto
 the page, and component schema versioning. Two are left, and neither blocks a
@@ -166,10 +162,10 @@ undone.
 instead of freezing at whatever it said when someone edited it. And a trash icon
 that removes rather than silently doing nothing.
 
-**0.7–0.9** — publishing under a scoped name. One example app per framework in
-CI. Integrations by other people, and whatever they turn up. Slot-typed props if
-they're going to happen before the surface freezes. Otherwise resist adding
-features: the gap between here and 1.0 is confidence, not surface area.
+**0.7–0.9** — publishing under a scoped name. Integrations by other people, and
+whatever they turn up. Slot-typed props if they're going to happen before the
+surface freezes. Otherwise resist adding features: the gap between here and 1.0
+is confidence, not surface area. *(One example app per framework in CI: done.)*
 
 **1.0** — when a second team has shipped a site with it and the API hasn't had to
 change to let them.

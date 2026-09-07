@@ -50,7 +50,8 @@
     "test": "npm run test:unit",
     "test:e2e": "playwright test",
     "test:e2e:update": "playwright test --update-snapshots",
-    "test:unit": "npm run build && node --test \"test/*.test.mjs\""
+    "test:unit": "npm run build && node --test \"test/*.test.mjs\"",
+    "test:frameworks": "playwright test --config playwright.frameworks.config.ts"
   },
   "keywords": [
     "react",

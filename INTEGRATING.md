@@ -457,6 +457,12 @@ Full detail in [API.md](./API.md).
 
 ## Framework notes
 
+Each of these has a minimal example app under [`examples/`](./examples), built
+and exercised in CI: the page is server-rendered, hydrated, the editor is opened
+with the keyboard, and an edit is checked to survive a reload. What the tests
+drive is the packed tarball, so it is the published bundle that gets verified
+rather than the source tree.
+
 **Next.js App Router** — the browser half of the bundle ships `'use client'`, so
 you can use `<VeditProvider>` directly in `app/layout.tsx` even though that file
 is a Server Component. Children pass through it normally.

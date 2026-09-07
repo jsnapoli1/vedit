@@ -320,6 +320,29 @@ breakpoints, states, component props, re-ordering, publishing, composing a page
 out of registered components, two people collaborating, driving it all from a
 keyboard, and what happens when the editor throws.
 
+**`npm run test:frameworks`** — the matrix `INTEGRATING.md` promises. One minimal
+app per framework under `examples/` (Next App Router, Next Pages Router, Remix,
+Astro islands), each built for production and served, then checked for four
+things: the markup is server-rendered, hydration logs nothing to the console, the
+editor opens on ⌘E, and an edit is still there after a reload.
+
+These install the **packed tarball**, not the source tree, so what they exercise
+is the bundle a consumer gets. That is the point — the App Router app fails to
+build at all if the `'use client'` directive is missing from `dist/index.js`,
+which is a class of breakage nothing else here would catch. `vedit` is
+deliberately absent from each example's `package.json`: CI runs `npm ci` from the
+example's own lockfile for the framework versions, then installs the freshly
+packed tarball over the top.
+
+```bash
+npm run build && npm pack
+for app in next-app next-pages remix astro; do
+  npm ci --prefix "examples/$app"
+  npm install --no-save --prefix "examples/$app" "$PWD"/vedit-*.tgz
+done
+npm run test:frameworks
+```
+
 **Visual regression** comes in two forms because they catch different things:
 
 - Screenshot baselines in `e2e/visual.spec.ts-snapshots/`. Sensitive to browser
@@ -372,7 +395,7 @@ can't check any other way.
 ## Releasing
 
 ```bash
-npm run typecheck && npm test && npm run test:e2e   # everything green
+npm run typecheck && npm test && npm run test:e2e && npm run test:frameworks
 npm version <patch|minor|major>
 git push --follow-tags
 ```

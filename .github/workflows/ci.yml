@@ -59,3 +59,38 @@ jobs:
           name: playwright-report
           path: playwright-report
           retention-days: 7
+
+  frameworks:
+    runs-on: ubuntu-latest
+    # The matrix INTEGRATING.md promises. Each example installs the packed
+    # tarball and is built for production, so what these tests drive is the
+    # bundle a consumer gets — including the `'use client'` directive, which a
+    # Next App Router build fails without.
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.0-noble
+      options: --user 1001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install each example, then the packed tarball over the top
+        run: |
+          npm pack --silent
+          for app in next-app next-pages remix astro; do
+            # `ci` from the example's own lockfile, so framework versions are the
+            # ones these were verified against; then the tarball, which is
+            # deliberately not in that lockfile — it is rebuilt on every run.
+            npm ci --prefix "examples/$app"
+            npm install --no-audit --no-fund --no-save --prefix "examples/$app" "$PWD"/vedit-*.tgz
+          done
+      - run: npm run test:frameworks
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-frameworks
+          path: playwright-report
+          retention-days: 7
