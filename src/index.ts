@@ -34,6 +34,8 @@ export type {
 export type { EditableProps } from './components/Editable'
 export { EditableText, EditableImage, EditableBox, EditableLink } from './components/presets'
 export { useEditable, labelFromId } from './components/useEditable'
+export { useRepeatItem } from './components/repeatContext'
+export type { RepeatItem } from './components/repeatContext'
 export type { UseEditableOptions, UseEditableResult } from './components/useEditable'
 
 export { VeditErrorBoundary } from './core/ErrorBoundary'

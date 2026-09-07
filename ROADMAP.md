@@ -60,10 +60,16 @@ Worth being specific, because the gaps below are easier to read against it.
 - **Failures say something.** The 0.5 diagnostics turned four silent failures
   into one development-build warning each. This was the single largest finding
   from real use, and it was a usability problem, not a correctness one.
-- **The tests check what ships.** 186 unit tests against `dist/`, 67 browser
+- **The tests check what ships.** 231 unit tests against `dist/`, 73 browser
   tests against the real editor, including screenshot baselines and layout
   invariants. CI also installs the packed tarball and resolves its types as a
   consumer would, and checks the MCP binary answers on stdio.
+- **Repeating stayed on the right side of the line.** `repeat` takes the host's
+  array and renders a template over it; the array is never stored, so a repeat
+  can't go stale any more than `vars` can. Editing a card edits every card, which
+  is what someone means often enough to be the default, and scoping to one is a
+  click. No expressions, no filters, no sorts — the thing that turns page
+  builders into bad programming languages didn't get in.
 - **The framework matrix is tested, not claimed.** Next (App and Pages), Remix
   and Astro islands each have an example app under `examples/`, built for
   production against the packed tarball and driven in CI: server-rendered markup,
@@ -102,19 +108,17 @@ been published. Today: `npm install github:jsnapoli1/vedit#v0.6.0`. For 1.0 it
 needs a scoped name, and a published, tagged release. The branch part of this is
 done — `main` carries tags through v0.6.0.
 
-### 3. Authoring's remaining two
+### 3. Authoring's remaining one
 
 0.5 shipped the two that mattered most here — dragging from the Insert panel onto
-the page, and component schema versioning. Two are left, and neither blocks a
-promise about stability so much as it shapes what the promise covers:
+the page, and component schema versioning. The repeater has now landed too. One
+is left, and it doesn't block a promise about stability so much as shape what the
+promise covers:
 
 - **Slot-typed props.** A `<Card header={…}>` still can't take other components
   as a named prop; a component either has children or it doesn't. `EditableField`
   needs a `blocks` type for that. Worth deciding before 1.0 because it adds a
   field type to a schema the version number will freeze.
-- **Repeating over data.** Static props only, deliberately. A repeater over an
-  array is the smallest useful step; expression evaluation is where page builders
-  turn into bad programming languages, and I'd stay out of it.
 
 ---
 

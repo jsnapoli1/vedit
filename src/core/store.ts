@@ -1,6 +1,7 @@
 import type { RealtimeSession } from './session'
 import { inspectDocument } from './migrate'
 import { applyOperations, newInsertedId, type VeditOperation } from './operations'
+import { parseItemId } from '../runtime/repeat'
 import {
   deleteStyles,
   mergeStyles,
@@ -78,6 +79,7 @@ export class VeditStore {
       openComment: null,
       tool: 'select',
       inlineEditing: null,
+      repeatScope: 'all',
       notice: null,
       dropIndicator: null,
       past: [],
@@ -176,8 +178,49 @@ export class VeditStore {
     return this.state.doc.nodes[id] ?? {}
   }
 
+  /**
+   * Where an edit to `id` should be written.
+   *
+   * Selecting a card selects one item — `cards.title~b` — but the usual intent
+   * is "change this on every card", so by default the write is redirected to the
+   * template the items share. `repeatScope: 'item'` leaves it on the item, which
+   * is what makes one card able to differ.
+   *
+   * Everything else in the editor keeps talking about the node that is actually
+   * selected; only the write target moves. That keeps selection, outlines and
+   * the layers panel honest about what was clicked.
+   */
+  writeTarget(id: string): string {
+    if (this.state.repeatScope === 'item') return id
+    return parseItemId(id)?.templateId ?? id
+  }
+
+  /** Switch between editing every item of a repeat and editing just this one. */
+  setRepeatScope(scope: 'all' | 'item') {
+    this.set({ repeatScope: scope })
+  }
+
+  /**
+   * Drop one repeat item's own override, so it goes back to following the
+   * template.
+   *
+   * Deliberately not routed through `writeTarget`: this is the one write that
+   * means the item and never the template, and redirecting it would clear the
+   * shared edit for every card instead — the opposite of what the button says.
+   */
+  resetRepeatItem(id: string) {
+    if (!parseItemId(id)) return
+    const nodes = { ...this.state.doc.nodes }
+    if (!(id in nodes)) return
+    delete nodes[id]
+    this.commit({ ...this.state.doc, nodes })
+  }
+
   /** Merge a patch into a node's override. `undefined` values delete keys. */
-  update(id: string, patch: NodeOverride, opts: { history?: boolean } = {}) {
+  update(rawId: string, patch: NodeOverride, opts: { history?: boolean } = {}) {
+    // Inside a repeat this is where "all cards" versus "this card" is decided.
+    // Doing it here rather than at each call site means no panel can forget.
+    const id = this.writeTarget(rawId)
     const current = this.getOverride(id)
     const merged: NodeOverride = { ...current, ...patch }
     if (patch.style) merged.style = { ...current.style, ...patch.style }
@@ -205,10 +248,13 @@ export class VeditStore {
 
   /** Apply a change to one node's override and commit it. */
   private writeNode(
-    id: string,
+    rawId: string,
     change: (override: NodeOverride) => NodeOverride,
     opts: { history?: boolean } = {},
   ) {
+    // Every style write lands here, so the repeat scope is honoured for styles
+    // exactly as it is for content.
+    const id = this.writeTarget(rawId)
     const nodes = { ...this.state.doc.nodes }
     const pruned = pruneOverride(change(clone(nodes[id] ?? {})))
     if (pruned) nodes[id] = pruned
@@ -317,8 +363,11 @@ export class VeditStore {
   }
 
   /** Apply a content patch to several nodes at once. */
-  updateMany(ids: string[], patch: NodeOverride) {
+  updateMany(rawIds: string[], patch: NodeOverride) {
     const nodes = { ...this.state.doc.nodes }
+    // Deduplicated: several selected cards of one repeat share a template, so
+    // without this the same write would be applied once per selected item.
+    const ids = [...new Set(rawIds.map((id) => this.writeTarget(id)))]
     for (const id of ids) {
       const merged: NodeOverride = { ...(nodes[id] ?? {}), ...patch }
       for (const [key, value] of Object.entries(patch)) {

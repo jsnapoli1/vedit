@@ -310,12 +310,12 @@ site. Breaking one is a bug even if the tests pass.
 
 ## Testing
 
-**`npm test`** — 186 unit tests, run against `dist/` rather than `src/`, so they
+**`npm test`** — 231 unit tests, run against `dist/` rather than `src/`, so they
 check what actually ships. Pure logic lives here: the CSS emitter, the layer
 matrix, the store, migration, the operations vocabulary, the open API, the MCP
 server, diffing, contrast maths, the relay, the escaping rules.
 
-**`npm run test:e2e`** — 67 browser tests over the real editor. 52 of them cover
+**`npm run test:e2e`** — 73 browser tests over the real editor. 58 of them cover
 behaviour: selection, breakpoints, states, component props, re-ordering,
 publishing, composing a page out of registered components, two people
 collaborating, driving it all from a keyboard, and what happens when the editor

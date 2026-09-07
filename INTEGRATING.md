@@ -145,6 +145,54 @@ Reach for this whenever the alternative is a number frozen into saved copy —
 especially where the frozen figure could contradict something authoritative,
 like the amount a payment processor is about to charge.
 
+### A card per row of your data
+
+Three plan cards, six products, however many the array holds. `repeat` renders
+the children once per item:
+
+```jsx
+<Editable id="plans" repeat={plans}>
+  <div className="card">
+    <EditableText id="plan.name" as="h3">Plan</EditableText>
+    <EditableText id="plan.cta">Choose this plan</EditableText>
+  </div>
+</Editable>
+```
+
+The array is yours and stays yours. It is passed in on every render and never
+written to the document — the same rule `vars` follows, for the same reason: a
+repeat over `products` cannot go stale, and cannot freeze a price into saved
+copy. There is no expression language here, and there is not going to be one.
+
+The ids are written once, not once per item. Behind them, each item gets its own:
+`plan.name` becomes `plan.name~starter`, keyed by the item's own `id`, `key`,
+`slug` or `uuid` — pass `repeatKey` if it lives somewhere else. Keying on the
+data rather than the position is what makes an edit survive the list changing:
+insert a plan at the front and every existing edit stays on the right card.
+
+**Editing a card edits every card.** That is nearly always what someone means —
+"change the button on all six" is the reason to want a repeater at all — so it
+is the default. The inspector's *Applies to* switch scopes an edit to one card
+instead, and an item edit wins over the template for that card. Where one is
+set, the panel says so and offers to put it back, rather than letting a template
+edit look like it silently did nothing.
+
+For a card that shows its own name and price, use `vars` inside the repeat:
+
+```jsx
+function PlanCard() {
+  const plan = useRepeatItem()?.item
+  return (
+    <EditableText id="plan.name" as="h3" vars={{ name: plan.name }}>
+      {'{name}'}
+    </EditableText>
+  )
+}
+```
+
+What this deliberately does not do: add, remove or reorder rows. The host owns
+the array, so those controls would be lying about what they can change.
+
 ---
 
 ## 4. Let components declare their own props

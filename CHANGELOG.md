@@ -11,9 +11,31 @@ when a saved document has to be rewritten to keep working.
 
 ## Unreleased
 
-Nothing here changes the library. It changes what is known about it.
-
 ### Added
+
+- **`repeat` on `<Editable>`** — one card per row of your data.
+
+  Static props only was the deliberate position, and the gap it left was the
+  obvious one: three plan cards meant three sets of ids, hand-written. `repeat`
+  takes the host's array and renders the children once per item, giving each its
+  own id (`plan.name~starter`) keyed by the item's own `id`/`key`/`slug`/`uuid`.
+  Keying on the data rather than the position means an edit survives the list
+  being reordered or added to.
+
+  Editing a card edits **every** card by default, because that is what someone
+  usually means; the inspector's *Applies to* switch scopes it to one, and that
+  item edit then wins for that card. Where one shadows a template edit the panel
+  says so and offers a reset — a template edit that silently does nothing is the
+  failure class 0.5 spent itself removing.
+
+  The array is never written to the document, exactly as `vars` is not. vedit
+  repeats over `products` and stores nothing about it, so a repeat cannot go
+  stale and cannot freeze a price into saved copy. No expression language, no
+  filters, no sorts — and no add/remove/reorder controls, because the host owns
+  the array and those buttons would be lying.
+
+  The document format is unchanged at version 1: item overrides are ordinary
+  nodes under a longer id, and a document written before this opens untouched.
 
 - **An example app per framework, exercised in CI.** `INTEGRATING.md` named Next
   (App and Pages), Remix and Astro islands; only Vite was ever tested, and SSR

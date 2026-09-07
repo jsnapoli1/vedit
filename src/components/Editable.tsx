@@ -3,6 +3,8 @@ import { useEditable } from './useEditable'
 import { useVeditContext, useVeditState } from '../core/context'
 import { findComponent, type AnyComponentDefinition } from '../core/registry'
 import { interpolate } from '../runtime/interpolate'
+import { itemKey } from '../runtime/repeat'
+import { RepeatItemContext } from './repeatContext'
 import { safeUrl, sanitizeHtml } from '../runtime/sanitize'
 import type { EditableField, InsertedNode, NodeKind } from '../core/types'
 
@@ -35,6 +37,29 @@ export interface EditableProps {
    */
   vars?: Record<string, string>
   /**
+   * Render the children once per item of this array.
+   *
+   * The array is yours and stays yours: it is passed in on every render and
+   * never written to the document, exactly as `vars` is. vedit repeats the
+   * template over it and stores overrides, so a repeat over `products` can't go
+   * stale and can't freeze a price into saved content.
+   *
+   * ```jsx
+   * <Editable id="cards" repeat={products}>
+   *   <EditableText id="cards.title">Buy now</EditableText>
+   * </Editable>
+   * ```
+   *
+   * Editing a card in the browser changes every card, because that is nearly
+   * always what someone means; the inspector offers "this card only" for when it
+   * isn't. Each item is given a key from its own data (`id`, `key`, `slug` or
+   * `uuid`), so edits stay attached to the right card when the list reorders.
+   * Pass `repeatKey` when the key lives somewhere else.
+   */
+  repeat?: readonly unknown[]
+  /** Where an item's stable key lives, when it isn't `id`/`key`/`slug`/`uuid`. */
+  repeatKey?: (item: unknown, index: number) => string
+  /**
    * Props the editor may change. Only props named here are editable, and the
    * schema decides which control the inspector shows for each one.
    */
@@ -45,6 +70,9 @@ export interface EditableProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [prop: string]: any
 }
+
+/** What `forwardRef` hands the render function: `EditableProps` minus `ref`. */
+type RenderProps = Omit<EditableProps, 'ref'>
 
 function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
   return (value: T) => {
@@ -60,10 +88,45 @@ function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
  * wrote, plus whatever the editor has overridden; in edit mode it becomes
  * clickable, selectable and inspectable.
  */
-export const Editable = forwardRef<HTMLElement, EditableProps>(function Editable(
-  { id, as, kind, label, container = false, vars, fields, children, className, ...rest },
+export const Editable = forwardRef<HTMLElement, EditableProps>(function Editable(props, forwardedRef) {
+  // Split before any hook runs, so the two paths never share a hook order.
+  // A repeat is a loop rather than an element: it registers nothing itself and
+  // renders no box, because wrapping content the host laid out in a div of ours
+  // is how a library breaks someone's grid.
+  if (props.repeat) return <Repeat {...props} />
+  return <EditableNode {...props} forwardedRef={forwardedRef} />
+})
+
+function Repeat({ repeat, repeatKey, children }: RenderProps) {
+  return (
+    <>
+      {((repeat ?? []) as readonly unknown[]).map((item: unknown, index: number) => {
+        const key = itemKey(item, index, repeatKey)
+        return (
+          <RepeatItemContext.Provider key={key} value={{ item, key, index }}>
+            {children}
+          </RepeatItemContext.Provider>
+        )
+      })}
+    </>
+  )
+}
+
+const EditableNode = function EditableNode({
+  id,
+  as,
+  kind,
+  label,
+  container = false,
+  vars,
+  fields,
+  children,
+  className,
   forwardedRef,
-) {
+  repeat: _repeat,
+  repeatKey: _repeatKey,
+  ...rest
+}: RenderProps & { forwardedRef?: Ref<HTMLElement> }) {
   const resolvedKind: NodeKind = kind ?? inferKind(as, children)
   const isContainer = container || resolvedKind === 'box'
   const sourceText = typeof children === 'string' ? children : undefined
@@ -115,7 +178,7 @@ export const Editable = forwardRef<HTMLElement, EditableProps>(function Editable
     content,
     isContainer ? <InsertedChildren key="vedit-inserted" parentId={id} /> : null,
   )
-})
+}
 
 function inferKind(as: ElementType | undefined, children: ReactNode): NodeKind {
   if (as === 'img') return 'image'

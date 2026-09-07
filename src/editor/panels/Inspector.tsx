@@ -18,6 +18,7 @@ import {
   type Gradient,
 } from '../../runtime/gradient'
 import { unknownPlaceholders } from '../../runtime/interpolate'
+import { parseItemId } from '../../runtime/repeat'
 import { parseTransform, withTransform } from '../../runtime/transform'
 import { TokenPicker } from './Tokens'
 import { useComputedStyle, useContentValue, useSelectedNode, useStyleValue } from '../hooks'
@@ -151,6 +152,7 @@ export function Inspector() {
         ) : (
           <>
             <Breadcrumb id={id} />
+            <RepeatScope id={id} />
             <StateSwitch id={id} />
             <PropsSection id={id} />
             <ContentSection id={id} kind={kind} />
@@ -205,6 +207,60 @@ function StateSwitch({ id }: { id: string }) {
           Changes below apply only while the element is {styleState === 'active' ? 'pressed' : styleState}ed.
           Add a transition under Appearance to make it ease.
         </div>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Whether an edit inside a repeat lands on every item or just this one.
+ *
+ * Only shown when the selection is actually inside a repeat, so the ordinary
+ * case gains no extra chrome. "All" is the default because bulk-editing the
+ * cards is the reason a repeat exists; "This card" is the exception, and when
+ * one is set the row below says so rather than leaving a template edit to
+ * silently do nothing.
+ */
+function RepeatScope({ id }: { id: string }) {
+  const store = useVeditStore()
+  const scope = useVeditState((state) => state.repeatScope)
+  const nodes = useVeditNodes()
+  const parsed = parseItemId(id)
+
+  const itemOverride = useVeditState((state) => (parsed ? state.doc.nodes[id] : undefined))
+  const hasItemEdit = !!itemOverride && Object.keys(itemOverride).length > 0
+
+  if (!parsed) return null
+
+  // Every rendered item of this template, so the label can say how many.
+  const count = nodes.filter((node) => parseItemId(node.id)?.templateId === parsed.templateId).length
+
+  return (
+    <div className="vedit-section" style={{ paddingBottom: 10 }}>
+      <Row label="Applies to">
+        <Segmented
+          value={scope}
+          options={[
+            { value: 'all', label: count > 1 ? `All ${count}` : 'All' },
+            { value: 'item', label: 'This one' },
+          ]}
+          onChange={(next) => store.setRepeatScope((next ?? 'all') as 'all' | 'item')}
+        />
+      </Row>
+      {scope === 'all' && hasItemEdit ? (
+        <div className="vedit-hint">
+          This one has its own edit, which wins over anything set here.{' '}
+          <button
+            type="button"
+            className="vedit-link"
+            onClick={() => store.resetRepeatItem(id)}
+          >
+            Reset it to the template
+          </button>
+        </div>
+      ) : null}
+      {scope === 'item' ? (
+        <div className="vedit-hint">Changes below apply to this one only.</div>
       ) : null}
     </div>
   )

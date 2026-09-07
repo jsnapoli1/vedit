@@ -238,6 +238,16 @@ export interface VeditState {
   tool: EditorTool
   /** Id of the node being edited inline right now. */
   inlineEditing: string | null
+  /**
+   * Whether an edit inside a repeat applies to one item or to all of them.
+   *
+   * `'all'` writes to the template id, so the change reaches every card — the
+   * usual intent, and the reason a repeater is worth having. `'item'` writes to
+   * the selected item's own id, which wins over the template for that item.
+   * Editor state, not document state: it is a mode the person is in, not
+   * something the page remembers.
+   */
+  repeatScope: 'all' | 'item'
   /** Short-lived message shown at the bottom of the editor. */
   notice: string | null
   /** Where a new comment is being written, before it has a body. */
