@@ -16,7 +16,7 @@ import {
   type VeditAdapter,
   type VeditDocument,
 } from 'vedit'
-import { blocks } from './blocks'
+import { blocks, ContactForm } from './blocks'
 
 /** Inline so the demo works with no network. Swap in a real photo through the editor. */
 const PLACEHOLDER_ART =
@@ -398,6 +398,27 @@ function Site() {
           </div>
         ))}
       </EditableBox>
+
+      <ContactForm
+        title="Get in touch"
+        action="/api/contact"
+        fields={[
+          {
+            name: 'email',
+            label: 'Email',
+            type: 'email',
+            placeholder: 'you@example.com',
+            rules: [{ kind: 'required' }, { kind: 'email' }],
+          },
+          {
+            name: 'message',
+            label: 'Message',
+            type: 'textarea',
+            help: 'What can we help with?',
+            rules: [{ kind: 'maxLength', value: 500 }],
+          },
+        ]}
+      />
 
       <footer className="footer">
         <p>© Northwind. This paragraph was never wrapped in an Editable — the scanner found it.</p>
