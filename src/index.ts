@@ -72,6 +72,13 @@ export { documentToCss, tokenVariable, tokenReference } from './runtime/css'
 export { interpolate, placeholdersIn, unknownPlaceholders } from './runtime/interpolate'
 export { parseFormFields, validateField, validateForm, safeFormAction } from './runtime/forms'
 export type { FormMessages } from './runtime/forms'
+export { useVeditForm, buildSubmission, isHoneypotFilled, HONEYPOT_NAME } from './runtime/useVeditForm'
+export type {
+  UseVeditFormOptions,
+  VeditForm,
+  FieldProps,
+  SubmissionBody,
+} from './runtime/useVeditForm'
 
 export {
   emptyDocument,
