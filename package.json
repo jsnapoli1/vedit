@@ -1,6 +1,6 @@
 {
   "name": "vedit",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "A Figma-like visual editor you drop into any React site. Click any element, edit text, images, spacing, typography and layout — then save the overrides back to your own backend.",
   "license": "MIT",
   "type": "module",
@@ -50,7 +50,8 @@
     "test": "npm run test:unit",
     "test:e2e": "playwright test",
     "test:e2e:update": "playwright test --update-snapshots",
-    "test:unit": "npm run build && node --test \"test/*.test.mjs\""
+    "test:unit": "npm run build && node --test \"test/*.test.mjs\"",
+    "test:frameworks": "playwright test --config playwright.frameworks.config.ts"
   },
   "keywords": [
     "react",

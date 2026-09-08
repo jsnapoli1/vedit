@@ -7,3 +7,17 @@ example/dist
 test-results
 playwright-report
 blob-report
+
+# Framework examples: dependencies and build output. The lockfiles are kept, so
+# CI resolves the same versions these were verified against.
+examples/*/node_modules
+examples/*/.next
+examples/*/build
+examples/*/dist
+examples/*/.astro
+examples/*/next-env.d.ts
+vedit-*.tgz
+
+# Screenshot baselines are generated in the CI container. A local macOS run
+# writes -darwin variants that must never be committed — see DEVELOPING.md.
+e2e/visual.spec.ts-snapshots/*-darwin.png

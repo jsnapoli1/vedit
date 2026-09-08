@@ -26,6 +26,7 @@ export { sanitizeHtml, safeUrl } from './runtime/sanitize'
 export { parseTransform, serializeTransform, withTransform } from './runtime/transform'
 export type { TransformParts } from './runtime/transform'
 export { parseGradient, serializeGradient, DEFAULT_GRADIENT } from './runtime/gradient'
+export { itemId, parseItemId, itemKey, mergeOverrides, ITEM_SEPARATOR } from './runtime/repeat'
 export type { Gradient, GradientStop } from './runtime/gradient'
 
 export { warnOnce, resetWarnings, isProductionLike } from './core/env'

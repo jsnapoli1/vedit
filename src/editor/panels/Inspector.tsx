@@ -3,7 +3,11 @@ import { useVeditNodes, useVeditState, useVeditStore } from '../../core/context'
 import {
   STYLE_STATES,
   type EditableField,
+  type FormField,
+  type FormFieldType,
+  type FormRule,
   type NodeKind,
+  type PatternPreset,
   type RegisteredNode,
   type StyleMap,
   type StyleState,
@@ -17,7 +21,9 @@ import {
   serializeGradient,
   type Gradient,
 } from '../../runtime/gradient'
+import { autoCompleteFor } from '../../runtime/forms'
 import { unknownPlaceholders } from '../../runtime/interpolate'
+import { parseItemId } from '../../runtime/repeat'
 import { parseTransform, withTransform } from '../../runtime/transform'
 import { TokenPicker } from './Tokens'
 import { useComputedStyle, useContentValue, useSelectedNode, useStyleValue } from '../hooks'
@@ -151,6 +157,7 @@ export function Inspector() {
         ) : (
           <>
             <Breadcrumb id={id} />
+            <RepeatScope id={id} />
             <StateSwitch id={id} />
             <PropsSection id={id} />
             <ContentSection id={id} kind={kind} />
@@ -205,6 +212,60 @@ function StateSwitch({ id }: { id: string }) {
           Changes below apply only while the element is {styleState === 'active' ? 'pressed' : styleState}ed.
           Add a transition under Appearance to make it ease.
         </div>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Whether an edit inside a repeat lands on every item or just this one.
+ *
+ * Only shown when the selection is actually inside a repeat, so the ordinary
+ * case gains no extra chrome. "All" is the default because bulk-editing the
+ * cards is the reason a repeat exists; "This card" is the exception, and when
+ * one is set the row below says so rather than leaving a template edit to
+ * silently do nothing.
+ */
+function RepeatScope({ id }: { id: string }) {
+  const store = useVeditStore()
+  const scope = useVeditState((state) => state.repeatScope)
+  const nodes = useVeditNodes()
+  const parsed = parseItemId(id)
+
+  const itemOverride = useVeditState((state) => (parsed ? state.doc.nodes[id] : undefined))
+  const hasItemEdit = !!itemOverride && Object.keys(itemOverride).length > 0
+
+  if (!parsed) return null
+
+  // Every rendered item of this template, so the label can say how many.
+  const count = nodes.filter((node) => parseItemId(node.id)?.templateId === parsed.templateId).length
+
+  return (
+    <div className="vedit-section" style={{ paddingBottom: 10 }}>
+      <Row label="Applies to">
+        <Segmented
+          value={scope}
+          options={[
+            { value: 'all', label: count > 1 ? `All ${count}` : 'All' },
+            { value: 'item', label: 'This one' },
+          ]}
+          onChange={(next) => store.setRepeatScope((next ?? 'all') as 'all' | 'item')}
+        />
+      </Row>
+      {scope === 'all' && hasItemEdit ? (
+        <div className="vedit-hint">
+          This one has its own edit, which wins over anything set here.{' '}
+          <button
+            type="button"
+            className="vedit-link"
+            onClick={() => store.resetRepeatItem(id)}
+          >
+            Reset it to the template
+          </button>
+        </div>
+      ) : null}
+      {scope === 'item' ? (
+        <div className="vedit-hint">Changes below apply to this one only.</div>
       ) : null}
     </div>
   )
@@ -352,6 +413,13 @@ function PropField({
             onChange={(event) => onChange(event.target.value || undefined)}
           />
         )
+      case 'fields':
+        return (
+          <FieldListEditor
+            value={Array.isArray(current) ? (current as FormField[]) : []}
+            onChange={(next) => onChange(next.length ? next : undefined)}
+          />
+        )
       default:
         return (
           <TextField
@@ -366,7 +434,7 @@ function PropField({
 
   return (
     <>
-      {field.type === 'textarea' ? (
+      {field.type === 'textarea' || field.type === 'fields' ? (
         <>
           <div className="vedit-label" style={{ width: 'auto', marginBottom: 4 }}>
             {label}
@@ -384,6 +452,314 @@ function PropField({
 }
 
 /* ------------------------------------------------------------------ content */
+
+const FORM_FIELD_TYPES: FormFieldType[] = [
+  'text', 'textarea', 'email', 'tel', 'url', 'number', 'checkbox', 'select', 'radio', 'date',
+]
+
+/** Rules that mean something for a given control — no `minLength` on a checkbox. */
+function rulesFor(type: FormFieldType): FormRule['kind'][] {
+  const base: FormRule['kind'][] = ['required']
+  if (type === 'checkbox') return base
+  if (type === 'number') return [...base, 'min', 'max', 'integer']
+  if (type === 'select' || type === 'radio' || type === 'date') return base
+  const text: FormRule['kind'][] = [...base, 'minLength', 'maxLength', 'pattern', 'matches']
+  if (type === 'email') return [...text, 'email']
+  if (type === 'url') return [...text, 'url']
+  if (type === 'tel') return [...text, 'tel']
+  return text
+}
+
+const RULE_LABELS: Record<FormRule['kind'], string> = {
+  required: 'Required',
+  minLength: 'Min length',
+  maxLength: 'Max length',
+  min: 'Minimum',
+  max: 'Maximum',
+  email: 'Valid email',
+  url: 'Valid URL',
+  tel: 'Valid phone',
+  integer: 'Whole number',
+  pattern: 'Format',
+  matches: 'Matches field',
+}
+
+const PATTERN_LABELS: Array<{ value: PatternPreset; label: string }> = [
+  { value: 'usZip', label: 'US ZIP code' },
+  { value: 'usPhone', label: 'US phone' },
+  { value: 'postcodeUk', label: 'UK postcode' },
+  { value: 'slug', label: 'Slug' },
+  { value: 'hexColor', label: 'Hex colour' },
+]
+
+/**
+ * Build a form by listing its controls.
+ *
+ * Validation is picked from a fixed set rather than typed as a pattern. A rule
+ * is stored data that runs against every visitor's keystrokes, and an arbitrary
+ * regex out of a document is a way to hang their tab — so the choice is a menu,
+ * which also means every rule has a control and a name someone can read.
+ */
+function FieldListEditor({
+  value,
+  onChange,
+}: {
+  value: FormField[]
+  onChange: (next: FormField[]) => void
+}) {
+  const [open, setOpen] = useState<number | null>(null)
+
+  const update = (index: number, patch: Partial<FormField>) =>
+    onChange(value.map((field, i) => (i === index ? { ...field, ...patch } : field)))
+
+  const move = (index: number, by: number) => {
+    const next = [...value]
+    const target = index + by
+    if (target < 0 || target >= next.length) return
+    const moved = next[target]
+    next[target] = next[index]
+    next[index] = moved
+    onChange(next)
+  }
+
+  const add = () => {
+    onChange([...value, { name: `field${value.length + 1}`, type: 'text', label: 'New field', rules: [] }])
+    setOpen(value.length)
+  }
+
+  const duplicates = new Set(
+    value.map((field) => field.name).filter((name, i, all) => all.indexOf(name) !== i),
+  )
+
+  return (
+    <div className="vedit-field-list">
+      {value.map((field, index) => {
+        const expanded = open === index
+        const kinds = rulesFor(field.type)
+        const rules = field.rules ?? []
+        const has = (kind: FormRule['kind']) => rules.some((rule) => rule.kind === kind)
+
+        const toggle = (kind: FormRule['kind']) => {
+          if (has(kind)) {
+            update(index, { rules: rules.filter((rule) => rule.kind !== kind) })
+            return
+          }
+          let added: FormRule
+          if (kind === 'minLength') added = { kind, value: 1 }
+          else if (kind === 'maxLength') added = { kind, value: 200 }
+          else if (kind === 'min' || kind === 'max') added = { kind, value: 0 }
+          else if (kind === 'pattern') added = { kind, preset: 'usZip' }
+          else if (kind === 'matches') {
+            added = { kind, field: value.find((other) => other.name !== field.name)?.name ?? '' }
+          } else added = { kind } as FormRule
+          update(index, { rules: [...rules, added] })
+        }
+
+        const numeric = (kind: 'minLength' | 'maxLength' | 'min' | 'max') => {
+          const rule = rules.find((entry) => entry.kind === kind)
+          return rule && 'value' in rule ? String(rule.value) : ''
+        }
+
+        const setNumeric = (kind: 'minLength' | 'maxLength' | 'min' | 'max', next: string) => {
+          const parsed = Number.parseFloat(next)
+          if (Number.isNaN(parsed)) return
+          update(index, {
+            rules: rules.map((rule) => (rule.kind === kind ? { kind, value: parsed } : rule)),
+          })
+        }
+
+        return (
+          <div key={index} className="vedit-field-item">
+            <div className="vedit-field-head">
+              <button
+                type="button"
+                className="vedit-field-toggle"
+                aria-expanded={expanded}
+                onClick={() => setOpen(expanded ? null : index)}
+              >
+                {field.label || field.name}
+                <span className="vedit-hint"> · {field.type}</span>
+              </button>
+              <button type="button" className="vedit-btn vedit-btn-icon" aria-label={`Move ${field.label || field.name} up`} onClick={() => move(index, -1)}>
+                ↑
+              </button>
+              <button type="button" className="vedit-btn vedit-btn-icon" aria-label={`Move ${field.label || field.name} down`} onClick={() => move(index, 1)}>
+                ↓
+              </button>
+              <button
+                type="button"
+                className="vedit-btn vedit-btn-icon"
+                aria-label={`Remove ${field.label || field.name}`}
+                onClick={() => onChange(value.filter((_, i) => i !== index))}
+              >
+                ×
+              </button>
+            </div>
+
+            {duplicates.has(field.name) ? (
+              <div className="vedit-hint vedit-warn">
+                Two fields are named “{field.name}”. They would submit under the same key, and one
+                answer would be lost.
+              </div>
+            ) : null}
+            {!field.label ? (
+              <div className="vedit-hint vedit-warn">
+                No label, so a screen reader announces nothing for this field.
+              </div>
+            ) : null}
+
+            {expanded ? (
+              <div className="vedit-field-body">
+                <Row label="Label">
+                  <TextField value={field.label ?? ''} onChange={(next) => update(index, { label: next })} />
+                </Row>
+                <Row label="Name">
+                  <TextField value={field.name} onChange={(next) => update(index, { name: next.trim() })} />
+                </Row>
+                <Row label="Type">
+                  <select
+                    className="vedit-select"
+                    value={field.type}
+                    onChange={(event) => {
+                      const type = event.target.value as FormFieldType
+                      const allowed = rulesFor(type)
+                      update(index, {
+                        type,
+                        rules: rules.filter((rule) => allowed.includes(rule.kind)),
+                      })
+                    }}
+                  >
+                    {FORM_FIELD_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+                <Row label="Placeholder">
+                  <TextField
+                    value={field.placeholder ?? ''}
+                    onChange={(next) => update(index, { placeholder: next || undefined })}
+                  />
+                </Row>
+                <Row label="Help">
+                  <TextField
+                    value={field.help ?? ''}
+                    onChange={(next) => update(index, { help: next || undefined })}
+                  />
+                </Row>
+                <Row label="Autofill">
+                  <TextField
+                    value={field.autoComplete ?? ''}
+                    placeholder={autoCompleteFor(field) ?? 'off'}
+                    onChange={(next) => update(index, { autoComplete: next || undefined })}
+                  />
+                </Row>
+
+                {field.type === 'select' || field.type === 'radio' ? (
+                  <Row label="Options">
+                    <TextField
+                      value={(field.options ?? [])
+                        .map((option) => (typeof option === 'string' ? option : option.value))
+                        .join(', ')}
+                      onChange={(next) =>
+                        update(index, {
+                          options: next.split(',').map((part) => part.trim()).filter(Boolean),
+                        })
+                      }
+                    />
+                  </Row>
+                ) : null}
+
+                <div className="vedit-label" style={{ width: 'auto', margin: '8px 0 4px' }}>
+                  Validation
+                </div>
+                {kinds.map((kind) => (
+                  <div key={kind}>
+                    <Row label={RULE_LABELS[kind]}>
+                      <input
+                        type="checkbox"
+                        checked={has(kind)}
+                        aria-label={RULE_LABELS[kind]}
+                        onChange={() => toggle(kind)}
+                      />
+                    </Row>
+                    {has(kind) && (kind === 'minLength' || kind === 'maxLength' || kind === 'min' || kind === 'max') ? (
+                      <Row label="Value">
+                        <TextField value={numeric(kind)} onChange={(next) => setNumeric(kind, next)} />
+                      </Row>
+                    ) : null}
+                    {has(kind) && kind === 'pattern' ? (
+                      <Row label="Format">
+                        <select
+                          className="vedit-select"
+                          aria-label="Format"
+                          value={
+                            (rules.find((rule) => rule.kind === 'pattern') as
+                              | { preset: PatternPreset }
+                              | undefined)?.preset ?? 'usZip'
+                          }
+                          onChange={(event) =>
+                            update(index, {
+                              rules: rules.map((rule) =>
+                                rule.kind === 'pattern'
+                                  ? { kind: 'pattern', preset: event.target.value as PatternPreset }
+                                  : rule,
+                              ),
+                            })
+                          }
+                        >
+                          {PATTERN_LABELS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Row>
+                    ) : null}
+                    {has(kind) && kind === 'matches' ? (
+                      <Row label="Field">
+                        <select
+                          className="vedit-select"
+                          aria-label="Field to match"
+                          value={
+                            (rules.find((rule) => rule.kind === 'matches') as
+                              | { field: string }
+                              | undefined)?.field ?? ''
+                          }
+                          onChange={(event) =>
+                            update(index, {
+                              rules: rules.map((rule) =>
+                                rule.kind === 'matches'
+                                  ? { kind: 'matches', field: event.target.value }
+                                  : rule,
+                              ),
+                            })
+                          }
+                        >
+                          {value
+                            .filter((other) => other.name !== field.name)
+                            .map((other) => (
+                              <option key={other.name} value={other.name}>
+                                {other.label || other.name}
+                              </option>
+                            ))}
+                        </select>
+                      </Row>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )
+      })}
+      <button type="button" className="vedit-btn" style={{ width: '100%' }} onClick={add}>
+        Add field
+      </button>
+    </div>
+  )
+}
 
 function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
   const store = useVeditStore()

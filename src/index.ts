@@ -34,6 +34,8 @@ export type {
 export type { EditableProps } from './components/Editable'
 export { EditableText, EditableImage, EditableBox, EditableLink } from './components/presets'
 export { useEditable, labelFromId } from './components/useEditable'
+export { useRepeatItem } from './components/repeatContext'
+export type { RepeatItem } from './components/repeatContext'
 export type { UseEditableOptions, UseEditableResult } from './components/useEditable'
 
 export { VeditErrorBoundary } from './core/ErrorBoundary'
@@ -68,6 +70,21 @@ export { migrateDocument, inspectDocument } from './core/migrate'
 export type { MigrationReport } from './core/migrate'
 export { documentToCss, tokenVariable, tokenReference } from './runtime/css'
 export { interpolate, placeholdersIn, unknownPlaceholders } from './runtime/interpolate'
+export {
+  parseFormFields,
+  validateField,
+  validateForm,
+  safeFormAction,
+  autoCompleteFor,
+} from './runtime/forms'
+export type { FormMessages } from './runtime/forms'
+export { useVeditForm, buildSubmission, isHoneypotFilled, HONEYPOT_NAME } from './runtime/useVeditForm'
+export type {
+  UseVeditFormOptions,
+  VeditForm,
+  FieldProps,
+  SubmissionBody,
+} from './runtime/useVeditForm'
 
 export {
   emptyDocument,
@@ -83,10 +100,15 @@ export type {
   DocumentStage,
   EditableField,
   EditableFieldType,
+  FormField,
+  FormFieldType,
+  FormRule,
+  FormValues,
   EditorTool,
   InsertedNode,
   NodeKind,
   NodeOverride,
+  PatternPreset,
   RegisteredNode,
   StyleLayer,
   StyleMap,

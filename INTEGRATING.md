@@ -145,6 +145,54 @@ Reach for this whenever the alternative is a number frozen into saved copy —
 especially where the frozen figure could contradict something authoritative,
 like the amount a payment processor is about to charge.
 
+### A card per row of your data
+
+Three plan cards, six products, however many the array holds. `repeat` renders
+the children once per item:
+
+```jsx
+<Editable id="plans" repeat={plans}>
+  <div className="card">
+    <EditableText id="plan.name" as="h3">Plan</EditableText>
+    <EditableText id="plan.cta">Choose this plan</EditableText>
+  </div>
+</Editable>
+```
+
+The array is yours and stays yours. It is passed in on every render and never
+written to the document — the same rule `vars` follows, for the same reason: a
+repeat over `products` cannot go stale, and cannot freeze a price into saved
+copy. There is no expression language here, and there is not going to be one.
+
+The ids are written once, not once per item. Behind them, each item gets its own:
+`plan.name` becomes `plan.name~starter`, keyed by the item's own `id`, `key`,
+`slug` or `uuid` — pass `repeatKey` if it lives somewhere else. Keying on the
+data rather than the position is what makes an edit survive the list changing:
+insert a plan at the front and every existing edit stays on the right card.
+
+**Editing a card edits every card.** That is nearly always what someone means —
+"change the button on all six" is the reason to want a repeater at all — so it
+is the default. The inspector's *Applies to* switch scopes an edit to one card
+instead, and an item edit wins over the template for that card. Where one is
+set, the panel says so and offers to put it back, rather than letting a template
+edit look like it silently did nothing.
+
+For a card that shows its own name and price, use `vars` inside the repeat:
+
+```jsx
+function PlanCard() {
+  const plan = useRepeatItem()?.item
+  return (
+    <EditableText id="plan.name" as="h3" vars={{ name: plan.name }}>
+      {'{name}'}
+    </EditableText>
+  )
+}
+```
+
+What this deliberately does not do: add, remove or reorder rows. The host owns
+the array, so those controls would be lying about what they can change.
+
 ---
 
 ## 4. Let components declare their own props
@@ -311,6 +359,119 @@ rollback safe.
 
 ---
 
+## 5b. Optional: forms
+
+A form is one of your components with a `fields` prop. The editor configures
+which controls it has, what they are called and what counts as valid; your code
+renders them and decides where a submission goes.
+
+```tsx
+import { useVeditForm } from 'vedit'
+
+export function ContactForm({ fields, action }: { fields?: unknown; action?: string }) {
+  const form = useVeditForm({ fields, action, formId: 'contact' })
+
+  return (
+    <form {...form.formProps}>
+      {form.fields.map((field) => {
+        const props = form.fieldProps(field.name)
+        const ids = form.describedBy(field.name)
+        return (
+          <div key={field.name}>
+            <label htmlFor={props.id}>{field.label ?? field.name}</label>
+            <input type={field.type} placeholder={field.placeholder} {...props} />
+            {field.help ? <p id={ids.help}>{field.help}</p> : null}
+            {form.errors[field.name] ? (
+              <p id={ids.error} role="alert">{form.errors[field.name]}</p>
+            ) : null}
+          </div>
+        )
+      })}
+      <input {...form.honeypotProps} style={{ position: 'absolute', left: -9999 }} />
+      <button type="submit">Send</button>
+      {form.status === 'success' ? <p role="status">Thanks.</p> : null}
+    </form>
+  )
+}
+```
+
+Register it with a field of type `fields`:
+
+```tsx
+ContactForm: {
+  component: ContactForm,
+  fields: [
+    { name: 'fields', label: 'Form fields', type: 'fields' },
+    { name: 'action', label: 'Post to', type: 'text' },
+  ],
+  defaults: {
+    action: '/api/contact',
+    fields: [
+      { name: 'email', label: 'Email', type: 'email',
+        rules: [{ kind: 'required' }, { kind: 'email' }] },
+    ],
+  },
+},
+```
+
+`fieldProps` returns the wiring that makes a correct form the default: the
+`id`/`htmlFor` pair, `aria-describedby` pointing at the help and error text,
+`aria-invalid`, and the native `required` and `type` attributes so the form still
+degrades to browser validation with no JavaScript.
+
+It also returns `autoComplete`, inferred from the field's type where there is one
+obvious token (`email`, `tel`, `url`) and settable per field for the rest —
+`name`, `street-address`, `postal-code`. Worth filling in: it is the difference
+between someone confirming what their browser already knows and typing their
+address out again.
+
+Errors appear when someone leaves a field, and update live afterwards. A submit
+with errors focuses the first bad field and posts nothing.
+
+### Where the data goes
+
+`useVeditForm` POSTs JSON to `action`:
+
+```json
+{ "formId": "contact", "values": { "email": "someone@example.com" }, "submittedAt": "..." }
+```
+
+Or pass `onSubmit` and handle it in code instead. **vedit never stores a
+submission** — there is no submissions store and nothing in the editor to read
+them in, because the data is the visitor's and belongs in your backend, next to
+whatever you already use for email and retention.
+
+`action` must be same-origin or an absolute `https:` URL. An `action` comes out of
+the stored document, so an unrestricted one would be a way to redirect every
+submission somewhere else.
+
+### What your endpoint still has to do
+
+The rules configured in the editor run in the visitor's browser. They are a
+usability feature, not a security boundary — anyone can see them in devtools and
+post whatever they like straight to your endpoint.
+
+- **Accept fields you have never heard of.** This is the important one. The point
+  of putting the form in the editor is that someone without repo access can add
+  "How did you hear about us?" without filing a ticket — so your endpoint has to
+  store what arrives rather than reject unknown keys. A strict schema turns a
+  person's edit into silence: the field appears on the page, someone fills it in,
+  and the answer is dropped with nothing to see. Take the whole `values` object
+  and keep it; validate the fields you depend on, and store the rest.
+- **Validate again on the server.** Everything the form checks, check there too.
+- **Rate limit.** The hidden honeypot field costs nothing and stops the laziest
+  bots; it is not spam defense on its own, and a form endpoint is public in a way
+  the rest of vedit's API is not.
+- **Decide retention.** vedit has no opinion, and no copy of the data.
+
+Validation rules come from a fixed list — required, lengths, min/max, email, URL,
+phone, whole number, a named format such as a US ZIP code, and matching another
+field. There is deliberately no free-text regex: a rule is stored data that runs
+on every keystroke, and a pattern that backtracks catastrophically would hang the
+tab of everyone who typed in that field.
+
+---
+
 ## 6. Store the edits somewhere real
 
 `localStorage` is for trying it out. For anything shared, point the provider at
@@ -456,6 +617,12 @@ Full detail in [API.md](./API.md).
 ---
 
 ## Framework notes
+
+Each of these has a minimal example app under [`examples/`](./examples), built
+and exercised in CI: the page is server-rendered, hydrated, the editor is opened
+with the keyboard, and an edit is checked to survive a reload. What the tests
+drive is the packed tarball, so it is the published bundle that gets verified
+rather than the source tree.
 
 **Next.js App Router** — the browser half of the bundle ships `'use client'`, so
 you can use `<VeditProvider>` directly in `app/layout.tsx` even though that file

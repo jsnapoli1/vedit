@@ -36,6 +36,12 @@ body {
 .footer { padding: 32px 48px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px; }
 @media (max-width: 860px) {
   .hero, .features { grid-template-columns: 1fr; padding-left: 24px; padding-right: 24px; }
+  /* The nav was left out of this and pushed its own button off the right edge
+     on a narrow phone: 48px of padding a side does not fit in 320px. Wrapping
+     rather than shrinking, so the brand keeps its distance from the links
+     instead of colliding with them. */
+  .nav { padding-left: 24px; padding-right: 24px; flex-wrap: wrap; gap: 10px 16px; }
+  .nav-links { gap: 18px; }
 }
 
 .price { font-size: 32px; font-weight: 700; margin: 0 0 6px; letter-spacing: -.02em; }
@@ -55,3 +61,30 @@ body {
 .block-split { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
 .block-split.ratio-wide-left { grid-template-columns: 2fr 1fr; }
 .block-split > .block { padding: 0; }
+
+/* ------------------------------------------------------------------ forms */
+.block-form { padding: 48px 32px; max-width: 640px; margin: 0 auto; }
+.form { display: flex; flex-direction: column; gap: 16px; }
+.form-field { display: flex; flex-direction: column; gap: 6px; }
+.form-field label { font-weight: 600; font-size: 14px; }
+.form-field input,
+.form-field select,
+.form-field textarea {
+  font: inherit; padding: 10px 12px; border: 1px solid #d3d7de;
+  border-radius: 8px; background: #fff; color: inherit;
+}
+.form-field input:focus-visible,
+.form-field select:focus-visible,
+.form-field textarea:focus-visible { outline: 2px solid #0d99ff; outline-offset: 1px; }
+.form-field [aria-invalid='true'] { border-color: #b4443a; }
+.form-help { margin: 0; font-size: 13px; color: #667085; }
+.form-error { margin: 0; font-size: 13px; color: #b4443a; }
+/* Off-screen rather than display:none — a bot that skips hidden inputs
+   should still find this one. */
+.form-decoy { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.block-form button[type='submit'] {
+  align-self: start; font: inherit; font-weight: 600; padding: 12px 24px;
+  min-height: 44px; /* thumbs, not cursors */
+  border: 0; border-radius: 8px; background: #0d99ff; color: #fff; cursor: pointer;
+}
+.block-form button[type='submit']:disabled { opacity: .6; cursor: default; }

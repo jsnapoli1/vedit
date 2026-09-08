@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react'
 import {
+  Editable,
   EditableBox,
   EditableImage,
   EditableText,
   VeditProvider,
   VeditSlot,
   useEditable,
+  useRepeatItem,
   useVeditEditing,
   broadcastChannelRealtime,
   sseRealtime,
@@ -14,7 +16,7 @@ import {
   type VeditAdapter,
   type VeditDocument,
 } from 'vedit'
-import { blocks } from './blocks'
+import { blocks, ContactForm } from './blocks'
 
 /** Inline so the demo works with no network. Swap in a real photo through the editor. */
 const PLACEHOLDER_ART =
@@ -261,6 +263,36 @@ const PLANS = [
   { id: 'agency', name: 'Agency', price: '$99', blurb: 'Unlimited sites and client handoff.' },
 ]
 
+/**
+ * One card of the pricing repeat.
+ *
+ * The ids are written once, not once per plan — vedit gives each item its own
+ * copy behind the scenes, so editing the button here changes it on all three
+ * cards, and the inspector's "Applies to" switches that to one. The plan's own
+ * name and price arrive through `vars`, which is what keeps them out of the
+ * saved document: rename a plan in this array and every card follows.
+ */
+function PlanCard() {
+  const plan = useRepeatItem()?.item as (typeof PLANS)[number] | undefined
+  if (!plan) return null
+  return (
+    <div className="card">
+      <EditableText id="pricing.plan.name" as="h2" vars={{ name: plan.name }}>
+        {'{name}'}
+      </EditableText>
+      <EditableText id="pricing.plan.price" as="p" className="price" vars={{ price: plan.price }}>
+        {'{price}'}
+      </EditableText>
+      <EditableText id="pricing.plan.blurb" vars={{ blurb: plan.blurb }}>
+        {'{blurb}'}
+      </EditableText>
+      <Button id="pricing.plan.cta" href="#start" variant="outline" size="sm">
+        Choose this plan
+      </Button>
+    </div>
+  )
+}
+
 function Pricing() {
   return (
     <>
@@ -290,22 +322,17 @@ function Pricing() {
           <span>This span renders; its wrapper generates no box of its own.</span>
         </EditableBox>
       </section>
-      <EditableBox id="pricing.plans" as="section" className="features" container>
-        {PLANS.map((plan) => (
-          <div className="card" key={plan.id}>
-            <EditableText id={`pricing.${plan.id}.name`} as="h2">
-              {plan.name}
-            </EditableText>
-            <EditableText id={`pricing.${plan.id}.price`} as="p" className="price">
-              {plan.price}
-            </EditableText>
-            <EditableText id={`pricing.${plan.id}.blurb`}>{plan.blurb}</EditableText>
-            <Button id={`pricing.${plan.id}.cta`} href="#start" variant="outline" size="sm">
-              Choose {plan.name}
-            </Button>
-          </div>
-        ))}
-      </EditableBox>
+      {/*
+        * A repeat over the host's own data. The ids below are written once, not
+        * per plan: vedit gives each item its own copy (`pricing.plan.cta~pro`)
+        * and edits the shared template by default, so changing the button label
+        * changes it on every card. PLANS never reaches the document.
+        */}
+      <section className="features">
+        <Editable id="pricing.plans" repeat={PLANS}>
+          <PlanCard />
+        </Editable>
+      </section>
       <footer className="footer">
         <p>© Northwind. Prices shown in USD.</p>
       </footer>
@@ -371,6 +398,27 @@ function Site() {
           </div>
         ))}
       </EditableBox>
+
+      <ContactForm
+        title="Get in touch"
+        action="/api/contact"
+        fields={[
+          {
+            name: 'email',
+            label: 'Email',
+            type: 'email',
+            placeholder: 'you@example.com',
+            rules: [{ kind: 'required' }, { kind: 'email' }],
+          },
+          {
+            name: 'message',
+            label: 'Message',
+            type: 'textarea',
+            help: 'What can we help with?',
+            rules: [{ kind: 'maxLength', value: 500 }],
+          },
+        ]}
+      />
 
       <footer className="footer">
         <p>© Northwind. This paragraph was never wrapped in an Editable — the scanner found it.</p>

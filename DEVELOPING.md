@@ -310,23 +310,48 @@ site. Breaking one is a bug even if the tests pass.
 
 ## Testing
 
-**`npm test`** — 147 unit tests, run against `dist/` rather than `src/`, so they
+**`npm test`** — 262 unit tests, run against `dist/` rather than `src/`, so they
 check what actually ships. Pure logic lives here: the CSS emitter, the layer
 matrix, the store, migration, the operations vocabulary, the open API, the MCP
 server, diffing, contrast maths, the relay, the escaping rules.
 
-**`npm run test:e2e`** — 50 browser tests over the real editor: selection,
-breakpoints, states, component props, re-ordering, publishing, composing a page
-out of registered components, two people collaborating, driving it all from a
-keyboard, and what happens when the editor throws.
+**`npm run test:e2e`** — 79 browser tests over the real editor. 64 of them cover
+behaviour: selection, breakpoints, states, component props, re-ordering,
+publishing, composing a page out of registered components, filling in and
+submitting a form, two people collaborating, driving it all from a keyboard, and
+what happens when the editor throws. The remaining 15 are the visual suite below.
+
+**`npm run test:frameworks`** — the matrix `INTEGRATING.md` promises. One minimal
+app per framework under `examples/` (Next App Router, Next Pages Router, Remix,
+Astro islands), each built for production and served, then checked for four
+things: the markup is server-rendered, hydration logs nothing to the console, the
+editor opens on ⌘E, and an edit is still there after a reload.
+
+These install the **packed tarball**, not the source tree, so what they exercise
+is the bundle a consumer gets. That is the point — the App Router app fails to
+build at all if the `'use client'` directive is missing from `dist/index.js`,
+which is a class of breakage nothing else here would catch. `vedit` is
+deliberately absent from each example's `package.json`: CI runs `npm ci` from the
+example's own lockfile for the framework versions, then installs the freshly
+packed tarball over the top.
+
+```bash
+npm run build && npm pack
+for app in next-app next-pages remix astro; do
+  npm ci --prefix "examples/$app"
+  npm install --no-save --prefix "examples/$app" "$PWD"/vedit-*.tgz
+done
+npm run test:frameworks
+```
 
 **Visual regression** comes in two forms because they catch different things:
 
-- Screenshot baselines in `e2e/visual.spec.ts-snapshots/`. Sensitive to browser
-  build (pinned by the `@playwright/test` version) and to fonts (CI runs in the
-  matching container). Regenerate deliberately, and **inside that container** —
-  the font stack is a system one, so a baseline captured on macOS renders in SF
-  Pro and will never match the DejaVu the Linux image falls back to:
+- 10 screenshot baselines in `e2e/visual.spec.ts-snapshots/`. Sensitive to
+  browser build (pinned by the `@playwright/test` version) and to fonts (CI runs
+  in the matching container). Regenerate deliberately, and **inside that
+  container** — the font stack is a system one, so a baseline captured on macOS
+  renders in SF Pro and will never match the DejaVu the Linux image falls back
+  to:
 
   ```bash
   docker run --rm -v "$PWD":/work -w /work -e CI=true --user root \
@@ -337,7 +362,7 @@ keyboard, and what happens when the editor throws.
 
   A bare `npm run test:e2e:update` on a Mac will produce baselines that pass
   locally and fail every CI run.
-- Layout invariants in the same file — nothing covers the toolbar, no fixed
+- 5 layout invariants in the same file — nothing covers the toolbar, no fixed
   label is clipped, the panels leave room for the artboards. These are geometry,
   not pixels, so they hold anywhere. Both bugs they were written to catch were
   real and already shipped, so prefer adding an invariant over adding a
@@ -372,7 +397,7 @@ can't check any other way.
 ## Releasing
 
 ```bash
-npm run typecheck && npm test && npm run test:e2e   # everything green
+npm run typecheck && npm test && npm run test:e2e && npm run test:frameworks
 npm version <patch|minor|major>
 git push --follow-tags
 ```

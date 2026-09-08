@@ -249,6 +249,13 @@ export const EDITOR_CSS = `
 .vedit-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .vedit-label { color: var(--vedit-muted); flex: none; width: 58px; }
 .vedit-hint { color: var(--vedit-muted); line-height: 1.5; }
+/* An action inside a hint — "reset it to the template" and the like. Styled as
+   text rather than a button so the sentence still reads as a sentence. */
+.vedit-link {
+  background: none; border: 0; padding: 0; font: inherit; cursor: pointer;
+  color: var(--vedit-accent); text-decoration: underline;
+}
+.vedit-link:hover { opacity: .8; }
 
 /* ------------------------------------------------------------------ insert */
 /* A grab cursor, because these can be dragged onto the page as well as clicked. */
@@ -449,4 +456,16 @@ html.vedit-editing .vedit-inserted-button {
   display: inline-block; padding: 10px 18px; border-radius: 8px;
   background: #0d99ff; color: #fff; text-decoration: none;
 }
+
+/* ------------------------------------------------------- form field editor */
+.vedit-field-list { display: flex; flex-direction: column; gap: 6px; }
+.vedit-field-item { border: 1px solid var(--vedit-border); border-radius: 6px; padding: 6px 8px; }
+.vedit-field-head { display: flex; align-items: center; gap: 2px; }
+.vedit-field-toggle {
+  flex: 1; text-align: left; background: none; border: 0; color: inherit;
+  font: inherit; cursor: pointer; padding: 2px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.vedit-field-body { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--vedit-border); }
+.vedit-warn { color: #f0c674; }
 `

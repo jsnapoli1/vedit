@@ -9,6 +9,75 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.7.0 — 2026-09-08
+
+### Added
+
+- **Forms** — build one in the editor, and receive what people type into it.
+
+  A form is one of your components with a prop of the new field type `fields`.
+  The editor configures which controls it has, what they are called and what
+  counts as valid; `useVeditForm` gives your component the validation, error
+  state, accessibility wiring and submission. The markup stays yours.
+
+  Errors appear when someone leaves a field and update live afterwards, so
+  nobody is scolded halfway through typing their email. `fieldProps` returns the
+  `id`/`htmlFor` pair, `aria-describedby`, `aria-invalid`, `autoComplete` and the
+  native attributes, so a correct form is what you get by default rather than
+  what you remember to add.
+
+  **Submissions go to your endpoint, and vedit never stores one.** There is no
+  submissions store and nothing in the editor to read them in: the data is the
+  visitor's and belongs in your backend. `action` must be same-origin or https,
+  because an `action` comes out of the stored document.
+
+  Validation rules are a fixed list — required, lengths, min/max, email, URL,
+  phone, whole number, a named format, and matching another field. There is
+  deliberately no free-text regex: a rule is stored data that runs on every
+  keystroke, and a catastrophically backtracking pattern would hang the tab of
+  everyone who typed in that field. Rules run in the browser, so they are a
+  usability feature and your endpoint still has to validate for itself.
+
+- **`repeat` on `<Editable>`** — one card per row of your data.
+
+  Static props only was the deliberate position, and the gap it left was the
+  obvious one: three plan cards meant three sets of ids, hand-written. `repeat`
+  takes the host's array and renders the children once per item, giving each its
+  own id (`plan.name~starter`) keyed by the item's own `id`/`key`/`slug`/`uuid`.
+  Keying on the data rather than the position means an edit survives the list
+  being reordered or added to.
+
+  Editing a card edits **every** card by default, because that is what someone
+  usually means; the inspector's *Applies to* switch scopes it to one, and that
+  item edit then wins for that card. Where one shadows a template edit the panel
+  says so and offers a reset — a template edit that silently does nothing is the
+  failure class 0.5 spent itself removing.
+
+  The array is never written to the document, exactly as `vars` is not. vedit
+  repeats over `products` and stores nothing about it, so a repeat cannot go
+  stale and cannot freeze a price into saved copy. No expression language, no
+  filters, no sorts — and no add/remove/reorder controls, because the host owns
+  the array and those buttons would be lying.
+
+  The document format is unchanged at version 1: item overrides are ordinary
+  nodes under a longer id, and a document written before this opens untouched.
+
+- **An example app per framework, exercised in CI.** `INTEGRATING.md` named Next
+  (App and Pages), Remix and Astro islands; only Vite was ever tested, and SSR
+  only through a synthetic `renderToString`. Each of those now has a minimal app
+  under `examples/`, built for production against the packed tarball and driven
+  by `npm run test:frameworks`: the markup is server-rendered, hydration is
+  silent, the editor opens on ⌘E, and an edit survives a reload.
+
+  The Next App Router case is the one that mattered. Its build fails outright if
+  the `'use client'` directive is missing from the shipped bundle — the exact
+  breakage the roadmap called a sharp edge, and one nothing else here caught.
+
+  No library code changed to make these pass, which is the useful part of the
+  result: the framework matrix was correct, it just wasn't checked.
+
+---
+
 ## 0.6.0 — 2026-09-07
 
 The document format is unchanged at version 1. Everything here is additive:

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useVeditContext, useVeditState } from '../core/context'
 import { migrateProps, type AnyComponentDefinition } from '../core/registry'
+import { itemId, mergeOverrides, parseItemId } from '../runtime/repeat'
+import { useRepeatItem } from './repeatContext'
 import type { EditableField, NodeKind, NodeOverride } from '../core/types'
 
 const EMPTY: NodeOverride = {}
@@ -45,7 +47,10 @@ export interface UseEditableResult<P = Record<string, unknown>> {
 }
 
 export function labelFromId(id: string): string {
-  const last = id.split(/[.:/]/).filter(Boolean).at(-1) ?? id
+  // A repeat item's key is machinery, not a name: the layers panel should say
+  // "Name", not "Name~team". Which card it is comes from the tree it sits in.
+  const withoutItem = parseItemId(id)?.templateId ?? id
+  const last = withoutItem.split(/[.:/]/).filter(Boolean).at(-1) ?? withoutItem
   return last.replace(/[-_]/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 }
 
@@ -58,7 +63,7 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
   options: UseEditableOptions,
 ): UseEditableResult<P> {
   const {
-    id,
+    id: templateId,
     kind = 'box',
     label,
     container = false,
@@ -71,7 +76,19 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
   } = options
   const { store } = useVeditContext()
   const [element, setElement] = useState<HTMLElement | null>(null)
-  const override = useVeditState((state) => state.doc.nodes[id]) ?? EMPTY
+
+  // Inside a repeat this node renders once per item, and each copy needs its own
+  // identity: `cards.title` becomes `cards.title~sku-1`. The author's id stays
+  // the template's, so an edit made to it reaches every item.
+  const repeat = useRepeatItem()
+  const id = repeat ? itemId(templateId, repeat.key) : templateId
+
+  const templateOverride = useVeditState((state) => state.doc.nodes[templateId])
+  const itemOverride = useVeditState((state) => (repeat ? state.doc.nodes[id] : undefined))
+  const override = useMemo(
+    () => (repeat ? mergeOverrides(templateOverride, itemOverride) : (templateOverride ?? EMPTY)),
+    [repeat, templateOverride, itemOverride],
+  )
   const inlineEditing = useVeditState((state) => state.inlineEditing === id)
 
   // Serialized so that re-rendering with equal-but-new objects doesn't churn
