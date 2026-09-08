@@ -36,6 +36,12 @@ body {
 .footer { padding: 32px 48px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px; }
 @media (max-width: 860px) {
   .hero, .features { grid-template-columns: 1fr; padding-left: 24px; padding-right: 24px; }
+  /* The nav was left out of this and pushed its own button off the right edge
+     on a narrow phone: 48px of padding a side does not fit in 320px. Wrapping
+     rather than shrinking, so the brand keeps its distance from the links
+     instead of colliding with them. */
+  .nav { padding-left: 24px; padding-right: 24px; flex-wrap: wrap; gap: 10px 16px; }
+  .nav-links { gap: 18px; }
 }
 
 .price { font-size: 32px; font-weight: 700; margin: 0 0 6px; letter-spacing: -.02em; }
