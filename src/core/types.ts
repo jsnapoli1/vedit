@@ -49,6 +49,8 @@ export type EditableFieldType =
   | 'color'
   | 'image'
   | 'link'
+  /** A list of form controls, configured in the inspector. See `FormField`. */
+  | 'fields'
 
 /**
  * One prop a component has declared as editable. The schema lives in your code,
@@ -67,6 +69,73 @@ export interface EditableField {
   /** Shown under the control. */
   help?: string
 }
+
+/**
+ * Controls a visitor fills in.
+ *
+ * Deliberately not `EditableFieldType`: that one says which control the
+ * *inspector* draws for a prop, this one which control appears on the host's
+ * page. Collapsing them would tie the editor's chrome to the rendered markup.
+ */
+export type FormFieldType =
+  | 'text'
+  | 'textarea'
+  | 'email'
+  | 'tel'
+  | 'url'
+  | 'number'
+  | 'checkbox'
+  | 'select'
+  | 'radio'
+  | 'date'
+
+/**
+ * Named formats someone can pick in the inspector.
+ *
+ * A fixed list rather than a regex someone types, because a rule is stored data
+ * that runs against visitor input on every keystroke: a catastrophically
+ * backtracking pattern out of a document would hang the tab of everyone who
+ * touched the field. These are written and audited once, here.
+ */
+export type PatternPreset = 'usZip' | 'usPhone' | 'postcodeUk' | 'slug' | 'hexColor'
+
+/** One check against what a visitor typed. */
+export type FormRule =
+  | { kind: 'required' }
+  | { kind: 'minLength'; value: number }
+  | { kind: 'maxLength'; value: number }
+  | { kind: 'min'; value: number }
+  | { kind: 'max'; value: number }
+  | { kind: 'email' }
+  | { kind: 'url' }
+  | { kind: 'tel' }
+  | { kind: 'integer' }
+  | { kind: 'pattern'; preset: PatternPreset }
+  /** Equal to another field's value — confirm email, confirm password. */
+  | { kind: 'matches'; field: string }
+
+/**
+ * One control on a form, as configured in the editor and stored in the document.
+ *
+ * vedit owns this shape and never the answers given to it: a submission is the
+ * visitor's, and it goes to the host's endpoint rather than into the document.
+ */
+export interface FormField {
+  /** Key the value is submitted under. Unique within a form. */
+  name: string
+  label?: string
+  type: FormFieldType
+  placeholder?: string
+  /** Shown under the control. */
+  help?: string
+  /** For `select` and `radio`. */
+  options?: Array<string | { value: string; label: string }>
+  /** Checks run against what the visitor types. */
+  rules?: FormRule[]
+}
+
+/** What a visitor has entered, by field name. */
+export type FormValues = Record<string, string | boolean>
 
 /** What kind of thing a node is — drives which inspector sections show up. */
 export type NodeKind = 'text' | 'image' | 'box' | 'button' | 'link' | 'component'
