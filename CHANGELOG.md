@@ -13,6 +13,31 @@ when a saved document has to be rewritten to keep working.
 
 ### Added
 
+- **Forms** — build one in the editor, and receive what people type into it.
+
+  A form is one of your components with a prop of the new field type `fields`.
+  The editor configures which controls it has, what they are called and what
+  counts as valid; `useVeditForm` gives your component the validation, error
+  state, accessibility wiring and submission. The markup stays yours.
+
+  Errors appear when someone leaves a field and update live afterwards, so
+  nobody is scolded halfway through typing their email. `fieldProps` returns the
+  `id`/`htmlFor` pair, `aria-describedby`, `aria-invalid` and the native
+  attributes, so a correct form is what you get by default rather than what you
+  remember to add.
+
+  **Submissions go to your endpoint, and vedit never stores one.** There is no
+  submissions store and nothing in the editor to read them in: the data is the
+  visitor's and belongs in your backend. `action` must be same-origin or https,
+  because an `action` comes out of the stored document.
+
+  Validation rules are a fixed list — required, lengths, min/max, email, URL,
+  phone, whole number, a named format, and matching another field. There is
+  deliberately no free-text regex: a rule is stored data that runs on every
+  keystroke, and a catastrophically backtracking pattern would hang the tab of
+  everyone who typed in that field. Rules run in the browser, so they are a
+  usability feature and your endpoint still has to validate for itself.
+
 - **`repeat` on `<Editable>`** — one card per row of your data.
 
   Static props only was the deliberate position, and the gap it left was the

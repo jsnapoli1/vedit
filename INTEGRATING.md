@@ -359,6 +359,106 @@ rollback safe.
 
 ---
 
+## 5b. Optional: forms
+
+A form is one of your components with a `fields` prop. The editor configures
+which controls it has, what they are called and what counts as valid; your code
+renders them and decides where a submission goes.
+
+```tsx
+import { useVeditForm } from 'vedit'
+
+export function ContactForm({ fields, action }: { fields?: unknown; action?: string }) {
+  const form = useVeditForm({ fields, action, formId: 'contact' })
+
+  return (
+    <form {...form.formProps}>
+      {form.fields.map((field) => {
+        const props = form.fieldProps(field.name)
+        const ids = form.describedBy(field.name)
+        return (
+          <div key={field.name}>
+            <label htmlFor={props.id}>{field.label ?? field.name}</label>
+            <input type={field.type} placeholder={field.placeholder} {...props} />
+            {field.help ? <p id={ids.help}>{field.help}</p> : null}
+            {form.errors[field.name] ? (
+              <p id={ids.error} role="alert">{form.errors[field.name]}</p>
+            ) : null}
+          </div>
+        )
+      })}
+      <input {...form.honeypotProps} style={{ position: 'absolute', left: -9999 }} />
+      <button type="submit">Send</button>
+      {form.status === 'success' ? <p role="status">Thanks.</p> : null}
+    </form>
+  )
+}
+```
+
+Register it with a field of type `fields`:
+
+```tsx
+ContactForm: {
+  component: ContactForm,
+  fields: [
+    { name: 'fields', label: 'Form fields', type: 'fields' },
+    { name: 'action', label: 'Post to', type: 'text' },
+  ],
+  defaults: {
+    action: '/api/contact',
+    fields: [
+      { name: 'email', label: 'Email', type: 'email',
+        rules: [{ kind: 'required' }, { kind: 'email' }] },
+    ],
+  },
+},
+```
+
+`fieldProps` returns the wiring that makes a correct form the default: the
+`id`/`htmlFor` pair, `aria-describedby` pointing at the help and error text,
+`aria-invalid`, and the native `required` and `type` attributes so the form still
+degrades to browser validation with no JavaScript.
+
+Errors appear when someone leaves a field, and update live afterwards. A submit
+with errors focuses the first bad field and posts nothing.
+
+### Where the data goes
+
+`useVeditForm` POSTs JSON to `action`:
+
+```json
+{ "formId": "contact", "values": { "email": "someone@example.com" }, "submittedAt": "..." }
+```
+
+Or pass `onSubmit` and handle it in code instead. **vedit never stores a
+submission** — there is no submissions store and nothing in the editor to read
+them in, because the data is the visitor's and belongs in your backend, next to
+whatever you already use for email and retention.
+
+`action` must be same-origin or an absolute `https:` URL. An `action` comes out of
+the stored document, so an unrestricted one would be a way to redirect every
+submission somewhere else.
+
+### What your endpoint still has to do
+
+The rules configured in the editor run in the visitor's browser. They are a
+usability feature, not a security boundary — anyone can see them in devtools and
+post whatever they like straight to your endpoint.
+
+- **Validate again on the server.** Everything the form checks, check there too.
+- **Rate limit.** The hidden honeypot field costs nothing and stops the laziest
+  bots; it is not spam defense on its own, and a form endpoint is public in a way
+  the rest of vedit's API is not.
+- **Decide retention.** vedit has no opinion, and no copy of the data.
+
+Validation rules come from a fixed list — required, lengths, min/max, email, URL,
+phone, whole number, a named format such as a US ZIP code, and matching another
+field. There is deliberately no free-text regex: a rule is stored data that runs
+on every keystroke, and a pattern that backtracks catastrophically would hang the
+tab of everyone who typed in that field.
+
+---
+
 ## 6. Store the edits somewhere real
 
 `localStorage` is for trying it out. For anything shared, point the provider at

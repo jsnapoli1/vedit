@@ -54,6 +54,37 @@ untouched. There is no such thing as half of what was intended.
 
 `store.apply(operations)` does the same against a live editor, as one undo step.
 
+### Forms
+
+A form's shape is a prop, so `set-props` configures it — no separate operation:
+
+```ts
+applyOperations(current, [
+  {
+    op: 'set-props',
+    id: 'home.contact',
+    props: {
+      fields: [
+        { name: 'email', label: 'Email', type: 'email',
+          rules: [{ kind: 'required' }, { kind: 'email' }] },
+        { name: 'message', label: 'Message', type: 'textarea',
+          rules: [{ kind: 'maxLength', value: 500 }] },
+      ],
+    },
+  },
+])
+```
+
+Descriptors are parsed when the form renders, not trusted: an unknown field type
+falls back to `text`, an unrecognised rule is dropped, and a duplicate name keeps
+the first. A malformed entry costs that field, never the page — so an agent
+writing a form it half-understands degrades rather than breaks.
+
+Rule kinds are `required`, `minLength`, `maxLength`, `min`, `max`, `email`,
+`url`, `tel`, `integer`, `pattern` (with a `preset` of `usZip`, `usPhone`,
+`postcodeUk`, `slug` or `hexColor`) and `matches` (with the `field` to equal).
+The list is closed; there is no regex to supply.
+
 ---
 
 ## 2. The open API

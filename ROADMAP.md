@@ -184,4 +184,18 @@ things this doesn't do is easy to write. But every one of them widens the API th
 data bindings and expressions — all defensible, none of them the reason someone
 would or wouldn't trust this.
 
+**Forms were taken on anyway**, with that trade-off named rather than forgotten.
+The argument against was this section's, and it still holds in general; the
+argument for was that a page you can build but not collect an answer from is
+half a page builder. What kept the cost small is that a form's shape is a
+component prop, so the document format didn't move: the addition to the frozen
+surface is one `EditableFieldType` value, one hook, and the types around them.
+
+Two lines held while adding it, and they are the reason it fits. Validation is a
+closed set of rules rather than a regex someone types — stored data that runs on
+every visitor's keystroke is exactly where an expression language stops being
+free. And submissions go to the host's endpoint and are never stored here, which
+kept vedit's write surfaces gated by `authorize` rather than adding a public,
+unauthenticated one that the API isn't ready for.
+
 The version number is a promise about stability. Earn it with use, not scope.
