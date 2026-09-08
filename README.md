@@ -1,13 +1,24 @@
 # vedit
 
-A Figma-like visual editor you drop into any React site — and a page builder that
-composes your own components.
+Give the people who own the words real authority over the site you built.
 
-Import one provider, open the editor with `⌘E`, and your pages become artboards on
-a zoomable canvas: click straight into them to rewrite copy, swap images, restyle
-hover states, re-order sections, change a component's variant, tune type and
-spacing per breakpoint. Register your components and a `<VeditSlot>` becomes a
-region people can build: place a Hero, configure it, add a pricing table, publish.
+Drop one provider into a React app and the person who writes the copy can change
+it — the headline, the image, the spacing, which sections appear, what the
+contact form asks — without opening the repo, filing a ticket, or waiting for a
+deploy. It is a Figma-like editor and a page builder, but the point of it is the
+part that isn't visual: **who is allowed to change what.**
+
+Not everything, deliberately. The line is roughly *anything a visitor sees, they
+can change; anything that decides what the code does, they cannot.* Routing, data
+fetching and business logic stay yours. That restraint is what makes this
+droppable rather than a framework you migrate to.
+
+Press `⌘E` and your pages become artboards on a zoomable canvas: click straight
+into them to rewrite copy, swap images, restyle hover states, re-order sections,
+change a component's variant, tune type and spacing per breakpoint. Register your
+components and a `<VeditSlot>` becomes a region people can build: place a Hero,
+configure it, add a pricing table, publish. Give a form a `fields` prop and they
+can add a question to it.
 
 Everything is saved as a small JSON document — **overrides** on what your code
 renders, and **placements** of components your code owns. Your components stay
@@ -183,6 +194,7 @@ with the panels floating over the page. `canvas={false}` picks that mode outrigh
 | **Images** | Source, upload, asset library, alt text, object-fit, drag-to-set focal point, aspect-ratio crop |
 | **Position** | In flow or free; drag to re-order among siblings, drag freely when detached, resize with handles |
 | **Structure** | Hide/show anything, add text/images/boxes inside containers, duplicate, re-parent and delete what you added |
+| **Forms** | Add, remove, rename and re-order a form's fields, and say what counts as valid (see below) |
 | **Together** | Live cursors, peer selections, comment threads pinned to elements |
 | **Escape hatch** | A raw CSS box per element, for anything the panels don't cover |
 
@@ -248,7 +260,71 @@ function Button({ id, children, ...source }) {
 
 `props` is your values with the editor's overrides layered on top; render with it.
 Field types: `text`, `textarea`, `number`, `boolean`, `select`, `color`, `image`,
-`link`. `<Editable fields={…}>` works the same way for plain elements.
+`link`, and `fields` for a form's controls (below). `<Editable fields={…}>` works
+the same way for plain elements.
+
+### Forms
+
+A form is one of your components with a `fields` prop. The editor decides which
+controls it has, what they are called and what counts as valid; `useVeditForm`
+gives your component the validation, error state, accessibility wiring and
+submission. The markup stays yours.
+
+```tsx
+import { useVeditForm } from 'vedit'
+
+function ContactForm({ fields, action }: { fields?: unknown; action?: string }) {
+  const form = useVeditForm({ fields, action, formId: 'contact' })
+
+  return (
+    <form {...form.formProps}>
+      {form.fields.map((field) => {
+        const props = form.fieldProps(field.name)
+        const ids = form.describedBy(field.name)
+        return (
+          <div key={field.name}>
+            <label htmlFor={props.id}>{field.label ?? field.name}</label>
+            <input type={field.type} placeholder={field.placeholder} {...props} />
+            {form.errors[field.name] ? (
+              <p id={ids.error} role="alert">{form.errors[field.name]}</p>
+            ) : null}
+          </div>
+        )
+      })}
+      <input {...form.honeypotProps} style={{ position: 'absolute', left: -9999 }} />
+      <button type="submit">Send</button>
+      {form.status === 'success' ? <p role="status">Thanks.</p> : null}
+    </form>
+  )
+}
+```
+
+Register it with `{ name: 'fields', type: 'fields' }` and someone with no repo
+access can add a question, drop one, reorder them, and mark a field required or
+formatted as an email.
+
+`fieldProps` returns the wiring that makes a correct form the default: the
+`id`/`htmlFor` pair, `aria-describedby`, `aria-invalid`, `autoComplete`, and the
+native `required` and `type` attributes so it still degrades to browser
+validation without JavaScript. Errors appear when someone leaves a field and
+update live afterwards, so nobody is scolded halfway through typing their email.
+
+**Submissions go to your endpoint. vedit never stores one** — there is no
+submissions store and nothing in the editor to read them in, because the data is
+the visitor's and belongs in your backend. `action` must be same-origin or an
+absolute `https:` URL, since it comes out of the stored document.
+
+Two things this asks of your endpoint. **Validate again on the server** — the
+rules run in the browser, so they are a usability feature and anyone can post
+around them. And **accept fields you have never heard of**: the whole point is
+that someone can add a question without a deploy, so a schema that rejects
+unknown keys turns their edit into silence.
+
+Validation is a fixed list — required, lengths, min/max, email, URL, phone, whole
+number, a named format such as a US ZIP code, and matching another field. There
+is deliberately no free-text regex: a rule is stored data that runs on every
+keystroke, and a pattern that backtracks catastrophically would hang the tab of
+everyone who typed in that field.
 
 ### Moving things
 
@@ -617,21 +693,21 @@ content of your own.
 - **Structural editing is limited to what the editor created.** Inside a slot you
   can place, re-order, nest and delete freely; elements that came from your JSX
   can be re-ordered and hidden, but not duplicated, wrapped or unwrapped.
-- **Placement is by click, not by drag.** The Insert panel puts a component into
-  the selected container, and the inspector moves it up and down. Dragging a
-  component from the panel onto the canvas is not there yet.
 - **Links are inert while editing**, so you navigate between routes by putting
   them on the canvas as artboards rather than by clicking through.
 - **The frames reload the page.** Client state (an open modal, a filled form, a
   scrolled carousel) resets when the editor opens, like any preview tool.
+- **Forms collect, and stop there.** No file uploads, no conditional fields, no
+  multi-step. Uploads need storage, size limits and content scanning that only
+  your backend can own; conditional fields are the expression language this
+  deliberately doesn't have.
+- **A form's controls are a fixed list of ten.** Your own date picker or address
+  lookup can't be supplied as a field yet, only styled around.
 - **No locale variants.** One document per key; translations are your own layer.
 - **No font loading.** The font list offers stacks the browser already has —
   loading a webfont is still a change to your code.
 - **Scanner ids depend on DOM structure.** Wrap anything you care about long-term
   in `<Editable>`.
-- **Inspector fields aren't announced by name.** They can be reached and used
-  from a keyboard, but their labels are visual rather than `<label>` elements, so
-  a screen reader reads the control without its name.
 
 ## Development
 
