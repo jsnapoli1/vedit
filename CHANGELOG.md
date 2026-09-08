@@ -22,9 +22,9 @@ when a saved document has to be rewritten to keep working.
 
   Errors appear when someone leaves a field and update live afterwards, so
   nobody is scolded halfway through typing their email. `fieldProps` returns the
-  `id`/`htmlFor` pair, `aria-describedby`, `aria-invalid` and the native
-  attributes, so a correct form is what you get by default rather than what you
-  remember to add.
+  `id`/`htmlFor` pair, `aria-describedby`, `aria-invalid`, `autoComplete` and the
+  native attributes, so a correct form is what you get by default rather than
+  what you remember to add.
 
   **Submissions go to your endpoint, and vedit never stores one.** There is no
   submissions store and nothing in the editor to read them in: the data is the
