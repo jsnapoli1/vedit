@@ -451,6 +451,13 @@ The rules configured in the editor run in the visitor's browser. They are a
 usability feature, not a security boundary — anyone can see them in devtools and
 post whatever they like straight to your endpoint.
 
+- **Accept fields you have never heard of.** This is the important one. The point
+  of putting the form in the editor is that someone without repo access can add
+  "How did you hear about us?" without filing a ticket — so your endpoint has to
+  store what arrives rather than reject unknown keys. A strict schema turns a
+  person's edit into silence: the field appears on the page, someone fills it in,
+  and the answer is dropped with nothing to see. Take the whole `values` object
+  and keep it; validate the fields you depend on, and store the rest.
 - **Validate again on the server.** Everything the form checks, check there too.
 - **Rate limit.** The hidden honeypot field costs nothing and stops the laziest
   bots; it is not spam defense on its own, and a form endpoint is public in a way
