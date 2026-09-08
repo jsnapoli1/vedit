@@ -9,7 +9,7 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
-## Unreleased
+## 0.7.0 — 2026-09-08
 
 ### Added
 
