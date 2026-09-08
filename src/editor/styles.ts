@@ -456,4 +456,16 @@ html.vedit-editing .vedit-inserted-button {
   display: inline-block; padding: 10px 18px; border-radius: 8px;
   background: #0d99ff; color: #fff; text-decoration: none;
 }
+
+/* ------------------------------------------------------- form field editor */
+.vedit-field-list { display: flex; flex-direction: column; gap: 6px; }
+.vedit-field-item { border: 1px solid var(--vedit-border); border-radius: 6px; padding: 6px 8px; }
+.vedit-field-head { display: flex; align-items: center; gap: 2px; }
+.vedit-field-toggle {
+  flex: 1; text-align: left; background: none; border: 0; color: inherit;
+  font: inherit; cursor: pointer; padding: 2px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.vedit-field-body { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--vedit-border); }
+.vedit-warn { color: #f0c674; }
 `
