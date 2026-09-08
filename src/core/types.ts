@@ -128,6 +128,14 @@ export interface FormField {
   placeholder?: string
   /** Shown under the control. */
   help?: string
+  /**
+   * The browser autofill hint, e.g. `email`, `name`, `tel`, `street-address`.
+   *
+   * Worth setting: it is the difference between a visitor confirming what their
+   * browser already knows and typing their address out by hand. A sensible one
+   * is inferred from `type` when this is absent.
+   */
+  autoComplete?: string
   /** For `select` and `radio`. */
   options?: Array<string | { value: string; label: string }>
   /** Checks run against what the visitor types. */

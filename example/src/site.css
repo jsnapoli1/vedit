@@ -77,7 +77,8 @@ body {
    should still find this one. */
 .form-decoy { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 .block-form button[type='submit'] {
-  align-self: start; font: inherit; font-weight: 600; padding: 10px 20px;
+  align-self: start; font: inherit; font-weight: 600; padding: 12px 24px;
+  min-height: 44px; /* thumbs, not cursors */
   border: 0; border-radius: 8px; background: #0d99ff; color: #fff; cursor: pointer;
 }
 .block-form button[type='submit']:disabled { opacity: .6; cursor: default; }

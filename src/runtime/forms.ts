@@ -38,6 +38,23 @@ const PATTERNS: Record<PatternPreset, RegExp> = {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const TEL = /^[+\d][\d\s().-]{5,}$/
 
+/**
+ * What the browser should offer to autofill, when the field did not say.
+ *
+ * Only the types that map to one obvious token. Guessing beyond this would put
+ * the wrong value in someone's field, which is worse than offering nothing.
+ */
+const AUTOCOMPLETE_BY_TYPE: Partial<Record<FormFieldType, string>> = {
+  email: 'email',
+  tel: 'tel',
+  url: 'url',
+}
+
+/** The autofill hint for a field: what it asked for, else one inferred from its type. */
+export function autoCompleteFor(field: FormField): string | undefined {
+  return field.autoComplete ?? AUTOCOMPLETE_BY_TYPE[field.type]
+}
+
 const DEFAULT_MESSAGES: Record<FormRule['kind'], string> = {
   required: 'This field is required',
   minLength: 'Too short',
@@ -247,6 +264,7 @@ export function parseFormFields(value: unknown): FormField[] {
       name,
       type,
       label: typeof raw.label === 'string' ? raw.label : undefined,
+      autoComplete: typeof raw.autoComplete === 'string' ? raw.autoComplete : undefined,
       placeholder: typeof raw.placeholder === 'string' ? raw.placeholder : undefined,
       help: typeof raw.help === 'string' ? raw.help : undefined,
       options,

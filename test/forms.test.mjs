@@ -1,6 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseFormFields, validateField, validateForm, safeFormAction } from '../dist/index.js'
+import {
+  parseFormFields,
+  validateField,
+  validateForm,
+  safeFormAction,
+  autoCompleteFor,
+} from '../dist/index.js'
 
 const field = (over = {}) => ({ name: 'email', type: 'email', ...over })
 
@@ -164,4 +170,29 @@ test('a same-origin path is allowed', () => {
 test('an https url is allowed and a cross-origin http url is refused', () => {
   assert.equal(safeFormAction('https://forms.example.com/x'), 'https://forms.example.com/x')
   assert.equal(safeFormAction('http://evil.example.com/x'), undefined)
+})
+
+/* ------------------------------------------------------------- autofill */
+
+test('an autofill hint is inferred from the types that have one obvious token', () => {
+  assert.equal(autoCompleteFor({ name: 'a', type: 'email' }), 'email')
+  assert.equal(autoCompleteFor({ name: 'a', type: 'tel' }), 'tel')
+  assert.equal(autoCompleteFor({ name: 'a', type: 'url' }), 'url')
+})
+
+test('a type with no obvious token gets no hint rather than a guessed one', () => {
+  assert.equal(autoCompleteFor({ name: 'a', type: 'text' }), undefined)
+  assert.equal(autoCompleteFor({ name: 'a', type: 'textarea' }), undefined)
+})
+
+test('an explicit autofill hint wins over the inferred one', () => {
+  assert.equal(autoCompleteFor({ name: 'a', type: 'text', autoComplete: 'street-address' }), 'street-address')
+  assert.equal(autoCompleteFor({ name: 'a', type: 'email', autoComplete: 'off' }), 'off')
+})
+
+test('an autofill hint survives parsing, and a non-string one is dropped', () => {
+  const [good] = parseFormFields([{ name: 'a', type: 'text', autoComplete: 'name' }])
+  assert.equal(good.autoComplete, 'name')
+  const [bad] = parseFormFields([{ name: 'a', type: 'text', autoComplete: 42 }])
+  assert.equal(bad.autoComplete, undefined)
 })

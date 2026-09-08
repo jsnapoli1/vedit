@@ -21,6 +21,7 @@ import {
   serializeGradient,
   type Gradient,
 } from '../../runtime/gradient'
+import { autoCompleteFor } from '../../runtime/forms'
 import { unknownPlaceholders } from '../../runtime/interpolate'
 import { parseItemId } from '../../runtime/repeat'
 import { parseTransform, withTransform } from '../../runtime/transform'
@@ -479,8 +480,8 @@ const RULE_LABELS: Record<FormRule['kind'], string> = {
   url: 'Valid URL',
   tel: 'Valid phone',
   integer: 'Whole number',
-  pattern: 'Matches a format',
-  matches: 'Matches another field',
+  pattern: 'Format',
+  matches: 'Matches field',
 }
 
 const PATTERN_LABELS: Array<{ value: PatternPreset; label: string }> = [
@@ -579,15 +580,15 @@ function FieldListEditor({
                 {field.label || field.name}
                 <span className="vedit-hint"> · {field.type}</span>
               </button>
-              <button type="button" className="vedit-icon-btn" aria-label={`Move ${field.label || field.name} up`} onClick={() => move(index, -1)}>
+              <button type="button" className="vedit-btn vedit-btn-icon" aria-label={`Move ${field.label || field.name} up`} onClick={() => move(index, -1)}>
                 ↑
               </button>
-              <button type="button" className="vedit-icon-btn" aria-label={`Move ${field.label || field.name} down`} onClick={() => move(index, 1)}>
+              <button type="button" className="vedit-btn vedit-btn-icon" aria-label={`Move ${field.label || field.name} down`} onClick={() => move(index, 1)}>
                 ↓
               </button>
               <button
                 type="button"
-                className="vedit-icon-btn"
+                className="vedit-btn vedit-btn-icon"
                 aria-label={`Remove ${field.label || field.name}`}
                 onClick={() => onChange(value.filter((_, i) => i !== index))}
               >
@@ -645,6 +646,13 @@ function FieldListEditor({
                   <TextField
                     value={field.help ?? ''}
                     onChange={(next) => update(index, { help: next || undefined })}
+                  />
+                </Row>
+                <Row label="Autofill">
+                  <TextField
+                    value={field.autoComplete ?? ''}
+                    placeholder={autoCompleteFor(field) ?? 'off'}
+                    onChange={(next) => update(index, { autoComplete: next || undefined })}
                   />
                 </Row>
 

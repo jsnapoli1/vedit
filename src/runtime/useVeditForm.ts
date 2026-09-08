@@ -1,6 +1,7 @@
 import { useCallback, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { FormField, FormValues } from '../core/types'
 import {
+  autoCompleteFor,
   parseFormFields,
   safeFormAction,
   validateField,
@@ -47,6 +48,8 @@ export interface FieldProps {
   value?: string
   checked?: boolean
   required: boolean
+  /** The browser autofill hint, so people are not retyping what it knows. */
+  autoComplete: string | undefined
   'aria-required': boolean
   'aria-invalid': boolean | undefined
   'aria-describedby': string | undefined
@@ -131,6 +134,7 @@ export function useVeditForm(options: UseVeditFormOptions): VeditForm {
         value: field?.type === 'checkbox' ? undefined : typeof value === 'string' ? value : '',
         checked: field?.type === 'checkbox' ? value === true : undefined,
         required,
+        autoComplete: field ? autoCompleteFor(field) : undefined,
         'aria-required': required,
         'aria-invalid': error ? true : undefined,
         'aria-describedby': described || undefined,

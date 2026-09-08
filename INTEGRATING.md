@@ -419,6 +419,12 @@ ContactForm: {
 `aria-invalid`, and the native `required` and `type` attributes so the form still
 degrades to browser validation with no JavaScript.
 
+It also returns `autoComplete`, inferred from the field's type where there is one
+obvious token (`email`, `tel`, `url`) and settable per field for the rest —
+`name`, `street-address`, `postal-code`. Worth filling in: it is the difference
+between someone confirming what their browser already knows and typing their
+address out again.
+
 Errors appear when someone leaves a field, and update live afterwards. A submit
 with errors focuses the first bad field and posts nothing.
 
