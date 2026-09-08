@@ -70,6 +70,8 @@ export { migrateDocument, inspectDocument } from './core/migrate'
 export type { MigrationReport } from './core/migrate'
 export { documentToCss, tokenVariable, tokenReference } from './runtime/css'
 export { interpolate, placeholdersIn, unknownPlaceholders } from './runtime/interpolate'
+export { parseFormFields, validateField, validateForm, safeFormAction } from './runtime/forms'
+export type { FormMessages } from './runtime/forms'
 
 export {
   emptyDocument,
