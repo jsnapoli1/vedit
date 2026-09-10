@@ -1,5 +1,5 @@
 import type { VeditStore } from '../core/store'
-import type { NodeKind } from '../core/types'
+import type { NodeKind, ShapeSpec } from '../core/types'
 import { containerFor } from './interactions'
 import type { EditorTarget, Rect } from './target'
 
@@ -125,6 +125,8 @@ function insideOf(container: HTMLElement): Rect {
 export interface DragPayload {
   kind: NodeKind
   component?: string
+  /** For `kind: 'shape'` — what the dropped shape draws. */
+  shape?: ShapeSpec
 }
 
 /**
@@ -181,7 +183,11 @@ export function startPlacementDrag(
       store.notify('Dropped outside a container — nothing accepts an element there')
       return
     }
-    store.insert(landing.parentId, payload.kind, { component: payload.component, index: landing.index })
+    store.insert(landing.parentId, payload.kind, {
+      component: payload.component,
+      shape: payload.shape,
+      index: landing.index,
+    })
   }
 
   const cancel = () => {

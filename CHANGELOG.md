@@ -9,6 +9,99 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.8.0 — 2026-09-10
+
+The document format is unchanged at version 1. Everything here is additive:
+`shape` is a new node kind and a new optional field on an override, effects and
+motion are ordinary style declarations, and a document written by 0.7 opens
+untouched. **A site that already uses vedit has nothing to do.**
+
+One thing is worth knowing before you upgrade: when a page uses a motion preset,
+the emitted stylesheet carries a single `!important` rule —
+
+```css
+@media (prefers-reduced-motion:reduce){[data-vedit-id]{animation-duration:.01ms!important;animation-iteration-count:1!important}}
+```
+
+It is the only `!important` in the library, and it is deliberately on the
+visitor's side rather than the author's: a vestibular preference beats a design
+choice. It is emitted only when something on the page actually animates, so a
+page with no motion produces byte-for-byte the CSS it produced before.
+
+### Added
+
+- **Shapes** — linework without code.
+
+  The Insert panel offers a rectangle, circle, line, triangle, star and hexagon,
+  and an **Import SVG…** button for artwork drawn elsewhere. A shape is an
+  inline `<svg>` carrying `data-vedit-id`, so selection, resize handles, the
+  layer tree, breakpoints, states and comments work on it with no new code.
+
+  Inline is what makes it worth having over an image. Fill, stroke, stroke
+  width, line cap and dash are inherited SVG properties set on the root by the
+  ordinary stylesheet, which means a shape takes design tokens, hover states and
+  per-breakpoint values like any other element. An image could only have been
+  hue-rotated.
+
+  A preset stretches to fill its box (`preserveAspectRatio="none"`), so the
+  width and height fields and the resize handles are the whole story of how big
+  it is — a circle in a wide box is an ellipse, which is what dragging a corner
+  handle looks like it should do. An import keeps its own proportions instead,
+  because a logo squashed to the wrong aspect is nobody's intention.
+
+  **An import is cleaned before it is stored, and cleaned again at render.**
+  `sanitizeSvg` is an allow-list of the structural and drawing elements;
+  `script`, `style`, `foreignObject`, `image`, `a`, `animate*` and anything
+  unknown are removed with their subtrees, `on*` attributes go, and `href` only
+  survives when it points inside the document. `<style>` is worth naming: a
+  `<style>` inside an inline SVG applies to the *whole page*, which would make an
+  import a CSS injection through the document. Ids are scoped per node at render,
+  because ids in inline SVG are page-global and every export calls its gradient
+  `paint0_linear`. Markup over 64 KB after cleaning is refused — a document is
+  saved on every edit and diffed for collaborators, and a 2 MB illustration
+  belongs in an image.
+
+  **Imported artwork keeps its own colours.** A file's `fill="#c00"` is an
+  attribute on a child, and an inherited value from the root does not override
+  it. Fill and Stroke still reach the parts drawn with `currentColor` — which is
+  how icon sets are drawn — and Effects recolour all of it. The inspector says
+  so under the rows.
+
+  A shape is decoration and stays on the visible side of the line the roadmap
+  draws: it takes no click handler, fetches nothing, and cannot be a link. Wrap
+  it in a link if you want that; a link is already a container.
+
+  Programmatically: `insert-node` gains `shape?` and requires it for
+  `kind: 'shape'`, `set-shape` changes the geometry afterwards, and the MCP
+  server gains one tool, `insert_shape`.
+
+- **Effects** — a `filter` and a blend mode for any node, not only shapes.
+
+  Blur, brightness, contrast, saturation, hue and grayscale as sliders, and
+  `mix-blend-mode` as a select. Both are ordinary style properties, so they live
+  in the state × breakpoint matrix with everything else — an image desaturated
+  until it is hovered is two clicks, and undo, multi-select and collaboration
+  came for free. There is no new document field.
+
+  The Shadow row writes `filter: drop-shadow(…)` for a shape rather than
+  `box-shadow`, because a box shadow follows the box and not the artwork's
+  outline.
+
+- **Motion** — six animation presets: spin, pulse, float, fade in, draw, wiggle.
+
+  Stored as an ordinary `animation` declaration, so an animation on hover only,
+  or a different one on mobile, needs nothing new. `documentToCss` scans the
+  declarations it emits and prepends the `@keyframes` for exactly the presets in
+  use — none when nothing animates.
+
+  **The keyframes are a closed set, and there is no box to type your own into.**
+  This is the same call forms made about regexes: a keyframes body is stored
+  data that runs on every visitor's page, and `@keyframes` text is a CSS
+  injection surface. The six are written and audited once, here. A name that
+  isn't one of them is left alone for your own stylesheet to define.
+
+---
+
 ## 0.7.0 — 2026-09-08
 
 ### Added

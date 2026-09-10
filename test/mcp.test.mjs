@@ -106,6 +106,51 @@ test('a batch that fails leaves nothing behind', async () => {
   assert.equal(store.stages.get('draft:home'), undefined)
 })
 
+test('insert_shape places a preset with the geometry that preset means', async () => {
+  const store = testStore()
+  const target = createVeditMcpServer({ store, defaultKey: 'home' })
+
+  await callTool(target, 'insert_shape', { parentId: 'campaign.sections', shape: 'circle' })
+
+  const doc = store.stages.get('draft:home')
+  assert.equal(doc.inserted.length, 1)
+  assert.equal(doc.inserted[0].kind, 'shape')
+  assert.deepEqual(doc.nodes[doc.inserted[0].id].shape, { type: 'circle' })
+})
+
+test('insert_shape stores imported markup with the drawing and without the script', async () => {
+  const store = testStore()
+  const target = createVeditMcpServer({ store, defaultKey: 'home' })
+
+  await callTool(target, 'insert_shape', {
+    parentId: 'campaign.sections',
+    svg: '<svg viewBox="0 0 24 24"><path d="M2 2h20v20H2z"/><script>window.__pwned = 1</script></svg>',
+  })
+
+  const doc = store.stages.get('draft:home')
+  const { shape } = doc.nodes[doc.inserted[0].id]
+  assert.equal(shape.type, 'custom')
+  assert.equal(shape.viewBox, '0 0 24 24')
+  assert.match(shape.svg, /<path/)
+  assert.doesNotMatch(shape.svg, /script|__pwned/)
+})
+
+test('insert_shape refuses both a preset and markup, and refuses neither', async () => {
+  const target = server()
+
+  const both = await callTool(target, 'insert_shape', {
+    parentId: 'campaign.sections',
+    shape: 'rect',
+    svg: '<svg viewBox="0 0 10 10"><rect width="10" height="10"/></svg>',
+  })
+  assert.equal(both.isError, true)
+  assert.match(both.content[0].text, /`shape`.*`svg`/)
+
+  const neither = await callTool(target, 'insert_shape', { parentId: 'campaign.sections' })
+  assert.equal(neither.isError, true)
+  assert.match(neither.content[0].text, /`shape`.*`svg`/)
+})
+
 test('read-only mode exposes no tool that writes', async () => {
   const target = server({ writable: false })
   const { tools } = (await rpc(target, 'tools/list')).result

@@ -90,3 +90,26 @@ export const IconFit = (p: SVGProps<SVGSVGElement>) => (
 export const IconComment = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M21 12a8 8 0 01-8 8H8l-5 3 1.4-4.2A8 8 0 1121 12z" /></svg>
 )
+
+/* Shapes. Drawn as outlines like everything else here, so a filled preset and an
+   empty one look the same in the panel — the icon says which geometry, not what
+   colour it will land with. */
+export const IconCircle = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="8" /></svg>
+)
+export const IconLine = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 18L20 6" /></svg>
+)
+export const IconTriangle = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M12 4l8 15H4z" /></svg>
+)
+export const IconStar = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M12 3l2.7 5.9 6.3.7-4.7 4.3 1.3 6.1L12 17l-5.6 3 1.3-6.1L3 9.6l6.3-.7z" /></svg>
+)
+export const IconHexagon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9z" /></svg>
+)
+/** The generic one: a custom import in the layer tree, and the Shapes heading. */
+export const IconShape = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><circle cx="8.5" cy="8.5" r="5.5" /><path d="M11 13h9v8h-9z" /></svg>
+)

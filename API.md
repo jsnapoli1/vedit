@@ -39,7 +39,8 @@ const { doc, changed, created } = applyOperations(current, [
 | `set-content` | `id`, `content` — `text`, `html`, `src`, `alt`, `href`, `target`, `className`, `hidden`. `null` removes one |
 | `set-props` | `id`, `props` — values for props a component declared editable |
 | `reset-node` | `id` — drop every override |
-| `insert-node` | `parentId`, `kind`, `component?`, `id?`, `index?`, `override?` — `kind: 'component'` requires `component`, the registered name |
+| `insert-node` | `parentId`, `kind`, `component?`, `shape?`, `id?`, `index?`, `override?` — `kind: 'component'` requires `component`, the registered name; `kind: 'shape'` requires `shape` |
+| `set-shape` | `id`, `shape` — the geometry of an inserted shape |
 | `move-node` | `id`, `parentId?`, `index?` |
 | `remove-node` | `id` — inserted nodes only |
 | `set-token` / `remove-token` | `token` / `id` |
@@ -84,6 +85,37 @@ Rule kinds are `required`, `minLength`, `maxLength`, `min`, `max`, `email`,
 `url`, `tel`, `integer`, `pattern` (with a `preset` of `usZip`, `usPhone`,
 `postcodeUk`, `slug` or `hexColor`) and `matches` (with the `field` to equal).
 The list is closed; there is no regex to supply.
+
+### Placing a shape
+
+A shape's geometry is coordinates in a 100 × 100 box; how big it is on the page
+is its CSS width and height, like any other element:
+
+```ts
+import { SHAPE_PRESETS, applyOperations } from 'vedit'
+
+applyOperations(current, [
+  { op: 'insert-node', id: 'campaign.sections::mark', parentId: 'campaign.sections',
+    kind: 'shape', shape: SHAPE_PRESETS.hexagon },
+  { op: 'set-styles', id: 'campaign.sections::mark',
+    styles: { width: '96px', height: '96px', fill: 'var(--vedit-brand)' } },
+  { op: 'set-styles', id: 'campaign.sections::mark',
+    styles: { animation: 'vedit-float 3000ms ease-in-out infinite' } },
+])
+```
+
+`shape` is one of `{ type: 'rect', rx? }`, `{ type: 'circle' }`,
+`{ type: 'line', x1, y1, x2, y2 }`, `{ type: 'polygon', points }` (3–256 pairs)
+or `{ type: 'custom', svg, viewBox }` for imported markup. `SHAPE_PRESETS` has
+the six the editor offers by name — `rect`, `circle`, `line`, `triangle`, `star`,
+`hexagon`. `set-shape` changes the geometry afterwards without touching the style.
+
+Anything malformed is refused rather than stored, and imported markup is
+sanitised on the way in and again at render — a document is data wherever it came
+from. Animation names are the six presets (`vedit-spin`, `vedit-pulse`,
+`vedit-float`, `vedit-fadeIn`, `vedit-draw`, `vedit-wiggle`); `documentToCss`
+emits the `@keyframes` for exactly the ones in use, and any other name is left to
+your own stylesheet.
 
 ---
 
@@ -199,8 +231,15 @@ claude mcp add vedit -- npx -y vedit-mcp --dir ./content
 `render_css`, `list_tokens`, `list_components`, `list_versions`.
 
 **Writing** — `set_styles`, `clear_styles`, `set_content`, `place_component`,
-`insert_node`, `move_node`, `reset_node`, `set_token`, `apply_operations`,
-`publish_document`, `restore_version`.
+`insert_node`, `insert_shape`, `move_node`, `reset_node`, `set_token`,
+`apply_operations`, `publish_document`, `restore_version`.
+
+`insert_shape` takes either `shape` — one of `rect`, `circle`, `line`,
+`triangle`, `star`, `hexagon` — or `svg`, the markup of a file. Both, or neither,
+is refused. Markup is cleaned of scripts, `<style>` and external references
+before it is stored, and cleaned again at render. Everything else about a shape
+is ordinary styling: `set_styles` with `fill`, `stroke`, `filter` or `animation`
+does the rest.
 
 ### Composing a page
 

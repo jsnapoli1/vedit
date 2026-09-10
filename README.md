@@ -140,6 +140,43 @@ Hero can be clicked and rewritten like any other element, and the override is
 stored against that instance. Configure through props where the component offers
 them; reach past them when you need to.
 
+### Shapes
+
+Not everything on a page is a component. The Insert panel also offers six shapes
+— rectangle, circle, line, triangle, star, hexagon — and an **Import SVG…**
+button for artwork someone drew elsewhere.
+
+A shape is an inline `<svg>`, which is what makes it worth having over an image:
+it takes Fill, Stroke, stroke width, line cap and dash from the inspector, in
+every state and at every breakpoint, using the same colour tokens as the rest of
+the page. A preset stretches to fill its box, so the width and height fields and
+the resize handles are the whole story of how big it is — a circle in a wide box
+is an ellipse, which is what dragging a corner handle looks like it should do.
+
+An import is cleaned before it is stored: scripts, `<style>`, `<foreignObject>`,
+`on*` handlers and anything pointing outside the document are removed, and the
+ids inside it are scoped per node so two copies of one file don't share a
+gradient. What is left keeps its own colours and its own proportions. Fill and
+Stroke still reach the parts drawn with `currentColor` — which is how icon sets
+are drawn — and Effects recolour all of it.
+
+**Effects** apply to any node, not just shapes: blur, brightness, contrast,
+saturation, hue and grayscale as sliders, and a blend mode. They are ordinary
+`filter` and `mix-blend-mode` declarations, so they live in the same state ×
+breakpoint matrix as everything else — an image desaturated until it is hovered
+is two clicks.
+
+**Motion** is a closed set of six presets — spin, pulse, float, fade in, draw,
+wiggle — stored as an ordinary `animation` declaration. There is no place to type
+your own keyframes, deliberately: stored text that runs on every visitor's page
+is the same hazard a free-text regex was for form validation. A page with nothing
+animating emits exactly the CSS it did before. When something does animate, the
+stylesheet also carries a `prefers-reduced-motion` rule that cuts it short —
+`fadeIn` and `draw` end on their final frame, so nothing vanishes.
+
+A shape is decoration and stays on the visible side of the line: it cannot take a
+click handler or be a link. Wrap it in a link if you want that.
+
 ---
 
 ## The canvas
@@ -190,6 +227,8 @@ with the panels floating over the page. `canvas={false}` picks that mode outrigh
 | **Layout** | Display, flex direction / justify / align / wrap / gap, grid columns, width, height, min/max width, padding and margin per side |
 | **Typography** | Font stack, size, weight, leading, tracking, alignment, transform, decoration, color |
 | **Appearance** | Solid fill or a gradient with editable stops, corner radius, border, opacity, shadow presets, rotation, scale, transitions |
+| **Shapes** | Six presets and imported SVG; fill, stroke, width, cap, dash, and the geometry itself |
+| **Effects** | Blur, brightness, contrast, saturation, hue, grayscale, blend mode, and one of six motion presets — on any element, not only shapes |
 | **Interaction states** | The same controls again for `hover`, `focus` and `active` |
 | **Images** | Source, upload, asset library, alt text, object-fit, drag-to-set focal point, aspect-ratio crop |
 | **Position** | In flow or free; drag to re-order among siblings, drag freely when detached, resize with handles |
@@ -595,7 +634,7 @@ a CJS consumer gets the whole thing, editor included.)
 claude mcp add vedit -- npx -y vedit-mcp --dir ./content
 ```
 
-16 MCP tools over the same documents the editor writes: read what a page
+20 MCP tools over the same documents the editor writes: read what a page
 overrides, restyle it, add a section, check the CSS it would produce, publish it.
 Edits land on the draft, so an agent proposes and a person publishes. Full detail
 in [API.md](./API.md).
@@ -615,11 +654,17 @@ in [API.md](./API.md).
       "responsive": { "lg": { "fontSize": "72px" } },
       "states": { "hover": { "style": { "color": "#000" } } }
     },
-    "home.hero.cta": { "props": { "variant": "outline", "size": "lg" } }
+    "home.hero.cta": { "props": { "variant": "outline", "size": "lg" } },
+    "campaign.sections::added-b41": {
+      "shape": { "type": "circle" },
+      "style": { "display": "block", "width": "160px", "height": "160px", "fill": "var(--vedit-brand)" }
+    }
   },
   "inserted": [
     { "id": "campaign.sections::added-7f2", "parentId": "campaign.sections",
-      "kind": "component", "component": "Hero", "index": 0 }
+      "kind": "component", "component": "Hero", "index": 0 },
+    { "id": "campaign.sections::added-b41", "parentId": "campaign.sections",
+      "kind": "shape", "index": 1 }
   ]
 }
 ```

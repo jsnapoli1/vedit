@@ -9,6 +9,8 @@ import {
   type NodeKind,
   type PatternPreset,
   type RegisteredNode,
+  type ShapePreset,
+  type ShapeSpec,
   type StyleMap,
   type StyleState,
   type VeditAsset,
@@ -25,6 +27,16 @@ import { autoCompleteFor } from '../../runtime/forms'
 import { unknownPlaceholders } from '../../runtime/interpolate'
 import { parseItemId } from '../../runtime/repeat'
 import { parseTransform, withTransform } from '../../runtime/transform'
+import {
+  ANIMATION_PRESETS,
+  parseAnimation,
+  serializeAnimation,
+  type AnimationParts,
+  type AnimationPreset,
+} from '../../runtime/animation'
+import { parseFilter, withFilter, type FilterParts } from '../../runtime/filter'
+import { sanitizeSvg } from '../../runtime/sanitize'
+import { SHAPE_PRESETS, parseShape } from '../../runtime/shape'
 import { TokenPicker } from './Tokens'
 import { useComputedStyle, useContentValue, useSelectedNode, useStyleValue } from '../hooks'
 import {
@@ -38,6 +50,7 @@ import {
   IconUndo,
 } from '../icons'
 import { BoxSides, ColorRow, LengthRow, SegmentRow, SelectRow } from './rows'
+import { SVG_REFUSED } from './Insert'
 import { dragModeFor, reorderBlocker } from '../interactions'
 
 const FONT_STACKS = [
@@ -161,11 +174,16 @@ export function Inspector() {
             <StateSwitch id={id} />
             <PropsSection id={id} />
             <ContentSection id={id} kind={kind} />
+            {/* Geometry is one node's shape, so there is nothing sensible to fan
+                out across a selection — unlike every style below it. */}
+            {kind === 'shape' ? <ShapeSection id={id} /> : null}
           </>
         )}
         <LayoutSection id={id} />
-        {kind !== 'image' ? <TypographySection id={id} /> : null}
-        <AppearanceSection id={id} />
+        {/* A shape has no text, as an image has none. */}
+        {kind !== 'image' && kind !== 'shape' ? <TypographySection id={id} /> : null}
+        <AppearanceSection id={id} kind={kind} />
+        <EffectsSection id={id} kind={kind} />
         {multiple ? null : <CustomCssSection id={id} />}
         {multiple ? null : (
           <div className="vedit-section vedit-hint" style={{ wordBreak: 'break-all' }}>
@@ -1048,6 +1066,284 @@ function AssetLibrary({ onPick }: { onPick: (url: string) => void }) {
   )
 }
 
+/* -------------------------------------------------------------------- shape */
+
+const DASHES: Array<{ value: string; label: string }> = [
+  { value: 'none', label: 'None' },
+  { value: '4 4', label: 'Fine' },
+  { value: '8 4', label: 'Dashed' },
+  { value: '2 6', label: 'Dotted' },
+  { value: '12 6', label: 'Long' },
+]
+
+/** The three polygon presets, offered as a swap for a polygon's points. */
+const POLYGON_PRESETS: Array<{ value: ShapePreset; label: string }> = [
+  { value: 'triangle', label: 'Triangle' },
+  { value: 'star', label: 'Star' },
+  { value: 'hexagon', label: 'Hexagon' },
+]
+
+/**
+ * What an inserted shape draws, and how it is painted.
+ *
+ * Geometry goes through `set-shape` rather than a style, because it is a document
+ * field and not CSS; the paint below it is `fill` / `stroke`, which are inherited
+ * SVG properties set on the root `<svg>` and therefore ordinary style rows —
+ * hover states, breakpoints and colour tokens work on them for free.
+ */
+function ShapeSection({ id }: { id: string }) {
+  const store = useVeditStore()
+  const stored = useVeditState((state) => state.doc.nodes[id]?.shape)
+  const shape = parseShape(stored)
+
+  const write = (next: ShapeSpec) => store.apply([{ op: 'set-shape', id, shape: next }])
+
+  return (
+    <Section title="Shape">
+      {shape ? <ShapeGeometry id={id} shape={shape} onChange={write} /> : (
+        <div className="vedit-hint" style={{ marginBottom: 6 }}>
+          This shape's geometry could not be read, so nothing is drawn. Delete it, or place
+          another one.
+        </div>
+      )}
+      <ColorRow id={id} label="Fill" property="fill" />
+      <ColorRow id={id} label="Stroke" property="stroke" />
+      <LengthRow id={id} label="Stroke width" property="strokeWidth" min={0} />
+      <SegmentRow
+        id={id}
+        label="Line cap"
+        property="strokeLinecap"
+        options={[
+          { value: 'butt', label: 'Butt' },
+          { value: 'round', label: 'Round' },
+          { value: 'square', label: 'Square' },
+        ]}
+      />
+      <DashRow id={id} />
+    </Section>
+  )
+}
+
+/** The controls for one geometry type. Everything else about a shape is a style. */
+function ShapeGeometry({
+  id,
+  shape,
+  onChange,
+}: {
+  id: string
+  shape: ShapeSpec
+  onChange: (next: ShapeSpec) => void
+}) {
+  if (shape.type === 'rect') {
+    return (
+      <Row label="Radius">
+        <LengthField
+          name="Corner radius"
+          value={shape.rx === undefined ? undefined : String(shape.rx)}
+          computed="0"
+          defaultUnit=""
+          min={0}
+          onChange={(next) => {
+            const rx = Number.parseFloat(next ?? '')
+            // Box units, not pixels: 50 is half the 100 × 100 coordinate space,
+            // which is as round as a rectangle gets.
+            onChange(Number.isFinite(rx) && rx > 0 ? { type: 'rect', rx: Math.min(50, rx) } : { type: 'rect' })
+          }}
+        />
+      </Row>
+    )
+  }
+
+  if (shape.type === 'line') {
+    return (
+      <>
+        <div className="vedit-label" style={{ marginBottom: 4, width: 'auto' }}>
+          Ends
+        </div>
+        <div className="vedit-grid4" style={{ marginBottom: 6 }}>
+          {(['x1', 'y1', 'x2', 'y2'] as const).map((axis) => (
+            <LengthField
+              key={axis}
+              label={axis}
+              name={`Line ${axis}`}
+              value={String(shape[axis])}
+              computed="0"
+              defaultUnit=""
+              onChange={(next) => {
+                const amount = Number.parseFloat(next ?? '')
+                if (Number.isFinite(amount)) onChange({ ...shape, [axis]: amount })
+              }}
+            />
+          ))}
+        </div>
+        <div className="vedit-hint" style={{ marginBottom: 6 }}>
+          Coordinates in the shape's own 100 × 100 box, stretched to the width and height
+          under Layout.
+        </div>
+      </>
+    )
+  }
+
+  if (shape.type === 'polygon') return <PolygonPoints shape={shape} onChange={onChange} />
+
+  if (shape.type === 'custom') return <CustomShape id={id} onChange={onChange} />
+
+  // A circle has no geometry to edit: it fills its box, and how big the box is
+  // belongs to Layout. Saying so beats an empty gap between Shape and Fill.
+  return (
+    <div className="vedit-hint" style={{ marginBottom: 6 }}>
+      An ellipse filling its box. Set the width and height under Layout — a square box
+      makes it a circle.
+    </div>
+  )
+}
+
+/**
+ * A polygon as a list of points, one `x,y` per line.
+ *
+ * Dragging vertices on the page is the gesture people know and it is a follow-up;
+ * this is what makes a chevron out of a triangle today, and it is legible in a
+ * way a path string is not.
+ */
+function PolygonPoints({
+  shape,
+  onChange,
+}: {
+  shape: Extract<ShapeSpec, { type: 'polygon' }>
+  onChange: (next: ShapeSpec) => void
+}) {
+  const store = useVeditStore()
+  const serialized = shape.points.map(([x, y]) => `${x},${y}`).join('\n')
+  const [draft, setDraft] = useState<string | null>(null)
+
+  const commit = (text: string) => {
+    const points: Array<[number, number]> = []
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue
+      const [x, y] = line.split(',').map((part) => Number.parseFloat(part))
+      // A half-typed line is not an error worth a notice — it is a line someone
+      // is still in the middle of. Only the total count is worth refusing over.
+      if (Number.isFinite(x) && Number.isFinite(y)) points.push([x, y])
+    }
+    if (points.length < 3) {
+      store.notify('A polygon needs at least three points, one “x,y” per line')
+      return
+    }
+    onChange({ type: 'polygon', points })
+  }
+
+  return (
+    <>
+      <Row label="Preset">
+        <select
+          className="vedit-select"
+          aria-label="Polygon preset"
+          value=""
+          onChange={(event) => {
+            const preset = event.target.value as ShapePreset
+            if (preset) onChange(SHAPE_PRESETS[preset])
+          }}
+        >
+          <option value="">Replace points…</option>
+          {POLYGON_PRESETS.map((preset) => (
+            <option key={preset.value} value={preset.value}>
+              {preset.label}
+            </option>
+          ))}
+        </select>
+      </Row>
+      <div className="vedit-label" style={{ marginBottom: 4, width: 'auto' }}>
+        Points
+      </div>
+      <textarea
+        className="vedit-textarea"
+        aria-label="Polygon points, one x,y per line"
+        spellCheck={false}
+        value={draft ?? serialized}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          if (draft !== null && draft !== serialized) commit(draft)
+          setDraft(null)
+        }}
+      />
+      <div className="vedit-hint" style={{ margin: '6px 0' }}>
+        One <code>x,y</code> per line, in the shape's own 100 × 100 box. {shape.points.length}{' '}
+        {shape.points.length === 1 ? 'point' : 'points'}.
+      </div>
+    </>
+  )
+}
+
+/** Imported artwork: swap the file, and say what Fill and Stroke will and won't do. */
+function CustomShape({ id, onChange }: { id: string; onChange: (next: ShapeSpec) => void }) {
+  const store = useVeditStore()
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  return (
+    <>
+      <Row>
+        <button
+          type="button"
+          className="vedit-btn"
+          style={{ flex: 1, background: 'var(--vedit-panel-2)' }}
+          onClick={() => fileInput.current?.click()}
+        >
+          Replace SVG…
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".svg,image/svg+xml"
+          hidden
+          aria-label={`Replace the SVG for ${id}`}
+          data-vedit-replace-svg=""
+          onChange={async (event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (!file) return
+            const cleaned = sanitizeSvg(await file.text())
+            if (!cleaned) {
+              store.notify(SVG_REFUSED)
+              return
+            }
+            onChange({ type: 'custom', svg: cleaned.svg, viewBox: cleaned.viewBox })
+          }}
+        />
+      </Row>
+      <div className="vedit-hint" style={{ marginBottom: 6 }}>
+        Imported artwork keeps its own colours. Fill and Stroke apply where it uses
+        <code> currentColor</code>; Effects recolour all of it.
+      </div>
+    </>
+  )
+}
+
+/**
+ * A dash pattern from a short list. `none` clears the property rather than
+ * writing the keyword, so the site's own value — or the `draw` animation's
+ * dasharray — is left in charge.
+ */
+function DashRow({ id }: { id: string }) {
+  const dash = useStyleValue(id, 'strokeDasharray')
+  return (
+    <Row label="Dash" overridden={dash.overridden} onReset={dash.clear}>
+      <select
+        className="vedit-select"
+        aria-label="Dash"
+        value={dash.mixed ? '' : String(dash.value ?? 'none')}
+        onChange={(event) => (event.target.value === 'none' ? dash.clear() : dash.set(event.target.value))}
+      >
+        {dash.mixed ? <option value="">Mixed</option> : null}
+        {DASHES.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </Row>
+  )
+}
+
 /* ------------------------------------------------------------------- layout */
 
 function LayoutSection({ id }: { id: string }) {
@@ -1387,12 +1683,28 @@ function WeightField({ id }: { id: string }) {
 
 /* --------------------------------------------------------------- appearance */
 
-function AppearanceSection({ id }: { id: string }) {
+function AppearanceSection({ id, kind }: { id: string; kind: NodeKind }) {
   const opacity = useStyleValue(id, 'opacity')
   const shadow = useStyleValue(id, 'boxShadow')
+  const filter = useStyleValue(id, 'filter')
+  const isShape = kind === 'shape'
+  // A `box-shadow` follows the element's box, so on a circle it draws a shadow
+  // of the square the circle sits in. `drop-shadow()` follows the artwork's
+  // outline, which is the shadow anyone picking this preset meant.
+  const shadowValue = isShape ? parseFilter(filter.value).dropShadow : shadow.value
+  const setShadow = (preset: string) => {
+    if (!isShape) return shadow.set(preset)
+    const dropShadow = preset === 'none' ? undefined : preset
+    const next = withFilter(filter.value, { dropShadow })
+    if (next) filter.set(next)
+    else filter.clear()
+  }
+
   return (
     <Section title="Appearance">
-      <FillControl id={id} />
+      {/* A background paints the box behind the artwork rather than the artwork,
+          which is a thing Custom CSS can do and this row would only confuse. */}
+      {isShape ? null : <FillControl id={id} />}
       <LengthRow id={id} label="Radius" property="borderRadius" min={0} />
       <LengthRow id={id} label="Border" property="borderWidth" min={0} />
       <ColorRow id={id} label="Stroke" property="borderColor" />
@@ -1405,20 +1717,28 @@ function AppearanceSection({ id }: { id: string }) {
       <Row label="Opacity" overridden={opacity.overridden} onReset={opacity.clear}>
         <Slider value={opacity.value} fallback={Number(opacity.computed || 1)} onChange={opacity.set} />
       </Row>
-      <Row label="Shadow" overridden={shadow.overridden} onReset={shadow.clear}>
-        <div className="vedit-segmented">
+      <Row
+        label="Shadow"
+        overridden={isShape ? shadowValue !== undefined : shadow.overridden}
+        onReset={() => setShadow('none')}
+      >
+        <div className="vedit-segmented" role="group" aria-label="Shadow">
           {SHADOWS.map((preset) => (
             <button
               key={preset.label}
               type="button"
-              data-active={shadow.value === preset.value ? 'true' : 'false'}
-              onClick={() => shadow.set(preset.value)}
+              data-active={
+                (shadowValue ?? (isShape ? 'none' : undefined)) === preset.value ? 'true' : 'false'
+              }
+              onClick={() => setShadow(preset.value)}
             >
               {preset.label}
             </button>
           ))}
         </div>
-        <TokenPicker kind="shadow" value={shadow.value} onChange={shadow.set} />
+        {/* A shadow token is a `box-shadow` value; on a shape it would land in
+            `drop-shadow()`, where the spread and inset keywords aren't allowed. */}
+        {isShape ? null : <TokenPicker kind="shadow" value={shadow.value} onChange={shadow.set} />}
       </Row>
       <TransformRows id={id} />
       <TransitionRow id={id} />
@@ -1621,6 +1941,177 @@ function TransitionRow({ id }: { id: string }) {
         ))}
       </select>
     </Row>
+  )
+}
+
+/* ------------------------------------------------------------------ effects */
+
+const BLEND_MODES = [
+  'normal',
+  'multiply',
+  'screen',
+  'overlay',
+  'darken',
+  'lighten',
+  'difference',
+  'luminosity',
+]
+
+/** The filter sliders, in the order they read: how sharp, how bright, how colourful. */
+const FILTER_SLIDERS: Array<{
+  part: keyof Pick<FilterParts, 'blur' | 'brightness' | 'contrast' | 'saturate' | 'hueRotate' | 'grayscale'>
+  label: string
+  min: number
+  max: number
+  step: number
+  identity: number
+  /** How the value reads back to a person, since the slider itself shows nothing. */
+  format: (value: number) => string
+}> = [
+  { part: 'blur', label: 'Blur', min: 0, max: 20, step: 0.5, identity: 0, format: (v) => `${v}px` },
+  { part: 'brightness', label: 'Brightness', min: 0, max: 2, step: 0.05, identity: 1, format: (v) => `${Math.round(v * 100)}%` },
+  { part: 'contrast', label: 'Contrast', min: 0, max: 2, step: 0.05, identity: 1, format: (v) => `${Math.round(v * 100)}%` },
+  { part: 'saturate', label: 'Saturation', min: 0, max: 2, step: 0.05, identity: 1, format: (v) => `${Math.round(v * 100)}%` },
+  { part: 'hueRotate', label: 'Hue', min: 0, max: 360, step: 1, identity: 0, format: (v) => `${Math.round(v)}°` },
+  { part: 'grayscale', label: 'Grayscale', min: 0, max: 1, step: 0.05, identity: 0, format: (v) => `${Math.round(v * 100)}%` },
+]
+
+/**
+ * Colour effects, blending and motion — for every kind, because a desaturated
+ * image and a spinning shape are the same feature.
+ *
+ * Closed by default: these are the second thing anyone reaches for, and the
+ * sections above are the first.
+ */
+function EffectsSection({ id, kind }: { id: string; kind: NodeKind }) {
+  // One read for six sliders. Each write goes through `withFilter`, so moving
+  // Blur leaves a Hue someone set earlier — and any filter function this module
+  // doesn't model — exactly where it was.
+  const filter = useStyleValue(id, 'filter')
+  const parts = parseFilter(filter.value)
+
+  const write = (patch: Partial<FilterParts>) => {
+    const next = withFilter(filter.value, patch)
+    if (next) filter.set(next)
+    else filter.clear()
+  }
+
+  return (
+    <Section title="Effects" defaultOpen={false}>
+      {FILTER_SLIDERS.map((slider) => (
+        <Row
+          key={slider.part}
+          label={slider.label}
+          overridden={parts[slider.part] !== slider.identity}
+          onReset={() => write({ [slider.part]: slider.identity })}
+        >
+          <Slider
+            value={parts[slider.part]}
+            min={slider.min}
+            max={slider.max}
+            step={slider.step}
+            fallback={slider.identity}
+            onChange={(next) => write({ [slider.part]: Number(next) })}
+          />
+          <span className="vedit-hint" style={{ flex: 'none', width: 44, textAlign: 'right' }}>
+            {slider.format(parts[slider.part])}
+          </span>
+        </Row>
+      ))}
+      <SelectRow
+        id={id}
+        label="Blend"
+        property="mixBlendMode"
+        options={BLEND_MODES.map((value) => ({ value, label: value }))}
+      />
+      {/* The drop shadow lives on the Shadow row above for a shape, and the two
+          write the same property — so say where it is rather than offer it twice. */}
+      {kind === 'shape' && parts.dropShadow ? (
+        <div className="vedit-hint" style={{ marginBottom: 6 }}>
+          A drop shadow is set. It is the Shadow row under Appearance.
+        </div>
+      ) : null}
+      <MotionRow id={id} />
+    </Section>
+  )
+}
+
+/**
+ * One of six animations, its duration, and whether it repeats.
+ *
+ * Stored as an ordinary `animation` declaration, so it lands in the state ×
+ * breakpoint matrix like everything else: an animation on hover only, a different
+ * one on mobile, undo, all free. Anything not naming a vedit preset reads as None
+ * and is left alone rather than mangled — a host's own animation is not ours.
+ */
+function MotionRow({ id }: { id: string }) {
+  const animation = useStyleValue(id, 'animation')
+  const parts = parseAnimation(animation.value)
+
+  const write = (next: AnimationParts) => animation.set(serializeAnimation(next))
+
+  return (
+    <>
+      <Row label="Motion" overridden={animation.overridden} onReset={animation.clear}>
+        <select
+          className="vedit-select"
+          aria-label="Motion preset"
+          value={parts?.preset ?? ''}
+          onChange={(event) => {
+            const preset = event.target.value as AnimationPreset | ''
+            if (!preset) return animation.clear()
+            // Choosing a preset writes its own defaults rather than keeping the
+            // last one's: 2s linear is right for a spin and wrong for a wiggle.
+            const definition = ANIMATION_PRESETS[preset]
+            write({
+              preset,
+              duration: definition.duration,
+              easing: definition.easing,
+              loops: definition.loops,
+            })
+          }}
+        >
+          <option value="">None</option>
+          {(Object.keys(ANIMATION_PRESETS) as AnimationPreset[]).map((preset) => (
+            <option key={preset} value={preset}>
+              {ANIMATION_PRESETS[preset].label}
+            </option>
+          ))}
+        </select>
+      </Row>
+      {parts ? (
+        <>
+          <Row label="Duration">
+            <LengthField
+              label="ms"
+              name="Motion duration"
+              value={String(Math.round(parts.duration))}
+              computed="0"
+              defaultUnit=""
+              step={100}
+              min={100}
+              onChange={(next) => {
+                const duration = Number.parseFloat(next ?? '')
+                if (Number.isFinite(duration) && duration > 0) write({ ...parts, duration })
+              }}
+            />
+          </Row>
+          <Row label="Repeat">
+            <Segmented
+              value={parts.loops ? 'forever' : 'once'}
+              options={[
+                { value: 'once', label: 'Once' },
+                { value: 'forever', label: 'Forever' },
+              ]}
+              onChange={(next) => write({ ...parts, loops: next === 'forever' })}
+            />
+          </Row>
+          <div className="vedit-hint">
+            Visitors who prefer reduced motion see the final frame.
+          </div>
+        </>
+      ) : null}
+    </>
   )
 }
 
