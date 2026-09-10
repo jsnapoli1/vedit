@@ -160,7 +160,7 @@ function normalizeInserted(raw: unknown, warnings: string[]): InsertedNode[] {
     if (raw !== undefined) warnings.push('Dropped `inserted`: not an array.')
     return []
   }
-  const kinds = new Set(['text', 'image', 'box', 'button', 'link', 'component'])
+  const kinds = new Set(['text', 'image', 'box', 'button', 'link', 'component', 'shape'])
   const kept = raw.filter(
     (node): node is InsertedNode =>
       isRecord(node) &&

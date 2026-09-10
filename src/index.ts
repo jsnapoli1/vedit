@@ -69,6 +69,8 @@ export type {
 export { migrateDocument, inspectDocument } from './core/migrate'
 export type { MigrationReport } from './core/migrate'
 export { documentToCss, tokenVariable, tokenReference } from './runtime/css'
+/** Building a shape without the editor — see also the `insert-node` operation. */
+export { SHAPE_PRESETS, parseShape, shapeStyleDefaults } from './runtime/shape'
 export { interpolate, placeholdersIn, unknownPlaceholders } from './runtime/interpolate'
 export {
   parseFormFields,
@@ -110,6 +112,8 @@ export type {
   NodeOverride,
   PatternPreset,
   RegisteredNode,
+  ShapePreset,
+  ShapeSpec,
   StyleLayer,
   StyleMap,
   StyleState,

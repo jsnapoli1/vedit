@@ -146,7 +146,27 @@ export interface FormField {
 export type FormValues = Record<string, string | boolean>
 
 /** What kind of thing a node is — drives which inspector sections show up. */
-export type NodeKind = 'text' | 'image' | 'box' | 'button' | 'link' | 'component'
+export type NodeKind = 'text' | 'image' | 'box' | 'button' | 'link' | 'component' | 'shape'
+
+/** What an inserted shape draws. Coordinates are in a 100 × 100 box. */
+export type ShapeSpec =
+  /** Fills its box. `rx` rounds the corners, in box units. */
+  | { type: 'rect'; rx?: number }
+  /** An ellipse filling its box. A circle is a square box. */
+  | { type: 'circle' }
+  /** From one point to another. */
+  | { type: 'line'; x1: number; y1: number; x2: number; y2: number }
+  /** A closed polygon. At least three points, at most 256. */
+  | { type: 'polygon'; points: Array<[number, number]> }
+  /**
+   * Markup someone imported. `svg` is the *inner* markup of the file's root
+   * `<svg>`, sanitised; `viewBox` is the root's, so the artwork keeps its
+   * proportions.
+   */
+  | { type: 'custom'; svg: string; viewBox: string }
+
+/** The shapes the Insert panel and the MCP server offer by name. */
+export type ShapePreset = 'rect' | 'circle' | 'line' | 'triangle' | 'star' | 'hexagon'
 
 /** Everything the editor can change about a single node. */
 export interface NodeOverride extends StyleLayer {
@@ -170,6 +190,15 @@ export interface NodeOverride extends StyleLayer {
   states?: Partial<Record<Exclude<StyleState, 'default'>, StyleLayer>>
   /** Values for the props a component declared as editable. */
   props?: Record<string, unknown>
+  /**
+   * For an inserted `shape`: what it draws.
+   *
+   * Geometry lives here rather than on `InsertedNode` because editing it is an
+   * edit: it lands in undo, travels to other editors through the per-node diff,
+   * duplicates with `duplicateInserted` and prunes with `pruneOverride` like any
+   * other field. `InsertedNode` says *that* a shape is there and where.
+   */
+  shape?: ShapeSpec
   /**
    * Which version of its component's schema `props` were written against. Absent
    * means version 1, which is what every document written before schemas could be

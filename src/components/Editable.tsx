@@ -6,6 +6,7 @@ import { interpolate } from '../runtime/interpolate'
 import { itemKey } from '../runtime/repeat'
 import { RepeatItemContext } from './repeatContext'
 import { safeUrl, sanitizeHtml } from '../runtime/sanitize'
+import { ShapeView } from './Shape'
 import type { EditableField, InsertedNode, NodeKind } from '../core/types'
 
 export interface EditableProps {
@@ -201,6 +202,8 @@ function defaultTagFor(kind: NodeKind): ElementType {
       return 'a'
     case 'button':
       return 'button'
+    case 'shape':
+      return 'svg'
     default:
       return 'div'
   }
@@ -250,6 +253,8 @@ function InsertedView({ node }: { node: InsertedNode }) {
           {''}
         </Editable>
       )
+    case 'shape':
+      return <ShapeView node={node} />
     default:
       return <Editable id={node.id} as="div" kind="box" label="Box" container />
   }

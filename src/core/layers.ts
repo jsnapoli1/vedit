@@ -133,6 +133,7 @@ export function pruneOverride(override: NodeOverride): NodeOverride | undefined 
     if (next[key] === undefined || next[key] === '') delete next[key]
   }
   if (next.hidden === false) delete next.hidden
+  if (next.shape === undefined) delete next.shape
 
   return Object.keys(next).length ? next : undefined
 }

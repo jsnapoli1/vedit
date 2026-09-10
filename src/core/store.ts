@@ -18,6 +18,7 @@ import {
   type NodeKind,
   type NodeOverride,
   type RegisteredNode,
+  type ShapeSpec,
   type StyleMap,
   type StyleState,
   type DocumentStage,
@@ -455,10 +456,17 @@ export class VeditStore {
   insert(
     parentId: string,
     kind: InsertedNode['kind'],
-    options: { component?: string; index?: number } = {},
+    options: { component?: string; index?: number; shape?: ShapeSpec } = {},
   ): string {
     const { doc, created } = applyOperations(this.state.doc, [
-      { op: 'insert-node', parentId, kind, component: options.component, index: options.index },
+      {
+        op: 'insert-node',
+        parentId,
+        kind,
+        component: options.component,
+        shape: options.shape,
+        index: options.index,
+      },
     ])
     this.commit(doc)
     const id = created[0]

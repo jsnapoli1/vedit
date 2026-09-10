@@ -1,4 +1,5 @@
 import { deleteStyles, mergeStyles, pruneOverride, replaceStyles } from './layers'
+import { parseShape, shapeStyleDefaults } from '../runtime/shape'
 import {
   BREAKPOINT_ORDER,
   STYLE_STATES,
@@ -6,6 +7,7 @@ import {
   type DesignToken,
   type InsertedNode,
   type NodeOverride,
+  type ShapeSpec,
   type StyleMap,
   type StyleState,
   type VeditDocument,
@@ -34,6 +36,8 @@ export type VeditOperation =
   | { op: 'set-content'; id: string; content: ContentPatch }
   /** Values for props a component declared as editable. `null` removes one. */
   | { op: 'set-props'; id: string; props: Record<string, unknown> }
+  /** What an inserted `shape` draws. */
+  | { op: 'set-shape'; id: string; shape: ShapeSpec }
   /** Drop every override for a node, back to what the source code renders. */
   | { op: 'reset-node'; id: string }
   /** Add a visual that does not exist in the source code. */
@@ -43,6 +47,8 @@ export type VeditOperation =
       kind: InsertedNode['kind']
       /** Required for `kind: 'component'`: which registered component to place. */
       component?: string
+      /** Required for `kind: 'shape'`: what it draws. */
+      shape?: ShapeSpec
       /** Optional explicit id, so a caller can insert idempotently. */
       id?: string
       index?: number
@@ -171,6 +177,19 @@ export function applyOperations(doc: VeditDocument, operations: VeditOperation[]
         break
       }
 
+      case 'set-shape': {
+        const id = requireId(operation.id, fail)
+        const shape = parseShape(operation.shape)
+        if (!shape) fail('`shape` is not a valid shape')
+        const override = clone(next.nodes[id] ?? {})
+        // Symmetric with `set-props`: it doesn't check that the node has been
+        // inserted, because a script may write the geometry in one batch and
+        // place the node in the next.
+        writeNode(next, id, { ...override, shape: shape! })
+        touch(id)
+        break
+      }
+
       case 'reset-node': {
         const id = requireId(operation.id, fail)
         // Whatever the editor placed inside it goes too, whether `id` is a source
@@ -196,6 +215,12 @@ export function applyOperations(doc: VeditDocument, operations: VeditOperation[]
         if (kind === 'component' && !operation.component) {
           fail('`component` is required when kind is `component`')
         }
+        let shape: ShapeSpec | null = null
+        if (kind === 'shape') {
+          if (operation.shape === undefined) fail('`shape` is required when kind is `shape`')
+          shape = parseShape(operation.shape)
+          if (!shape) fail('`shape` is not a valid shape')
+        }
         const id = operation.id ?? newInsertedId(parentId)
         if (next.inserted.some((node) => node.id === id)) fail(`\`${id}\` already exists`)
         const siblings = next.inserted.filter((node) => node.parentId === parentId)
@@ -203,7 +228,12 @@ export function applyOperations(doc: VeditDocument, operations: VeditOperation[]
         const node: InsertedNode = { id, parentId, kind, index: at }
         if (operation.component) node.component = operation.component
         next.inserted = reindex(next.inserted, parentId, at, node)
-        writeNode(next, id, { ...INSERTED_DEFAULTS[kind], ...operation.override })
+        // An explicit `override.style` replaces the defaults rather than merging
+        // with them, exactly as it does for every other kind.
+        const defaults: NodeOverride = shape
+          ? { ...INSERTED_DEFAULTS.shape, style: shapeStyleDefaults(shape), shape }
+          : INSERTED_DEFAULTS[kind]
+        writeNode(next, id, { ...defaults, ...operation.override })
         touch(id)
         created.push(id)
         break
@@ -284,6 +314,10 @@ export const INSERTED_DEFAULTS: Record<InsertedNode['kind'], NodeOverride> = {
   box: { style: { minHeight: '96px', background: '#f1f5f9', borderRadius: '8px' } },
   button: { text: 'Button', href: '#', style: {} },
   link: { text: 'Link', href: '#' },
+  // Empty on purpose: a shape's real style depends on its geometry — a line is
+  // stroked and everything else is filled — so `insert-node` takes it from
+  // `shapeStyleDefaults` once it knows what is being placed.
+  shape: { style: {} },
 }
 
 /**
@@ -332,6 +366,7 @@ export function describeDocument(doc: VeditDocument): DocumentSummary {
     const overrides: string[] = []
     for (const field of CONTENT_FIELDS) if (override[field as keyof NodeOverride] !== undefined) overrides.push(field)
     if (override.props) overrides.push('props')
+    if (override.shape) overrides.push('shape')
     // Style cells are named the way you'd address them: `style`, `md`, `hover`,
     // `hover:lg`. Enough to know what exists without printing every declaration.
     for (const state of STYLE_STATES) {
@@ -368,7 +403,7 @@ export function describeDocument(doc: VeditDocument): DocumentSummary {
 /* ------------------------------------------------------------------ util */
 
 const CONTENT_FIELDS = new Set(['text', 'html', 'src', 'alt', 'href', 'target', 'className', 'hidden'])
-const INSERTED_KINDS = new Set<string>(['text', 'image', 'box', 'button', 'link', 'component'])
+const INSERTED_KINDS = new Set<string>(['text', 'image', 'box', 'button', 'link', 'component', 'shape'])
 const TOKEN_KINDS = new Set<string>(['color', 'length', 'font', 'shadow'])
 
 function writeNode(doc: VeditDocument, id: string, override: NodeOverride) {
