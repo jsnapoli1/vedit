@@ -38,9 +38,9 @@ const SHAPES: Array<{ preset: ShapePreset; label: string; icon: JSX.Element }> =
   { preset: 'hexagon', label: 'Hexagon', icon: <IconHexagon width={12} height={12} /> },
 ]
 
-/** What a refused import says. One sentence, and it names both reasons. */
+/** What a refused import says. One sentence, and it names all three reasons. */
 export const SVG_REFUSED =
-  "That SVG couldn't be imported — it has no <svg> root, or it is larger than 64 KB after cleaning"
+  "That SVG couldn't be imported — it has no <svg> root, nothing drawable is left after cleaning, or it is larger than 64 KB"
 
 /**
  * What can be placed on this page, and where it would go.

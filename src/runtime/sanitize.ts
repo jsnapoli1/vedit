@@ -235,11 +235,18 @@ function sanitizeSvgText(markup: string): SanitizedSvg | null {
   let inner = outer[2]
 
   const blocks = new RegExp(`<\\s*(${SVG_DANGEROUS})\\b[\\s\\S]*?<\\s*/\\s*\\1\\s*>`, 'gi')
+  // An unclosed dangerous tag: take everything up to the next `<`, or to the end.
+  // Unwrapping it instead would leave the body behind as text — `<style>.a{fill:red}`
+  // with no closing tag would store `.a{fill:red}`, which the browser then paints.
+  const unclosed = new RegExp(`<\\s*(${SVG_DANGEROUS})\\b[^<]*`, 'gi')
   const empties = new RegExp(`<\\s*/?\\s*(${SVG_DANGEROUS})\\b[^>]*>`, 'gi')
   inner = inner
     .replace(blocks, '')
     .replace(empties, '')
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(unclosed, '')
+    // `/` separates attributes as well as whitespace does, so `<path/onload=alert(1)`
+    // is a handler to the browser and has to be one here too.
+    .replace(/[\s/]on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
     // Only a same-document reference survives. The unquoted alternative has to
     // exclude a quote as well as a `#`, or it would swallow `"#a"` a character
     // at a time and take the reference with it.
@@ -257,10 +264,49 @@ function sanitizeSvgText(markup: string): SanitizedSvg | null {
       SVG_TAGS.has(tag.toLowerCase()) ? match : '',
     )
 
+  inner = stripStrayText(inner)
+
   const viewBox = /\bviewBox\s*=\s*["']([^"']*)["']/i.exec(attributes)?.[1]
   const width = /\bwidth\s*=\s*["']([^"']*)["']/i.exec(attributes)?.[1]
   const height = /\bheight\s*=\s*["']([^"']*)["']/i.exec(attributes)?.[1]
   return { svg: inner.trim(), viewBox: viewBoxOf(viewBox ?? null, width ?? null, height ?? null) }
+}
+
+/** The only elements whose text an SVG draws. Everywhere else, text is leftovers. */
+const SVG_TEXT_TAGS = new Set(['text', 'tspan', 'title', 'desc'])
+
+/**
+ * Drop text that sits between tags rather than inside one of the four elements
+ * that render text. After a tag is unwrapped its body is stranded there, and the
+ * browser paints stranded text — so a `<style>` body that survived as text would
+ * still show up as `.a{fill:red}` on the artwork.
+ */
+function stripStrayText(inner: string): string {
+  const open: string[] = []
+  let out = ''
+  let index = 0
+  const tag = /<\s*(\/?)\s*([a-zA-Z][\w:-]*)\b[^>]*?(\/?)\s*>/g
+  let match: RegExpExecArray | null
+  while ((match = tag.exec(inner))) {
+    if (keepsText(open)) out += inner.slice(index, match.index)
+    out += match[0]
+    index = match.index + match[0].length
+    const name = match[2].toLowerCase()
+    if (match[1]) {
+      // Close the nearest matching open tag; ignore a stray close, which is what
+      // the browser would do with it too.
+      const at = open.lastIndexOf(name)
+      if (at !== -1) open.length = at
+    } else if (!match[3]) {
+      open.push(name)
+    }
+  }
+  if (keepsText(open)) out += inner.slice(index)
+  return out
+}
+
+function keepsText(open: string[]): boolean {
+  return open.some((name) => SVG_TEXT_TAGS.has(name))
 }
 
 /**

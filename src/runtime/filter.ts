@@ -3,6 +3,8 @@
  * a blur, a hue shift, a drop shadow — so the inspector parses it into parts,
  * edits one, and puts it back rather than overwriting whatever was there.
  */
+import { splitFunctions } from './tokens'
+
 export interface FilterParts {
   /** px, 0 = none. */
   blur: number
@@ -37,27 +39,6 @@ export const FILTER_IDENTITY: FilterParts = {
   saturate: 1,
   hueRotate: 0,
   grayscale: 0,
-}
-
-/** Split `blur(2px) drop-shadow(0 0 6px rgb(255, 0, 0))` into whole functions. */
-function splitFunctions(value: string): string[] {
-  const found: string[] = []
-  let depth = 0
-  let current = ''
-  for (const char of value) {
-    if (char === '(') depth += 1
-    if (char === ')') depth -= 1
-    // Only whitespace outside every paren separates one function from the next;
-    // `rgb(255, 0, 0)` inside a drop-shadow has spaces of its own.
-    if (depth === 0 && /\s/.test(char)) {
-      if (current.trim()) found.push(current.trim())
-      current = ''
-      continue
-    }
-    current += char
-  }
-  if (current.trim()) found.push(current.trim())
-  return found
 }
 
 /** A number, or undefined when the argument isn't one — a malformed part stays in `rest`. */

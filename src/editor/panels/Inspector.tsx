@@ -38,7 +38,13 @@ import { parseFilter, withFilter, type FilterParts } from '../../runtime/filter'
 import { sanitizeSvg } from '../../runtime/sanitize'
 import { SHAPE_PRESETS, parseShape } from '../../runtime/shape'
 import { TokenPicker } from './Tokens'
-import { useComputedStyle, useContentValue, useSelectedNode, useStyleValue } from '../hooks'
+import {
+  useComputedStyle,
+  useContentValue,
+  useSelectedNode,
+  useSelectionTargets,
+  useStyleValue,
+} from '../hooks'
 import {
   IconAlignCenter,
   IconAlignJustify,
@@ -1987,13 +1993,23 @@ function EffectsSection({ id, kind }: { id: string; kind: NodeKind }) {
   // One read for six sliders. Each write goes through `withFilter`, so moving
   // Blur leaves a Hue someone set earlier — and any filter function this module
   // doesn't model — exactly where it was.
+  const store = useVeditStore()
+  const targets = useSelectionTargets(id)
   const filter = useStyleValue(id, 'filter')
   const parts = parseFilter(filter.value)
 
+  // The fan-out is per target rather than through `filter.set`: that would write
+  // the primary node's patched value onto every selection, so turning up
+  // Saturation on two nodes would replace one node's own Blur with the other's.
+  // Each target patches the value it already has.
   const write = (patch: Partial<FilterParts>) => {
-    const next = withFilter(filter.value, patch)
-    if (next) filter.set(next)
-    else filter.clear()
+    const next = targets.map(
+      (target) => [target, withFilter(store.styleValue(target, 'filter'), patch)] as const,
+    )
+    const set = next.filter(([, value]) => value) as Array<[string, string]>
+    const cleared = next.filter(([, value]) => !value).map(([target]) => target)
+    if (set.length) store.setStyleMany(set.map(([target, value]) => [target, { filter: value }]))
+    if (cleared.length) store.clearStylesMany(cleared, ['filter'])
   }
 
   return (
@@ -2036,6 +2052,17 @@ function EffectsSection({ id, kind }: { id: string; kind: NodeKind }) {
   )
 }
 
+/** A preset's own defaults, which is what choosing one from the list writes. */
+function defaultParts(preset: AnimationPreset): AnimationParts {
+  const definition = ANIMATION_PRESETS[preset]
+  return {
+    preset,
+    duration: definition.duration,
+    easing: definition.easing,
+    loops: definition.loops,
+  }
+}
+
 /**
  * One of six animations, its duration, and whether it repeats.
  *
@@ -2045,10 +2072,31 @@ function EffectsSection({ id, kind }: { id: string; kind: NodeKind }) {
  * and is left alone rather than mangled — a host's own animation is not ours.
  */
 function MotionRow({ id }: { id: string }) {
+  const store = useVeditStore()
+  const targets = useSelectionTargets(id)
   const animation = useStyleValue(id, 'animation')
   const parts = parseAnimation(animation.value)
 
-  const write = (next: AnimationParts) => animation.set(serializeAnimation(next))
+  /**
+   * Per target rather than through `animation.set`, for the reason Effects is:
+   * fanning the primary node's serialised value out would give every selected
+   * node the primary's preset. Duration and Repeat patch the animation each node
+   * already has; choosing a preset is the one write that is the same everywhere.
+   */
+  const write = (patch: Partial<AnimationParts>) => {
+    const entries: Array<[string, { animation: string }]> = []
+    for (const target of targets) {
+      const current = parseAnimation(store.styleValue(target, 'animation'))
+      const base = current ?? (patch.preset ? defaultParts(patch.preset) : null)
+      if (!base) continue
+      entries.push([target, { animation: serializeAnimation({ ...base, ...patch }) }])
+    }
+    if (entries.length) store.setStyleMany(entries)
+  }
+
+  const clear = () => {
+    if (targets.length) store.clearStylesMany(targets, ['animation'])
+  }
 
   return (
     <>
@@ -2059,16 +2107,10 @@ function MotionRow({ id }: { id: string }) {
           value={parts?.preset ?? ''}
           onChange={(event) => {
             const preset = event.target.value as AnimationPreset | ''
-            if (!preset) return animation.clear()
+            if (!preset) return clear()
             // Choosing a preset writes its own defaults rather than keeping the
             // last one's: 2s linear is right for a spin and wrong for a wiggle.
-            const definition = ANIMATION_PRESETS[preset]
-            write({
-              preset,
-              duration: definition.duration,
-              easing: definition.easing,
-              loops: definition.loops,
-            })
+            write(defaultParts(preset))
           }}
         >
           <option value="">None</option>
@@ -2092,7 +2134,7 @@ function MotionRow({ id }: { id: string }) {
               min={100}
               onChange={(next) => {
                 const duration = Number.parseFloat(next ?? '')
-                if (Number.isFinite(duration) && duration > 0) write({ ...parts, duration })
+                if (Number.isFinite(duration) && duration > 0) write({ duration })
               }}
             />
           </Row>
@@ -2103,7 +2145,7 @@ function MotionRow({ id }: { id: string }) {
                 { value: 'once', label: 'Once' },
                 { value: 'forever', label: 'Forever' },
               ]}
-              onChange={(next) => write({ ...parts, loops: next === 'forever' })}
+              onChange={(next) => write({ loops: next === 'forever' })}
             />
           </Row>
           <div className="vedit-hint">

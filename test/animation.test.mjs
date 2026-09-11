@@ -96,6 +96,24 @@ test('missing pieces fall back to the preset defaults', () => {
   })
 })
 
+test('an easing with arguments of its own survives the round trip', () => {
+  // `split(/[\s,]+/)` used to cut `cubic-bezier(0.1, 0.2, 0.3, 0.4)` into five
+  // tokens, so the easing came back as `cubic-bezier(0.1` and what was written
+  // out again was CSS the browser drops on the floor.
+  for (const easing of [
+    'cubic-bezier(0.1, 0.2, 0.3, 0.4)',
+    'cubic-bezier(0.1 0.2 0.3 0.4)',
+    'steps(4, end)',
+  ]) {
+    const parsed = parseAnimation(`vedit-spin 2s ${easing} infinite`)
+    assert.equal(parsed.easing, easing, easing)
+    assert.equal(parsed.duration, 2000, easing)
+    assert.equal(parsed.loops, true, easing)
+    assert.equal(serializeAnimation(parsed), `vedit-spin 2000ms ${easing} infinite`)
+    assert.deepEqual(parseAnimation(serializeAnimation(parsed)), parsed, easing)
+  }
+})
+
 test('anything not naming a vedit preset is null — a host animation is left alone', () => {
   assert.equal(parseAnimation('my-slide 2s linear infinite'), null)
   assert.equal(parseAnimation('vedit-nonsense 2s'), null)

@@ -169,6 +169,38 @@ test.describe('effects and motion', () => {
     expect(css).toContain('@keyframes vedit-spin')
   })
 
+  test('a multi-selection edit keeps each shape\'s own effects', async ({ page }) => {
+    await openCampaign(page)
+    await place(page, 'Circle')
+    await place(page, 'Circle')
+    await expect(shapes(page)).toHaveCount(2)
+
+    const first = shapes(page).nth(0)
+    const second = shapes(page).nth(1)
+    const filterOf = (shape: typeof first) => shape.evaluate((el) => getComputedStyle(el).filter)
+
+    // Blur on the first alone.
+    await first.click()
+    await openEffects(page)
+    const blur = page.locator('.vedit-right input[type="range"][aria-label="Blur"]')
+    await blur.fill('6')
+    await blur.dispatchEvent('change')
+    await expect.poll(() => filterOf(first)).toContain('blur(')
+
+    // Both selected, then Saturation — which must patch each one's own filter
+    // rather than fan the primary's value out over the other.
+    await second.click({ modifiers: ['Shift'] })
+    const saturation = page.locator('.vedit-right input[type="range"][aria-label="Saturation"]')
+    await saturation.fill('1.5')
+    await saturation.dispatchEvent('change')
+
+    await expect.poll(() => filterOf(first)).toContain('saturate(')
+    expect(await filterOf(first)).toContain('blur(')
+
+    await expect.poll(() => filterOf(second)).toContain('saturate(')
+    expect(await filterOf(second)).not.toContain('blur(')
+  })
+
   test('the Blur slider gives the shape a computed filter', async ({ page }) => {
     await openCampaign(page)
     await place(page, 'Circle')

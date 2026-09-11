@@ -7,6 +7,8 @@
  * a document ever reaches a `@keyframes` block — only the choice of which of the
  * six to emit does.
  */
+import { splitTokens } from './tokens'
+
 export type AnimationPreset = 'spin' | 'pulse' | 'float' | 'fadeIn' | 'draw' | 'wiggle'
 
 export interface AnimationPresetDefinition {
@@ -100,7 +102,10 @@ export function presetsIn(value: string): AnimationPreset[] {
  */
 export function parseAnimation(value: string | number | undefined): AnimationParts | null {
   if (typeof value !== 'string') return null
-  const tokens = value.trim().split(/[\s,]+/).filter(Boolean)
+  // Paren-aware, because an easing carries separators of its own: splitting on
+  // whitespace and commas would cut `cubic-bezier(0.1, 0.2, 0.3, 0.4)` into four
+  // tokens, and serialising the first of them back out is CSS the browser drops.
+  const tokens = splitTokens(value)
   const preset = PRESET_NAMES.find((name) => tokens.includes(animationName(name)))
   if (!preset) return null
 

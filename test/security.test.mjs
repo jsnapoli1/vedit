@@ -188,6 +188,34 @@ test('an unscoped import keeps its ids, so the stored markup stays portable', ()
   assert.ok(result.svg.includes('id="g"'))
 })
 
+test('an unclosed dangerous tag takes its text with it', () => {
+  // Without a parser there is no subtree to remove, so the strip has to run to
+  // the next `<`. Unwrapping the tag alone would store `.a{fill:red}` as text,
+  // and the browser paints text that sits outside a `<text>`.
+  const result = sanitizeSvg('<svg viewBox="0 0 10 10"><style>.a{fill:red}<path d="M0 0h10"/></svg>')
+  assert.ok(result)
+  assert.ok(result.svg.includes('<path'), 'the drawing survives')
+  assert.ok(!result.svg.includes('.a{fill:red}'))
+  assert.ok(!/style/i.test(result.svg))
+})
+
+test('an unclosed <script> leaves no source behind as text', () => {
+  const result = sanitizeSvg('<svg viewBox="0 0 10 10"><script>var a=1;<path d="M0 0h10"/></svg>')
+  assert.ok(result)
+  assert.ok(result.svg.includes('<path'), 'the drawing survives')
+  assert.ok(!result.svg.includes('var a=1;'))
+  assert.ok(!/script/i.test(result.svg))
+})
+
+test('an on* attribute with no space before it is stripped too', () => {
+  // `<path/onload=…>` is one token to a regex looking for whitespace, and the
+  // browser reads the `/` as an attribute separator — so it counts as one here.
+  const result = sanitizeSvg('<svg viewBox="0 0 10 10"><path/onload=alert(1) d="M0 0h10"/></svg>')
+  assert.ok(result)
+  assert.ok(result.svg.includes('<path'), 'the drawing survives')
+  assert.ok(!/onload/i.test(result.svg))
+})
+
 test('markup with no <svg> root is refused', () => {
   assert.equal(sanitizeSvg('<div>not a drawing</div>'), null)
   assert.equal(sanitizeSvg(''), null)
