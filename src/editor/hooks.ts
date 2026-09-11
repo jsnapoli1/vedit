@@ -41,6 +41,22 @@ export function useComputedStyle(id: string | null): CSSStyleDeclaration | null 
   }, [id, doc, store])
 }
 
+/**
+ * Every node a write from the inspector should reach: the whole selection when
+ * the primary is part of it, otherwise just the primary.
+ *
+ * `useStyleValue` fans a single value out over these. A control whose value is a
+ * patch on what is already there — a filter function, one part of the animation
+ * shorthand — has to read and write each of them separately instead, or one
+ * node's own value ends up overwritten with the primary's.
+ */
+export function useSelectionTargets(id: string | null): string[] {
+  const selection = useVeditState((state) => state.selection)
+  const targets = id ? (selection.includes(id) ? selection : [id]) : []
+  const targetsKey = targets.join('|')
+  return useMemo(() => (targetsKey ? targetsKey.split('|') : []), [targetsKey])
+}
+
 export interface StyleValue {
   /** The override in the active cell for the primary selection, if any. */
   value: string | number | undefined

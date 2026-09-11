@@ -61,6 +61,27 @@ test('a malformed document is repaired rather than trusted', () => {
   assert.equal(report.warnings.length, 3)
 })
 
+test('a placed shape is a kind this build knows, and keeps its geometry', () => {
+  // A node whose kind `normalizeInserted` doesn't recognise is dropped on load,
+  // and the bug looks like "my page went blank" — so a new kind gets a test the
+  // day it is added.
+  const report = inspectDocument({
+    version: 1,
+    key: 'home',
+    nodes: { 'home.hero::added-2': { shape: { type: 'polygon', points: [[0, 0], [100, 0], [50, 100]] } } },
+    inserted: [{ id: 'home.hero::added-2', parentId: 'home.hero', kind: 'shape', index: 0 }],
+    tokens: [],
+  })
+
+  assert.equal(report.doc.inserted.length, 1)
+  assert.equal(report.doc.inserted[0].kind, 'shape')
+  assert.deepEqual(report.doc.nodes['home.hero::added-2'].shape, {
+    type: 'polygon',
+    points: [[0, 0], [100, 0], [50, 100]],
+  })
+  assert.deepEqual(report.warnings, [])
+})
+
 test('a document that is not an object at all does not throw', () => {
   for (const value of ['a string', 42, [], true]) {
     const doc = migrateDocument(value, 'home')

@@ -93,7 +93,7 @@ Worth being specific, because the gaps below are easier to read against it.
 - **Failures say something.** The 0.5 diagnostics turned four silent failures
   into one development-build warning each. This was the single largest finding
   from real use, and it was a usability problem, not a correctness one.
-- **The tests check what ships.** 262 unit tests against `dist/`, 79 browser
+- **The tests check what ships.** 337 unit tests against `dist/`, 89 browser
   tests against the real editor, including screenshot baselines and layout
   invariants. CI also installs the packed tarball and resolves its types as a
   consumer would, and checks the MCP binary answers on stdio.
@@ -110,6 +110,20 @@ Worth being specific, because the gaps below are easier to read against it.
   vedit. Validation is a closed set of rules rather than a regex someone types,
   which keeps stored data from running as a pattern against every visitor's
   keystrokes.
+- **Shapes stayed decoration.** A shape is an inline `<svg>` the editor placed,
+  and it is on the visible side of the line the way an image is — no click
+  handler, no fetch, not a link. Inline rather than an `<img>` is what lets fill,
+  stroke and dash come from the ordinary stylesheet, so design tokens, hover
+  states and breakpoints work on linework without a line of new code. An import
+  is sanitised to an allow-list on the way in and again at render, because a
+  stored shape can arrive from a script that never touched the import path.
+- **Effects and motion cost no document format.** A filter, a blend mode and an
+  animation are style declarations, so they landed in the state × breakpoint
+  matrix with undo, multi-select and collaboration already working. The keyframes
+  are a closed set for the reason validation rules are: stored text that runs on
+  every visitor's page is where a page builder stops being safe. The single
+  `!important` in the codebase is the `prefers-reduced-motion` rule, and it is on
+  the visitor's side of the argument.
 - **The framework matrix is tested, not claimed.** Next (App and Pages), Remix
   and Astro islands each have an example app under `examples/`, built for
   production against the packed tarball and driven in CI: server-rendered markup,
@@ -176,6 +190,13 @@ field type is schema, and the version number freezes schema:
 
 ## Worth doing, not blocking
 
+- **A drawing tool, and on-page vertex editing.** Shapes ship with drag-to-place
+  and an inspector: the Insert panel says where, the width and height fields say
+  how big, and a polygon is a list of points in a textarea. What is missing is
+  the Figma gesture — click-drag a rectangle onto the page, drag a vertex to
+  reshape it. Both are worth having and neither is worth doing before the model
+  has held under real use; a points list is already enough to make a chevron out
+  of a triangle. Bézier paths are what "import an SVG" is for.
 - **The MCP server is young.** It works, and it is tested against its own
   protocol handling, but it has not been through a long agent session on a real
   site. Expect the tool descriptions to be the part that needs tuning.
@@ -222,7 +243,14 @@ that removes rather than silently doing nothing.
 editor, posted to an endpoint the host owns. The first thing here that collects
 rather than displays, and the reason "What this is for" now says so out loud.
 
-**0.8–0.9** — publishing under a scoped name. Integrations by other people, and
+**0.8** — *done*: shapes, effects and motion. The one addition this list said to
+resist, taken deliberately rather than by drift: a page nobody can put a line or
+a circle on sends someone back to a developer for decoration, which is the errand
+this exists to remove. It cost nothing the version number has to freeze — no
+document format change, no new field type, one node kind and three style
+properties that already existed in CSS.
+
+**0.9** — publishing under a scoped name. Integrations by other people, and
 whatever they turn up. The two schema questions together if they are going to
 happen before the surface freezes: slot-typed props, and host-rendered form
 fields. Otherwise resist adding features — the gap between here and 1.0 is

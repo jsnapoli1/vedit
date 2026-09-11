@@ -22,12 +22,27 @@ export { RealtimeSession, diffDocuments } from './core/session'
 export type { SessionSnapshot, DocumentPatch } from './core/session'
 export { anonymousPeer, colorForPeer, initialsOf } from './core/realtime'
 
-export { sanitizeHtml, safeUrl } from './runtime/sanitize'
+export { sanitizeHtml, safeUrl, sanitizeSvg, SVG_LIMIT } from './runtime/sanitize'
+export type { SanitizedSvg, SanitizeSvgOptions } from './runtime/sanitize'
+export { shapeElements } from './runtime/shape'
+export type { ShapeElement } from './runtime/shape'
 export { parseTransform, serializeTransform, withTransform } from './runtime/transform'
 export type { TransformParts } from './runtime/transform'
 export { parseGradient, serializeGradient, DEFAULT_GRADIENT } from './runtime/gradient'
 export { itemId, parseItemId, itemKey, mergeOverrides, ITEM_SEPARATOR } from './runtime/repeat'
 export type { Gradient, GradientStop } from './runtime/gradient'
+export { parseFilter, serializeFilter, withFilter, FILTER_IDENTITY } from './runtime/filter'
+export type { FilterParts } from './runtime/filter'
+export {
+  parseAnimation,
+  serializeAnimation,
+  animationName,
+  keyframesFor,
+  presetsIn,
+  ANIMATION_PRESETS,
+  REDUCED_MOTION_RULE,
+} from './runtime/animation'
+export type { AnimationParts, AnimationPreset } from './runtime/animation'
 
 export { warnOnce, resetWarnings, isProductionLike } from './core/env'
 export { scanDom } from './auto/scanner'

@@ -107,6 +107,21 @@ test('a bad operation fails the whole batch, leaving the document untouched', ()
   assert.equal(start.nodes.a.text, 'before', 'the input document is never mutated')
 })
 
+test('a shape with no geometry takes the rest of the batch down with it', () => {
+  const start = applyOperations(blank(), [{ op: 'set-content', id: 'a', content: { text: 'before' } }]).doc
+
+  assert.throws(
+    () =>
+      applyOperations(start, [
+        { op: 'set-content', id: 'a', content: { text: 'after' } },
+        { op: 'insert-node', parentId: 'hero', kind: 'shape' },
+      ]),
+    (error) => error.name === 'OperationError' && error.index === 1 && /`shape` is required/.test(error.message),
+  )
+  assert.equal(start.nodes.a.text, 'before')
+  assert.deepEqual(start.inserted, [])
+})
+
 test('an unknown operation is refused by name', () => {
   assert.throws(() => applyOperations(blank(), [{ op: 'delete-everything' }]), /delete-everything/)
 })

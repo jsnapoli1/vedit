@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useVeditNodes, useVeditState, useVeditStore } from '../../core/context'
 import type { NodeKind, RegisteredNode } from '../../core/types'
 import { moveFocus } from '../focus'
-import { IconEye, IconEyeOff, IconImage, IconSquare, IconType } from '../icons'
+import { IconEye, IconEyeOff, IconImage, IconShape, IconSquare, IconType } from '../icons'
 
 interface TreeNode {
   node: RegisteredNode
@@ -35,6 +35,7 @@ function buildTree(nodes: RegisteredNode[]): TreeNode[] {
 
 function KindIcon({ kind }: { kind: NodeKind }) {
   if (kind === 'image') return <IconImage width={12} height={12} />
+  if (kind === 'shape') return <IconShape width={12} height={12} />
   if (kind === 'box' || kind === 'component') return <IconSquare width={12} height={12} />
   return <IconType width={12} height={12} />
 }

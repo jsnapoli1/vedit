@@ -7,11 +7,15 @@ import {
 } from './core/operations'
 import type { ComponentSummary } from './core/registry'
 import { documentToCss } from './runtime/css'
+import { sanitizeSvg } from './runtime/sanitize'
+import { SHAPE_PRESETS } from './runtime/shape'
 import {
   DEFAULT_BREAKPOINTS,
   emptyDocument,
   type BreakpointWidths,
   type DocumentStage,
+  type ShapePreset,
+  type ShapeSpec,
   type VeditDocument,
 } from './core/types'
 import type { VeditServerStore } from './server'
@@ -31,6 +35,9 @@ import type { VeditServerStore } from './server'
 
 const PROTOCOL_VERSION = '2025-06-18'
 const SERVER_NAME = 'vedit'
+
+/** Taken from the presets themselves, so the schema can't drift from what exists. */
+const SHAPE_PRESET_NAMES = Object.keys(SHAPE_PRESETS) as ShapePreset[]
 
 export interface VeditMcpOptions {
   store: VeditServerStore
@@ -307,6 +314,65 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
       },
     },
     {
+      name: 'insert_shape',
+      description:
+        'Draw a shape on the page: one of six presets, or an SVG file you have the markup for. A preset stretches to fill its box and takes its colour from the `fill` and `stroke` style properties, so it can be restyled with set_styles afterwards. Imported artwork keeps its own colours and its own proportions.',
+      write: true,
+      inputSchema: object(
+        {
+          key: KEY,
+          parentId: { type: 'string', description: 'Id of the container to add it to' },
+          shape: {
+            type: 'string',
+            enum: SHAPE_PRESET_NAMES,
+            description: 'One of the six presets. Give this or `svg`, not both.',
+          },
+          svg: {
+            type: 'string',
+            description:
+              "The file's markup; it is cleaned of scripts and external references before it is stored. Give this or `shape`, not both.",
+          },
+          index: { type: 'number', description: 'Position among its siblings; appended by default' },
+        },
+        ['parentId'],
+      ),
+      async run(args) {
+        const preset = args.shape === undefined ? undefined : String(args.shape)
+        const markup = args.svg === undefined ? undefined : String(args.svg)
+        // Naming both in the message because the failure is almost always that a
+        // model gave neither and guessed the field name, or gave both and meant
+        // the markup.
+        if ((preset === undefined) === (markup === undefined)) {
+          throw new Error('Give either `shape` (a preset name) or `svg` (the file\'s markup), and not both')
+        }
+        let shape: ShapeSpec
+        if (preset !== undefined) {
+          const found = SHAPE_PRESETS[preset as ShapePreset]
+          if (!found) throw new Error(`No shape preset named \`${preset}\`. Available: ${SHAPE_PRESET_NAMES.join(', ')}`)
+          shape = found
+        } else {
+          // Server-side pass. The browser sanitises again before any of this
+          // reaches a page, so a stored shape is cleaned twice on purpose.
+          const cleaned = sanitizeSvg(markup!)
+          if (!cleaned) {
+            throw new Error(
+              'That SVG could not be imported — it has no <svg> root, nothing drawable, or is over 64 KB after cleaning',
+            )
+          }
+          shape = { type: 'custom', svg: cleaned.svg, viewBox: cleaned.viewBox }
+        }
+        return write(keyOf(args), [
+          {
+            op: 'insert-node',
+            parentId: String(args.parentId),
+            kind: 'shape',
+            shape,
+            index: args.index as number | undefined,
+          },
+        ])
+      },
+    },
+    {
       name: 'place_component',
       description:
         'Put one of the site\'s components into a slot or container, with its props. Call list_components first for the names and what each prop accepts, and describe_document for the container ids. Returns the id it was given, which is what you style or configure afterwards.',
@@ -410,7 +476,7 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
           operations: {
             type: 'array',
             description:
-              'Operations. Each is { "op": …, … }: set-styles | replace-styles | clear-styles (id, styles|properties, state?, breakpoint?), set-content (id, content), set-props (id, props), reset-node (id), insert-node (parentId, kind, id?, index?, override?), move-node (id, parentId?, index?), remove-node (id), set-token (token), remove-token (id).',
+              'Operations. Each is { "op": …, … }: set-styles | replace-styles | clear-styles (id, styles|properties, state?, breakpoint?), set-content (id, content), set-props (id, props), set-shape (id, shape), reset-node (id), insert-node (parentId, kind, id?, index?, override?, shape? — required when kind is `shape`), move-node (id, parentId?, index?), remove-node (id), set-token (token), remove-token (id).',
             items: { type: 'object' },
           },
         },

@@ -59,12 +59,20 @@ src/
 
   components/      what a host site imports
     Editable.tsx   the general case, plus rendering placed components
+    Shape.tsx      an inserted shape: preset geometry, or re-sanitised import
     Slot.tsx       VeditSlot: a region whose contents live in the document
     presets.tsx    EditableText / Image / Box / Link
     useEditable.ts registration + prop merging
 
   auto/            the DOM scanner for unwrapped elements
-  runtime/         pure functions: css, transform, gradient, sanitize
+  runtime/         pure functions, unit-testable without a browser
+    css.ts         the document as a stylesheet
+    transform.ts   parse/serialise `transform` as parts
+    gradient.ts    the same for a gradient
+    filter.ts      the same for `filter` — the Effects sliders
+    animation.ts   the six motion presets, their keyframes, and the reduced-motion rule
+    shape.ts       SHAPE_PRESETS, parseShape, and the geometry of a preset
+    sanitize.ts    sanitizeHtml, safeUrl, sanitizeSvg
 
   editor/          the chrome. Lazily imported, never in a visitor's bundle
     mount.tsx      canvas or overlay, with the fallback
@@ -250,6 +258,13 @@ uses it:
 4. `components/Editable.tsx` — `InsertedView`, which turns a stored node into UI
 5. `panels/Insert.tsx` — so a person can reach it
 
+A kind with state of its own gets a component beside `Editable.tsx` rather than a
+branch inside it — `Shape.tsx` is the worked example. It reads its geometry from
+the override, parses it with the untrusted parser, and draws nothing at all when
+that fails — an empty, still-selectable element, because a malformed override
+should cost the drawing and not the page, and whoever finds it needs to be able
+to select it and delete it.
+
 ### Add an MCP tool
 
 `mcp.ts`, in the `all` array: a name, a description a model can act on, a JSON
@@ -296,7 +311,10 @@ site. Breaking one is a bug even if the tests pass.
 - **Never let the editor take the page down.** Everything the library renders
   sits behind `VeditErrorBoundary`. New top-level renders get one too.
 - **Never trust the document.** It is data from a store; treat values like user
-  input. `declarations()`, `safeUrl()` and `sanitizeHtml()` exist for this.
+  input. `declarations()`, `safeUrl()`, `sanitizeHtml()` and `sanitizeSvg()`
+  exist for this. Sanitising on the way in is not enough — imported SVG markup
+  goes through `sanitizeSvg` again at render, because a stored shape can arrive
+  from a script or an agent that never touched the import path.
 - **Never ship the editor to visitors.** The chrome is behind a dynamic import
   and an `enabled` check. Don't import from `editor/` in `core/` or
   `components/` — that would pull it into the main chunk. (`core/context.tsx`'s
@@ -304,22 +322,26 @@ site. Breaking one is a bug even if the tests pass.
 - **Never put a style in a CSS file.** The chrome's styles are a string in
   `editor/styles.ts`, injected at runtime, so host sites need no CSS import.
 - **Never use `!important` for an override.** Specificity is bought with
-  repeated attribute selectors, so hosts keep the last word.
+  repeated attribute selectors, so hosts keep the last word. The one exception in
+  the codebase is `REDUCED_MOTION_RULE` in `runtime/animation.ts`, and it is not
+  an override: it is the visitor's `prefers-reduced-motion` beating a design
+  choice, which is the one case where losing the argument is correct.
 
 ---
 
 ## Testing
 
-**`npm test`** — 262 unit tests, run against `dist/` rather than `src/`, so they
+**`npm test`** — 337 unit tests, run against `dist/` rather than `src/`, so they
 check what actually ships. Pure logic lives here: the CSS emitter, the layer
 matrix, the store, migration, the operations vocabulary, the open API, the MCP
 server, diffing, contrast maths, the relay, the escaping rules.
 
-**`npm run test:e2e`** — 79 browser tests over the real editor. 64 of them cover
+**`npm run test:e2e`** — 89 browser tests over the real editor. 74 of them cover
 behaviour: selection, breakpoints, states, component props, re-ordering,
-publishing, composing a page out of registered components, filling in and
-submitting a form, two people collaborating, driving it all from a keyboard, and
-what happens when the editor throws. The remaining 15 are the visual suite below.
+publishing, composing a page out of registered components, placing and styling
+shapes and importing an SVG that tries to run a script, filling in and submitting
+a form, two people collaborating, driving it all from a keyboard, and what
+happens when the editor throws. The remaining 15 are the visual suite below.
 
 **`npm run test:frameworks`** — the matrix `INTEGRATING.md` promises. One minimal
 app per framework under `examples/` (Next App Router, Next Pages Router, Remix,

@@ -1,4 +1,5 @@
 import { readLayer } from '../core/layers'
+import { keyframesFor, presetsIn, REDUCED_MOTION_RULE, type AnimationPreset } from './animation'
 import {
   DEFAULT_BREAKPOINTS,
   STYLE_STATES,
@@ -23,6 +24,7 @@ const UNITLESS = new Set([
   'flex',
   'zoom',
   'aspectRatio',
+  'animationIterationCount',
 ])
 
 export function toKebab(property: string): string {
@@ -102,16 +104,33 @@ export function documentToCss(
 ): string {
   const base: string[] = []
   const media = new Map<Exclude<Breakpoint, 'base'>, string[]>()
+  const animating = new Set<AnimationPreset>()
+
+  /**
+   * Which motion presets this rule uses. The maps are scanned as they are emitted
+   * rather than the finished stylesheet being regexed: a host site's own
+   * `vedit-spin` mentioned in some unrelated value shouldn't conjure a keyframes
+   * block, and only an `animation`/`animation-name` declaration means motion.
+   */
+  const collect = (style: StyleMap) => {
+    for (const property of ['animation', 'animationName'] as const) {
+      const value = style[property]
+      if (typeof value !== 'string') continue
+      for (const preset of presetsIn(value)) animating.add(preset)
+    }
+  }
 
   const emit = (id: string, layer: StyleLayer | undefined, state: StyleState) => {
     if (!layer) return
     // States sit one specificity step above the element's own base styles.
     const weight = state === 'default' ? 2 : 3
     if (layer.style && Object.keys(layer.style).length) {
+      collect(layer.style)
       base.push(`${selector(id, weight, state)}{${declarations(layer.style)}}`)
     }
     for (const [bp, style] of Object.entries(layer.responsive ?? {})) {
       if (!style || !Object.keys(style).length) continue
+      collect(style)
       const key = bp as Exclude<Breakpoint, 'base'>
       const bucket = media.get(key) ?? []
       bucket.push(`${selector(id, weight + 1, state)}{${declarations(style)}}`)
@@ -138,5 +157,11 @@ export function documentToCss(
     .filter((bp) => media.has(bp))
     .map((bp) => `@media (min-width:${breakpoints[bp]}px){${media.get(bp)!.join('')}}`)
 
-  return [tokensCss(doc.tokens), ...base, ...queries].filter(Boolean).join('\n')
+  // Keyframes first, so a preset is defined before anything references it, and the
+  // reduced-motion rule last so it wins. Both are dropped entirely when nothing
+  // animates, which keeps a page with no motion emitting the CSS it always did.
+  const keyframes = animating.size ? keyframesFor(animating) : ''
+  const reducedMotion = animating.size ? REDUCED_MOTION_RULE : ''
+
+  return [keyframes, tokensCss(doc.tokens), ...base, ...queries, reducedMotion].filter(Boolean).join('\n')
 }

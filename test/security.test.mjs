@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { documentToCss, emptyDocument } from '../dist/index.js'
-import { safeUrl, sanitizeHtml } from '../dist/internal.js'
+import { safeUrl, sanitizeHtml, sanitizeSvg, SVG_LIMIT } from '../dist/internal.js'
 
 /**
  * An overrides document is data. It reaches every visitor's page, so it is only
@@ -102,4 +102,134 @@ test('rich text keeps formatting and loses everything else', () => {
   assert.ok(html.includes('<b>bold</b>'))
   assert.ok(!html.includes('script'))
   assert.ok(!html.includes('javascript:'))
+})
+
+/**
+ * `sanitizeSvg` under `node:test` exercises the *server* path — there is no
+ * `DOMParser` here. That path is the conservative one; the browser path is the
+ * authoritative one and runs before anything reaches the DOM, so
+ * `e2e/shapes.spec.ts` imports a file with a real `<script>` in it and asserts
+ * nothing ran.
+ */
+
+test('an imported SVG loses everything that executes', () => {
+  const result = sanitizeSvg(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+      <script>window.__pwned = 1</script>
+      <path d="M0 0h24v24H0z" onload="alert(1)" onclick="alert(2)"/>
+      <foreignObject><body><iframe src="//evil.test"></iframe></body></foreignObject>
+    </svg>
+  `)
+  assert.ok(result)
+  assert.ok(!/script/i.test(result.svg))
+  assert.ok(!/foreignObject/i.test(result.svg))
+  assert.ok(!/iframe/i.test(result.svg))
+  assert.ok(!/on\w+\s*=/i.test(result.svg))
+  assert.ok(result.svg.includes('d="M0 0h24v24H0z"'), 'the drawing survives')
+  assert.equal(result.viewBox, '0 0 24 24')
+})
+
+test('a <style> in an imported SVG is removed, because it would style the page', () => {
+  const result = sanitizeSvg('<svg viewBox="0 0 10 10"><style>body{display:none}</style><rect/></svg>')
+  assert.ok(result)
+  assert.ok(!/style/i.test(result.svg))
+  assert.ok(!result.svg.includes('display:none'))
+})
+
+test('animation and external-reference elements go too', () => {
+  const result = sanitizeSvg(
+    '<svg viewBox="0 0 10 10"><image href="//evil.test/x.png"/><a href="//evil.test">x</a>' +
+      '<animate attributeName="x"/><set attributeName="x"/><circle r="5"/></svg>',
+  )
+  assert.ok(result)
+  assert.ok(!/<image/i.test(result.svg))
+  assert.ok(!/<a[\s>]/i.test(result.svg))
+  assert.ok(!/<animate/i.test(result.svg))
+  assert.ok(!/<set/i.test(result.svg))
+  assert.ok(result.svg.includes('circle'))
+})
+
+test('href survives only when it points inside the document', () => {
+  const external = sanitizeSvg('<svg viewBox="0 0 10 10"><use href="//evil.test/x.svg#a"/></svg>')
+  assert.ok(external)
+  assert.ok(!external.svg.includes('evil.test'))
+
+  const internal = sanitizeSvg('<svg viewBox="0 0 10 10"><use href="#a"/></svg>')
+  assert.ok(internal)
+  assert.ok(internal.svg.includes('href="#a"'))
+})
+
+test('a style attribute that reaches out of the page is dropped', () => {
+  const result = sanitizeSvg(
+    '<svg viewBox="0 0 10 10"><rect style="fill:url(//evil.test/x)"/>' +
+      '<circle style="fill:red"/></svg>',
+  )
+  assert.ok(result)
+  assert.ok(!result.svg.includes('evil.test'))
+  assert.ok(result.svg.includes('fill:red'), 'an ordinary style attribute stays')
+})
+
+test('ids and the references to them are scoped', () => {
+  const result = sanitizeSvg(
+    '<svg viewBox="0 0 10 10"><defs><linearGradient id="paint0_linear"/></defs>' +
+      '<rect fill="url(#paint0_linear)"/><use href="#paint0_linear"/></svg>',
+    { scope: 'hero::added-ab12' },
+  )
+  assert.ok(result)
+  assert.ok(!result.svg.includes('"paint0_linear"'), 'the bare id is gone')
+  assert.ok(result.svg.includes('id="hero-added-ab12-paint0_linear"'))
+  assert.ok(result.svg.includes('url(#hero-added-ab12-paint0_linear)'))
+  assert.ok(result.svg.includes('href="#hero-added-ab12-paint0_linear"'))
+})
+
+test('an unscoped import keeps its ids, so the stored markup stays portable', () => {
+  const result = sanitizeSvg('<svg viewBox="0 0 10 10"><linearGradient id="g"/></svg>')
+  assert.ok(result)
+  assert.ok(result.svg.includes('id="g"'))
+})
+
+test('an unclosed dangerous tag takes its text with it', () => {
+  // Without a parser there is no subtree to remove, so the strip has to run to
+  // the next `<`. Unwrapping the tag alone would store `.a{fill:red}` as text,
+  // and the browser paints text that sits outside a `<text>`.
+  const result = sanitizeSvg('<svg viewBox="0 0 10 10"><style>.a{fill:red}<path d="M0 0h10"/></svg>')
+  assert.ok(result)
+  assert.ok(result.svg.includes('<path'), 'the drawing survives')
+  assert.ok(!result.svg.includes('.a{fill:red}'))
+  assert.ok(!/style/i.test(result.svg))
+})
+
+test('an unclosed <script> leaves no source behind as text', () => {
+  const result = sanitizeSvg('<svg viewBox="0 0 10 10"><script>var a=1;<path d="M0 0h10"/></svg>')
+  assert.ok(result)
+  assert.ok(result.svg.includes('<path'), 'the drawing survives')
+  assert.ok(!result.svg.includes('var a=1;'))
+  assert.ok(!/script/i.test(result.svg))
+})
+
+test('an on* attribute with no space before it is stripped too', () => {
+  // `<path/onload=…>` is one token to a regex looking for whitespace, and the
+  // browser reads the `/` as an attribute separator — so it counts as one here.
+  const result = sanitizeSvg('<svg viewBox="0 0 10 10"><path/onload=alert(1) d="M0 0h10"/></svg>')
+  assert.ok(result)
+  assert.ok(result.svg.includes('<path'), 'the drawing survives')
+  assert.ok(!/onload/i.test(result.svg))
+})
+
+test('markup with no <svg> root is refused', () => {
+  assert.equal(sanitizeSvg('<div>not a drawing</div>'), null)
+  assert.equal(sanitizeSvg(''), null)
+})
+
+test('an illustration too big to live in a document is refused', () => {
+  const huge = `<svg viewBox="0 0 10 10"><path d="${'M0 0'.repeat(SVG_LIMIT / 4)}"/></svg>`
+  assert.equal(sanitizeSvg(huge), null)
+})
+
+test('a missing viewBox is taken from width and height, then from the box', () => {
+  const sized = sanitizeSvg('<svg width="48" height="24"><rect/></svg>')
+  assert.equal(sized?.viewBox, '0 0 48 24')
+
+  const bare = sanitizeSvg('<svg><rect/></svg>')
+  assert.equal(bare?.viewBox, '0 0 100 100')
 })

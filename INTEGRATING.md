@@ -263,6 +263,16 @@ export const components = defineComponents({
 **Check**: open the editor, choose **Insert**, place a Hero. It renders through
 your component, and its props are in the inspector.
 
+The same panel also offers the primitives that need no component from you — text,
+an image, a box, a button, a link — and six shapes, plus an **Import SVG…**
+button for artwork someone drew elsewhere. Those need nothing registered and
+nothing configured: a shape is an inline `<svg>` the library renders, styled from
+the inspector like any other element. An import is cleaned to an allow-list of
+drawing elements before it is stored: a `<script>` or a `<style>` in the file is
+dropped and the drawing is kept, and a file with nothing drawable left is refused
+with a notice rather than placed as an empty box. Nothing about any of it reaches
+your components.
+
 ### What you are actually deciding
 
 This is the one step in this guide that changes how the site is maintained, so
