@@ -51,6 +51,13 @@ export type EditableFieldType =
   | 'link'
   /** A list of form controls, configured in the inspector. See `FormField`. */
   | 'fields'
+  /** An asset that is not an image: a datasheet, a download. Picked or uploaded like one. */
+  | 'file'
+  | 'video'
+  /** A record in another source. Set `to`; `many` for a list of them. */
+  | 'relation'
+  /** HTML with structure — headings, lists, links, images — sanitised with the block profile. */
+  | 'richtext'
 
 /**
  * One prop a component has declared as editable. The schema lives in your code,
@@ -68,6 +75,12 @@ export interface EditableField {
   step?: number
   /** Shown under the control. */
   help?: string
+  /** For `relation`: the source the value points into. */
+  to?: string
+  /** For `relation`: the value is a list of ids rather than one. */
+  many?: boolean
+  /** For `image`, `file` and `video`: the MIME types the picker offers and the upload accepts. */
+  accept?: string[]
 }
 
 /**

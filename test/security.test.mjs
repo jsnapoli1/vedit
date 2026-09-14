@@ -105,6 +105,207 @@ test('rich text keeps formatting and loses everything else', () => {
 })
 
 /**
+ * The tests above ran the *server* pass. The whitelist only exists in the
+ * browser pass, and there is no DOM under `node:test`, so the tests below give
+ * the sanitiser just enough of one: a `<template>` whose `innerHTML` parses into
+ * elements with the handful of members the walk uses. It is a stand-in, not a
+ * browser — it knows void tags, raw-text tags and quoted or bare attributes, and
+ * nothing else — but that is exactly the surface the sanitiser touches, so what
+ * it proves about the whitelist holds in a real one.
+ */
+
+const VOID_TAGS = new Set(['br', 'img', 'hr', 'input'])
+const RAW_TEXT_TAGS = new Set(['script', 'style'])
+
+class FakeNode {
+  parentNode = null
+  remove() {
+    if (!this.parentNode) return
+    const siblings = this.parentNode.childNodes
+    siblings.splice(siblings.indexOf(this), 1)
+    this.parentNode = null
+  }
+  replaceWith(...nodes) {
+    const parent = this.parentNode
+    const at = parent.childNodes.indexOf(this)
+    for (const node of nodes) node.remove()
+    parent.childNodes.splice(at, 1, ...nodes)
+    for (const node of nodes) node.parentNode = parent
+  }
+}
+
+class FakeText extends FakeNode {
+  constructor(data) {
+    super()
+    this.data = data
+  }
+  serialize() {
+    return this.data
+  }
+}
+
+class FakeElement extends FakeNode {
+  childNodes = []
+  attributes = []
+  constructor(tagName) {
+    super()
+    this.tagName = tagName.toUpperCase()
+  }
+  get children() {
+    return this.childNodes.filter((node) => node instanceof FakeElement)
+  }
+  getAttribute(name) {
+    return this.attributes.find((attribute) => attribute.name === name)?.value ?? null
+  }
+  removeAttribute(name) {
+    this.attributes = this.attributes.filter((attribute) => attribute.name !== name)
+  }
+  append(node) {
+    node.remove()
+    node.parentNode = this
+    this.childNodes.push(node)
+  }
+  get innerHTML() {
+    return this.childNodes.map((node) => node.serialize()).join('')
+  }
+  set innerHTML(html) {
+    this.childNodes = []
+    parseInto(this, html)
+  }
+  serialize() {
+    const tag = this.tagName.toLowerCase()
+    const attributes = this.attributes.map(({ name, value }) => ` ${name}="${value.replace(/"/g, '&quot;')}"`).join('')
+    if (VOID_TAGS.has(tag)) return `<${tag}${attributes}>`
+    return `<${tag}${attributes}>${this.innerHTML}</${tag}>`
+  }
+}
+
+const ATTRIBUTE = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g
+
+function parseInto(root, html) {
+  const open = [root]
+  const tag = /<(\/?)([a-zA-Z][\w-]*)((?:\s+[^\s"'<>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*(\/?)>/g
+  let index = 0
+  let match
+  while ((match = tag.exec(html))) {
+    const parent = open[open.length - 1]
+    if (match.index > index) parent.append(new FakeText(html.slice(index, match.index)))
+    index = match.index + match[0].length
+    const name = match[2].toLowerCase()
+    if (match[1]) {
+      const at = open.findIndex((element) => element.tagName === name.toUpperCase())
+      if (at > 0) open.length = at
+      continue
+    }
+    const element = new FakeElement(name)
+    for (const attribute of match[3].matchAll(ATTRIBUTE)) {
+      element.attributes.push({ name: attribute[1].toLowerCase(), value: attribute[2] ?? attribute[3] ?? attribute[4] ?? '' })
+    }
+    parent.append(element)
+    if (RAW_TEXT_TAGS.has(name)) {
+      const close = new RegExp(`</${name}\\s*>`, 'ig')
+      close.lastIndex = index
+      const end = close.exec(html)
+      element.append(new FakeText(html.slice(index, end ? end.index : html.length)))
+      index = end ? end.index + end[0].length : html.length
+      tag.lastIndex = index
+      continue
+    }
+    if (!VOID_TAGS.has(name) && !match[4]) open.push(element)
+  }
+  if (index < html.length) open[open.length - 1].append(new FakeText(html.slice(index)))
+}
+
+/** Run with a `document` whose only trick is `createElement('template')`. */
+function inBrowser(run) {
+  globalThis.document = {
+    createElement(name) {
+      assert.equal(name, 'template')
+      const template = new FakeElement('template')
+      template.content = new FakeElement('#document-fragment')
+      Object.defineProperty(template, 'innerHTML', {
+        get: () => template.content.innerHTML,
+        set: (html) => {
+          template.content.innerHTML = html
+        },
+      })
+      return template
+    },
+  }
+  try {
+    return run()
+  } finally {
+    delete globalThis.document
+  }
+}
+
+test('the block profile keeps headings, lists, links and images', () => {
+  const html = inBrowser(() =>
+    sanitizeHtml(
+      '<h1>Title</h1><h2>Sub</h2><p>A <strong>bold</strong> <em>word</em> and <code>x</code>.</p>' +
+        '<ul><li>one</li><li>two</li></ul><ol><li>first</li></ol><blockquote>quote</blockquote>' +
+        '<a href="https://example.com/a">link</a><img src="/hero.png" alt="Hero"><br>',
+      { profile: 'block' },
+    ),
+  )
+  assert.ok(html.includes('<h1>Title</h1>'))
+  assert.ok(html.includes('<h2>Sub</h2>'))
+  assert.ok(html.includes('<p>A <strong>bold</strong> <em>word</em> and <code>x</code>.</p>'))
+  assert.ok(html.includes('<ul><li>one</li><li>two</li></ul>'))
+  assert.ok(html.includes('<ol><li>first</li></ol>'))
+  assert.ok(html.includes('<blockquote>quote</blockquote>'))
+  assert.ok(html.includes('<a href="https://example.com/a">link</a>'))
+  assert.ok(html.includes('<img src="/hero.png" alt="Hero">'))
+  assert.ok(html.includes('<br>'))
+})
+
+test('the block profile still drops scripts, styles, handlers and javascript hrefs', () => {
+  const html = inBrowser(() =>
+    sanitizeHtml(
+      '<p onclick="alert(1)">hi</p><script>window.__pwned = 1</script><style>body{display:none}</style>' +
+        '<iframe src="//evil.test"></iframe><svg><script>alert(2)</script></svg>' +
+        '<a href="javascript:alert(3)">no</a><div class="c" id="i" style="color:red">plain</div>',
+      { profile: 'block' },
+    ),
+  )
+  assert.equal(html, '<p>hi</p><a>no</a>plain')
+})
+
+test('an image in rich text keeps a data image and loses everything else', () => {
+  const kept = inBrowser(() =>
+    sanitizeHtml('<img src="data:image/png;base64,AAAA" alt="a" onerror="x" style="y" class="z">', { profile: 'block' }),
+  )
+  assert.equal(kept, '<img src="data:image/png;base64,AAAA" alt="a">')
+
+  const dropped = inBrowser(() => sanitizeHtml('<img src="data:text/html,<script>x</script>" alt="a">', { profile: 'block' }))
+  assert.equal(dropped, '<img alt="a">')
+})
+
+test('a handler inside an unwrapped tag is stripped too', () => {
+  // Unwrapping splices the children into the parent after the parent's list
+  // was snapshotted, so a walk that unwraps first never sees them.
+  assert.equal(
+    inBrowser(() => sanitizeHtml('<div><span onclick="alert(1)">x</span><svg><script>alert(2)</script></svg></div>')),
+    '<span>x</span>alert(2)',
+  )
+  assert.equal(
+    inBrowser(() => sanitizeHtml('<div><svg><script>alert(2)</script></svg></div>', { profile: 'block' })),
+    '',
+  )
+})
+
+test('the default profile still unwraps block tags', () => {
+  assert.equal(
+    inBrowser(() => sanitizeHtml('<p>hi</p>')),
+    'hi',
+  )
+  assert.equal(
+    inBrowser(() => sanitizeHtml('<h1>x</h1><img src="/a.png"><b>bold</b>')),
+    'x<b>bold</b>',
+  )
+})
+
+/**
  * `sanitizeSvg` under `node:test` exercises the *server* path — there is no
  * `DOMParser` here. That path is the conservative one; the browser path is the
  * authoritative one and runs before anything reaches the DOM, so
