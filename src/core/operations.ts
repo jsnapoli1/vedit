@@ -314,6 +314,10 @@ export const INSERTED_DEFAULTS: Record<InsertedNode['kind'], NodeOverride> = {
   box: { style: { minHeight: '96px', background: '#f1f5f9', borderRadius: '8px' } },
   button: { text: 'Button', href: '#', style: {} },
   link: { text: 'Link', href: '#' },
+  // A file link comes from source code, never from the Insert panel: there is
+  // nothing to point at until something has been uploaded. It is listed here
+  // because every kind needs an entry, not because `INSERTED_KINDS` offers it.
+  file: { text: 'File', href: '#' },
   // Empty on purpose: a shape's real style depends on its geometry — a line is
   // stroked and everything else is filled — so `insert-node` takes it from
   // `shapeStyleDefaults` once it knows what is being placed.

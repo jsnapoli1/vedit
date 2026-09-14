@@ -3,6 +3,7 @@ import { useVeditContext, useVeditState } from '../core/context'
 import type { VeditStore } from '../core/store'
 import type { NodeKind, RegisteredNode } from '../core/types'
 import { safeUrl, sanitizeHtml } from '../runtime/sanitize'
+import { isFileHref } from '../runtime/fileHref'
 import { warnOnce } from '../core/env'
 import { computeAutoId } from './ids'
 
@@ -15,7 +16,7 @@ const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'template', 'head', 'm
 function kindOf(element: HTMLElement): NodeKind {
   const tag = element.tagName.toLowerCase()
   if (tag === 'img' || tag === 'picture' || tag === 'svg') return 'image'
-  if (tag === 'a') return 'link'
+  if (tag === 'a') return isFileHref(element.getAttribute('href')) ? 'file' : 'link'
   if (tag === 'button') return 'button'
   if (TEXT_TAGS.has(tag)) return 'text'
   return 'box'
@@ -36,7 +37,7 @@ function isLeafText(element: HTMLElement): boolean {
 
 function labelFor(element: HTMLElement, kind: NodeKind): string {
   const tag = element.tagName.toLowerCase()
-  if (kind === 'text' || kind === 'link' || kind === 'button') {
+  if (kind === 'text' || kind === 'link' || kind === 'file' || kind === 'button') {
     const text = (element.textContent ?? '').trim().replace(/\s+/g, ' ')
     if (text) return text.length > 32 ? `${text.slice(0, 32)}…` : text
   }

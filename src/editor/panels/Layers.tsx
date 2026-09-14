@@ -37,6 +37,8 @@ function KindIcon({ kind }: { kind: NodeKind }) {
   if (kind === 'image') return <IconImage width={12} height={12} />
   if (kind === 'shape') return <IconShape width={12} height={12} />
   if (kind === 'box' || kind === 'component') return <IconSquare width={12} height={12} />
+  // Text, links, buttons and file links all read as copy in the tree; what a
+  // link points at is the inspector's business, not the layer list's.
   return <IconType width={12} height={12} />
 }
 

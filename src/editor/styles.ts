@@ -468,4 +468,20 @@ html.vedit-editing .vedit-inserted-button {
 }
 .vedit-field-body { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--vedit-border); }
 .vedit-warn { color: #f0c674; }
+
+/* ------------------------------------------------------------------- files */
+.vedit-file {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding: 6px 8px; margin-bottom: 6px; border: 1px solid var(--vedit-border); border-radius: 6px;
+}
+.vedit-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vedit-files {
+  display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; max-height: 176px; overflow: auto;
+}
+.vedit-files button {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%;
+  padding: 5px 8px; border: 1px solid var(--vedit-border); border-radius: 5px; cursor: pointer;
+  background: transparent; text-align: left;
+}
+.vedit-files button:hover { border-color: var(--vedit-accent); background: var(--vedit-panel-2); }
 `

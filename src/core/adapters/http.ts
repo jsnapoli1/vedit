@@ -15,6 +15,12 @@ export interface HttpAdapterOptions {
   /** Endpoint returning `{ items: [{ url, name }] }` for the image library. */
   assetsEndpoint?: string
   /**
+   * The media route of `createMediaHandler` (e.g. `/vedit/v1/media`). One
+   * endpoint for any kind of file: `POST` multipart uploads, `GET ?kind=&q=`
+   * lists. Takes over from `uploadEndpoint` and `assetsEndpoint` when set.
+   */
+  mediaEndpoint?: string
+  /**
    * The endpoint keeps a draft separate from what visitors see — which
    * `createVeditHandler` does. Switches on the Publish button and History panel.
    */
@@ -77,13 +83,48 @@ export function httpAdapter(options: HttpAdapterOptions): VeditAdapter {
           },
         }
       : {}),
-    ...(options.assetsEndpoint
+    ...(options.assetsEndpoint && !options.mediaEndpoint
       ? {
           async listAssets() {
             const response = await doFetch(options.assetsEndpoint!, { headers: await resolveHeaders() })
             if (!response.ok) throw new Error(`Could not list assets (${response.status})`)
             const body = (await response.json()) as { items?: VeditAsset[] } | VeditAsset[]
             return Array.isArray(body) ? body : body.items ?? []
+          },
+        }
+      : {}),
+    ...(options.mediaEndpoint
+      ? {
+          async listAssets(listOptions?: { kind?: 'image' | 'file' | 'video'; query?: string }) {
+            const query = new URLSearchParams()
+            if (listOptions?.kind) query.set('kind', listOptions.kind)
+            if (listOptions?.query) query.set('q', listOptions.query)
+            const search = query.toString()
+            const suffix = search ? `?${search}` : ''
+            const response = await doFetch(`${options.mediaEndpoint}${suffix}`, {
+              headers: await resolveHeaders(),
+              credentials: 'same-origin',
+            })
+            if (!response.ok) throw new Error(`Could not list assets (${response.status})`)
+            const body = (await response.json()) as { items?: VeditAsset[] } | VeditAsset[]
+            return Array.isArray(body) ? body : body.items ?? []
+          },
+          async uploadAsset(file: File, uploadOptions?: { accept?: string[] }) {
+            const form = new FormData()
+            form.append('file', file)
+            const response = await doFetch(options.mediaEndpoint!, {
+              method: 'POST',
+              headers: await resolveHeaders(),
+              body: form,
+              credentials: 'same-origin',
+            })
+            if (response.status === 400 && uploadOptions?.accept) {
+              throw new Error(`Upload refused: expected ${uploadOptions.accept.join(', ')}`)
+            }
+            if (!response.ok) throw new Error(`Upload failed (${response.status})`)
+            const body = (await response.json()) as Partial<VeditAsset>
+            if (!body.url) throw new Error('Media endpoint did not return a url')
+            return { ...body, url: body.url }
           },
         }
       : {}),

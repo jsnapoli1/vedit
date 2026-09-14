@@ -146,7 +146,7 @@ export interface FormField {
 export type FormValues = Record<string, string | boolean>
 
 /** What kind of thing a node is — drives which inspector sections show up. */
-export type NodeKind = 'text' | 'image' | 'box' | 'button' | 'link' | 'component' | 'shape'
+export type NodeKind = 'text' | 'image' | 'box' | 'button' | 'link' | 'component' | 'shape' | 'file'
 
 /** What an inserted shape draws. Coordinates are in a 100 × 100 box. */
 export type ShapeSpec =
@@ -282,8 +282,19 @@ export interface VeditAdapter {
   save(doc: VeditDocument): Promise<void>
   /** Optional: called when the user picks a local file in the image inspector. */
   uploadImage?(file: File): Promise<string>
-  /** Optional: images to choose from without uploading a new one. */
-  listAssets?(): Promise<VeditAsset[]>
+  /**
+   * Optional: store any file — a PDF for a download link as much as an image.
+   * `accept` is the mime allowlist the inspector applied on the way in, so a
+   * store can refuse the same things. When present it is preferred over
+   * `uploadImage`.
+   */
+  uploadAsset?(file: File, opts?: { accept?: string[] }): Promise<VeditAsset>
+  /**
+   * Optional: what is already stored, to pick from without uploading again.
+   * Adapters written before there was a filter take no arguments and are
+   * handed the whole library; the editor sorts it by `kind` itself.
+   */
+  listAssets?(opts?: { kind?: 'image' | 'file' | 'video'; query?: string }): Promise<VeditAsset[]>
   /** Optional: where review notes live. Without these, comments last the session. */
   listComments?(key: string): Promise<Comment[]>
   saveComment?(comment: Comment): Promise<void>

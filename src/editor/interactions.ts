@@ -4,7 +4,7 @@ import type { EditorTool, StyleMap } from '../core/types'
 import { parseTransform, withTransform } from '../runtime/transform'
 import type { EditorTarget, Rect } from './target'
 
-const TEXTUAL = new Set(['text', 'link', 'button'])
+const TEXTUAL = new Set(['text', 'link', 'file', 'button'])
 
 /**
  * `instanceof Element` is useless here: on the canvas the event target comes from

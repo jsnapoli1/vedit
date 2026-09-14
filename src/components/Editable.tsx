@@ -6,6 +6,7 @@ import { interpolate } from '../runtime/interpolate'
 import { itemKey } from '../runtime/repeat'
 import { RepeatItemContext } from './repeatContext'
 import { safeUrl, sanitizeHtml } from '../runtime/sanitize'
+import { isFileHref } from '../runtime/fileHref'
 import { ShapeView } from './Shape'
 import type { EditableField, InsertedNode, NodeKind } from '../core/types'
 
@@ -128,7 +129,7 @@ const EditableNode = function EditableNode({
   repeatKey: _repeatKey,
   ...rest
 }: RenderProps & { forwardedRef?: Ref<HTMLElement> }) {
-  const resolvedKind: NodeKind = kind ?? inferKind(as, children)
+  const resolvedKind: NodeKind = kind ?? inferKind(as, children, rest.href)
   const isContainer = container || resolvedKind === 'box'
   const sourceText = typeof children === 'string' ? children : undefined
   const schema = fields as EditableField[] | undefined
@@ -181,9 +182,9 @@ const EditableNode = function EditableNode({
   )
 }
 
-function inferKind(as: ElementType | undefined, children: ReactNode): NodeKind {
+function inferKind(as: ElementType | undefined, children: ReactNode, href?: unknown): NodeKind {
   if (as === 'img') return 'image'
-  if (as === 'a') return 'link'
+  if (as === 'a') return isFileHref(href) ? 'file' : 'link'
   if (as === 'button') return 'button'
   if (typeof as === 'string' && /^(h[1-6]|p|span|li|label|blockquote|figcaption|strong|em)$/.test(as)) {
     return 'text'
@@ -199,6 +200,7 @@ function defaultTagFor(kind: NodeKind): ElementType {
     case 'image':
       return 'img'
     case 'link':
+    case 'file':
       return 'a'
     case 'button':
       return 'button'
