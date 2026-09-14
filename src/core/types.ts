@@ -1,4 +1,5 @@
 import type { Comment } from './realtime'
+import type { RecordBinding, RecordChanges, SourceSchema, VeditCapabilities, VeditRecord } from '../content/types'
 
 /** Named responsive breakpoints. `base` always applies; the rest are min-width. */
 export type Breakpoint = 'base' | 'sm' | 'md' | 'lg' | 'xl'
@@ -356,9 +357,24 @@ export interface RegisteredNode {
   fields?: EditableField[]
   /** The prop values the source code passed, shown as the defaults. */
   props?: Record<string, unknown>
+  /** Which record field this node shows. Set by `useEditable` from `bind`. */
+  binding?: RecordBinding
+  /** Which shared document this node's overrides live in. Set by `useEditable` from `scope`. */
+  scope?: string
 }
 
 export type EditorTool = 'select' | 'hand' | 'comment' | 'text' | 'image' | 'box'
+
+/**
+ * One undo step: the page, the pending record changes and every shared
+ * document, taken together. Undo has to restore all three at once — a record
+ * edit and a style edit made in turn are two steps back, not one and a stray.
+ */
+export interface HistoryEntry {
+  doc: VeditDocument
+  data: RecordChanges
+  shared: Record<string, VeditDocument>
+}
 
 export interface VeditState {
   doc: VeditDocument
@@ -397,6 +413,28 @@ export interface VeditState {
   styleState: StyleState
   /** Where a re-ordering drag would drop, in page coordinates. */
   dropIndicator: { top: number; left: number; width: number; height: number } | null
-  past: VeditDocument[]
-  future: VeditDocument[]
+  past: HistoryEntry[]
+  future: HistoryEntry[]
+  /** Record edits made in the editor and not yet committed, by source. */
+  data: RecordChanges
+  /** Rows fetched through the content client, by source, before local changes. */
+  records: Record<string, VeditRecord[]>
+  /** What the content client described, once `loadSchema` has run. */
+  schema: SourceSchema[] | null
+  /** Record ids committed as drafts and waiting for Publish, by source. */
+  pendingPublish: Record<string, string[]>
+  /** What the content client said this person may do; null until asked. */
+  capabilities: VeditCapabilities | null
+  /**
+   * Whether the editor may open: `'ok'` when it may, `'required'` when signing in
+   * would let it, `'none'` when nothing would. Always `'ok'` without a content
+   * client — there is nobody to ask.
+   */
+  auth: 'none' | 'required' | 'ok'
+  /** Documents shared across pages (a nav, a footer), by key. */
+  shared: Record<string, VeditDocument>
+  /** Each shared document as it was at the last successful save. */
+  sharedSaved: Record<string, VeditDocument>
+  /** Each shared document as it was at the last publish. */
+  sharedPublished: Record<string, VeditDocument>
 }
