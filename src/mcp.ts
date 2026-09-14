@@ -19,6 +19,9 @@ import {
   type VeditDocument,
 } from './core/types'
 import type { VeditServerStore } from './server'
+import { newRecordId } from './content/ids'
+import { RecordOperationError, applyRecordOperations } from './content/operations'
+import type { RecordOperation, RecordQuery, VeditContentClient } from './content/types'
 
 /**
  * A Model Context Protocol server over the same documents the editor writes, so
@@ -61,6 +64,12 @@ export interface VeditMcpOptions {
   components?: ComponentSummary[]
   /** Called after a write lands — `notifyEditors` turns this into a live update. */
   onChange?: (change: { key: string; stage: DocumentStage; doc: VeditDocument; changed: string[] }) => void | Promise<void>
+  /**
+   * The records behind the site, when vedit owns them (`vedit/content`). With a
+   * client the server also offers the source tools — list, read, edit, publish
+   * records — so an agent can change what a page says as well as how it looks.
+   */
+  content?: VeditContentClient
 }
 
 export interface McpTool {
@@ -100,6 +109,7 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
     version = '0.3.0',
     onChange,
     components,
+    content,
   } = options
 
   const keyOf = (args: Record<string, unknown>): string => {
@@ -516,6 +526,7 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
         return { key, restored: String(args.versionId), updatedAt: doc.updatedAt }
       },
     },
+    ...(content ? recordTools(content) : []),
   ]
 
   const tools = all.filter((tool) => writable || !tool.write)
@@ -548,7 +559,12 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
               'Edits go to a document of overrides and placed components, not to source code. ' +
               'describe_document first to see what a page has; list_components to see what it can be ' +
               'built from, then place_component into a slot; render_css to check what a change ' +
-              'produces. Publishing is a separate, deliberate step.',
+              'produces. Publishing is a separate, deliberate step.' +
+              (content
+                ? ' The records behind the pages are reachable too: list_sources and describe_source ' +
+                  'show what there is, set_record, create_record, delete_record and reorder_records ' +
+                  'change it, and publish_records makes those changes live.'
+                : ''),
           })
 
         case 'ping':
@@ -586,6 +602,216 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
   }
 
   return { tools, handle, call }
+}
+
+/* ----------------------------------------------------------- record tools */
+
+/**
+ * The tools over `vedit/content`. Edits go to the draft when the caller may
+ * publish and straight to the live copy when it may not — the same rule the
+ * editor's Save follows, so an agent and a person editing the same site land
+ * their changes in the same place.
+ */
+function recordTools(content: VeditContentClient): McpTool[] {
+  // Asked once, lazily: a read-only session never needs it, and a session that
+  // writes should not pay for it on every call.
+  let stagePromise: Promise<DocumentStage> | undefined
+  const stageFor = (args: Record<string, unknown>): Promise<DocumentStage> => {
+    if (args.stage === 'draft' || args.stage === 'published') return Promise.resolve(args.stage)
+    stagePromise ??= content.capabilities().then(
+      (capabilities) => (capabilities.can.publish ? 'draft' : 'published'),
+      (failure: unknown) => {
+        stagePromise = undefined
+        throw failure
+      },
+    )
+    return stagePromise
+  }
+
+  const sourceOf = (args: Record<string, unknown>): string => {
+    if (typeof args.source !== 'string' || !args.source) {
+      throw new Error('`source` is required — call list_sources to see what exists')
+    }
+    return args.source
+  }
+
+  const commit = async (operation: RecordOperation) => {
+    const changes = applyRecordOperations({}, [operation])
+    const stage = await stageFor({})
+    const result = await content.commit(changes, { stage })
+    return { stage, updatedAt: result.updatedAt, idMap: result.idMap }
+  }
+
+  return [
+    {
+      name: 'list_sources',
+      description:
+        'The collections and globals this site keeps records in, with what you may do to each. Start here before reading or changing records.',
+      inputSchema: object({}),
+      async run() {
+        const items = (await content.schema()).map(({ name, kind, label, can }) => ({ name, kind, label, can }))
+        return { items }
+      },
+    },
+    {
+      name: 'describe_source',
+      description:
+        'The fields of one source — their names, types, which are required, what a select offers, where a relation points — plus its title and order fields.',
+      inputSchema: object({ source: SOURCE }, ['source']),
+      async run(args) {
+        const name = sourceOf(args)
+        const sources = await content.schema()
+        const found = sources.find((source) => source.name === name)
+        if (!found) {
+          throw new Error(`No source named \`${name}\`. Available: ${sources.map((source) => source.name).join(', ')}`)
+        }
+        return found
+      },
+    },
+    {
+      name: 'list_records',
+      description:
+        'The records in one source. Drafts when you may publish, otherwise the live copies; `stage` overrides that. A global has exactly one record, `global`.',
+      inputSchema: object({
+        source: SOURCE,
+        where: {
+          type: 'object',
+          description: 'Equality per field, e.g. { "category": "lamps" }; an array value means any of these',
+        },
+        orderBy: { type: 'string', description: '`field` ascending, `-field` descending' },
+        limit: { type: 'number' },
+        stage: STAGE,
+      }, ['source']),
+      async run(args) {
+        const source = sourceOf(args)
+        const query: RecordQuery = { stage: await stageFor(args) }
+        if (isRecord(args.where)) query.where = args.where
+        if (typeof args.orderBy === 'string') query.orderBy = args.orderBy
+        if (typeof args.limit === 'number') query.limit = args.limit
+        return { items: await content.list(source, query) }
+      },
+    },
+    {
+      name: 'get_record',
+      description: 'One record by id, with every field. Use `global` as the id of a global.',
+      inputSchema: object({ source: SOURCE, id: RECORD_ID, stage: STAGE }, ['source', 'id']),
+      async run(args) {
+        const source = sourceOf(args)
+        const id = String(args.id ?? '')
+        const record = await content.get(source, id, { stage: await stageFor(args) })
+        if (!record) throw new Error(`No record \`${id}\` in \`${source}\``)
+        return record
+      },
+    },
+    {
+      name: 'set_record',
+      description:
+        'Change some fields of one record. Fields you do not name are left alone. Goes to the draft when you may publish, otherwise straight to what visitors see.',
+      write: true,
+      inputSchema: object(
+        {
+          source: SOURCE,
+          id: RECORD_ID,
+          data: { type: 'object', description: 'Field values to merge in, e.g. { "title": "Autumn sale" }' },
+        },
+        ['source', 'id', 'data'],
+      ),
+      async run(args) {
+        const source = sourceOf(args)
+        const id = args.id as string
+        const { stage, updatedAt } = await commit({
+          op: 'set-record',
+          source,
+          id,
+          data: args.data as Record<string, unknown>,
+        })
+        return { source, id, stage, updatedAt }
+      },
+    },
+    {
+      name: 'create_record',
+      description:
+        'Add a record to a collection. Returns the id the server gave it, which is what you pass to set_record or delete_record afterwards.',
+      write: true,
+      inputSchema: object(
+        {
+          source: SOURCE,
+          data: { type: 'object', description: 'Field values; describe_source says which are required' },
+          id: { type: 'string', description: 'An id to ask for; the server may choose its own' },
+        },
+        ['source', 'data'],
+      ),
+      async run(args) {
+        const source = sourceOf(args)
+        const tempId = typeof args.id === 'string' && args.id ? args.id : newRecordId()
+        const { stage, updatedAt, idMap } = await commit({
+          op: 'create-record',
+          source,
+          id: tempId,
+          data: args.data as Record<string, unknown>,
+        })
+        return { source, id: idMap[tempId] ?? tempId, stage, updatedAt }
+      },
+    },
+    {
+      name: 'delete_record',
+      description: 'Remove a record. A draft delete hides it from editors now and from visitors once published.',
+      write: true,
+      inputSchema: object({ source: SOURCE, id: RECORD_ID }, ['source', 'id']),
+      async run(args) {
+        const source = sourceOf(args)
+        const id = args.id as string
+        const { stage, updatedAt } = await commit({ op: 'delete-record', source, id })
+        return { source, id, stage, deleted: true, updatedAt }
+      },
+    },
+    {
+      name: 'reorder_records',
+      description:
+        "Put a collection's records in this order. Only works for a source with an order field; describe_source shows it.",
+      write: true,
+      inputSchema: object(
+        {
+          source: SOURCE,
+          order: { type: 'array', items: { type: 'string' }, description: 'Record ids, first to last' },
+        },
+        ['source', 'order'],
+      ),
+      async run(args) {
+        const source = sourceOf(args)
+        const order = args.order as string[]
+        const { stage, updatedAt } = await commit({ op: 'reorder-records', source, order })
+        return { source, order, stage, updatedAt }
+      },
+    },
+    {
+      name: 'publish_records',
+      description:
+        'Make the drafts of these records the copies visitors see. Changes a live site — ask before using it.',
+      write: true,
+      inputSchema: object(
+        {
+          records: {
+            type: 'object',
+            description: 'Ids to publish, by source, e.g. { "products": ["a1", "b2"] }',
+            additionalProperties: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        ['records'],
+      ),
+      async run(args) {
+        if (!content.publish) throw new Error('This content client cannot publish; ask the site owner to do it')
+        if (!isRecord(args.records)) throw new Error('`records` must map each source to a list of ids')
+        const records: Record<string, string[]> = {}
+        for (const [source, ids] of Object.entries(args.records)) {
+          if (!Array.isArray(ids)) throw new Error(`\`records.${source}\` must be a list of ids`)
+          records[source] = ids.map(String)
+        }
+        await content.publish(records)
+        return { published: records }
+      },
+    },
+  ]
 }
 
 /* -------------------------------------------------------------- transports */
@@ -704,6 +930,13 @@ const BREAKPOINT = {
   enum: ['base', 'sm', 'md', 'lg', 'xl'],
   description: 'Applies from this width up. `base` (the default) applies everywhere.',
 }
+const SOURCE = { type: 'string', description: 'Source name, as shown by list_sources' }
+const RECORD_ID = { type: 'string', description: 'Record id, as shown by list_records' }
+const STAGE = {
+  type: 'string',
+  enum: ['draft', 'published'],
+  description: 'Which copy to read. Defaults to the draft when you may publish, otherwise the live copy.',
+}
 
 function object(properties: Record<string, unknown>, required: string[] = []): Record<string, unknown> {
   return { type: 'object', properties, ...(required.length ? { required } : {}) }
@@ -722,7 +955,7 @@ function json(body: unknown): Response {
 }
 
 function describeFailure(failure: unknown): string {
-  if (failure instanceof OperationError) {
+  if (failure instanceof OperationError || failure instanceof RecordOperationError) {
     return `Operation ${failure.index} was refused: ${failure.message}`
   }
   return failure instanceof Error ? failure.message : String(failure)
