@@ -1,36 +1,100 @@
-const ALLOWED_TAGS = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'br', 'span', 'a', 'code', 'mark', 'sup', 'sub'])
+/** The formatting a line of text may carry: what a heading or a button label needs, and no more. */
+const INLINE_TAGS = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'br', 'span', 'a', 'code', 'mark', 'sup', 'sub'])
+
+/** The inline set plus the structure of a document: what a rich text field holds. */
+const BLOCK_TAGS = new Set([
+  ...INLINE_TAGS,
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'p',
+  'ul',
+  'ol',
+  'li',
+  'blockquote',
+  'img',
+])
+
+/**
+ * Elements the block profile removes *with* their subtree. Unwrapping is right
+ * for a `<div>` — its text is content — but the body of a `<script>` or a
+ * `<style>` is code, and an `<svg>` or `<math>` is a second document with its
+ * own script elements in it.
+ */
+const REMOVED_TAGS = new Set(['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math'])
+
+/**
+ * How much of HTML a piece of text may hold. `inline` is a line — a heading, a
+ * label, a paragraph edited in place. `block` is a document — a rich text field
+ * with headings, lists, links and images of its own.
+ */
+export type SanitizeProfile = 'inline' | 'block'
+
+export interface SanitizeHtmlOptions {
+  /** Defaults to `inline`. */
+  profile?: SanitizeProfile
+}
 
 /**
  * Rich text typed into the editor is stored as HTML. Editors are trusted, but a
  * compromised overrides store should not be able to run script on your site, so
  * strip everything outside a small formatting whitelist.
  */
-export function sanitizeHtml(html: string): string {
+export function sanitizeHtml(html: string, options: SanitizeHtmlOptions = {}): string {
+  const profile = options.profile ?? 'inline'
   if (typeof document === 'undefined') {
-    // Server side: fall back to a conservative regex pass.
+    // Server side: fall back to a conservative regex pass. It is the same pass
+    // for either profile — without a parser there is no tree to apply a
+    // whitelist to, so the server strips what executes and stores the rest, and
+    // the browser pass below is what runs before the markup reaches a page.
     return html
       .replace(/<\s*(script|style|iframe|object|embed)[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
       .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
       .replace(/javascript:/gi, '')
   }
+  const allowed = profile === 'block' ? BLOCK_TAGS : INLINE_TAGS
   const template = document.createElement('template')
   template.innerHTML = html
   const walk = (node: Element) => {
     for (const child of [...node.children]) {
-      if (!ALLOWED_TAGS.has(child.tagName.toLowerCase())) {
+      const tag = child.tagName.toLowerCase()
+      if (!allowed.has(tag)) {
+        if (profile === 'block' && REMOVED_TAGS.has(tag)) {
+          child.remove()
+          continue
+        }
+        // Clean the subtree *before* unwrapping it: the children land among
+        // `node`'s, after the snapshot this loop is walking was taken, so this
+        // is their only visit.
+        walk(child)
         child.replaceWith(...child.childNodes)
         continue
       }
       for (const attribute of [...child.attributes]) {
-        const name = attribute.name.toLowerCase()
-        const isSafeHref = name === 'href' && !/^\s*javascript:/i.test(attribute.value)
-        if (!isSafeHref) child.removeAttribute(attribute.name)
+        if (!keepHtmlAttribute(profile, tag, attribute.name.toLowerCase(), attribute.value)) {
+          child.removeAttribute(attribute.name)
+        }
       }
       walk(child)
     }
   }
   walk(template.content as unknown as Element)
   return template.innerHTML
+}
+
+/**
+ * The only attributes that survive: a link's destination, and an image's
+ * source and description. `style`, `class`, `id` and every handler go — a
+ * document's look comes from the site, not from what was pasted into it.
+ */
+function keepHtmlAttribute(profile: SanitizeProfile, tag: string, name: string, value: string): boolean {
+  if (profile === 'inline') return name === 'href' && !/^\s*javascript:/i.test(value)
+  if (tag === 'a') return name === 'href' && safeUrl(value) !== undefined
+  if (tag === 'img') return name === 'alt' || (name === 'src' && safeUrl(value, { allowDataImage: true }) !== undefined)
+  return false
 }
 
 /**
