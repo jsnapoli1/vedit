@@ -257,10 +257,17 @@ export function emptyDocument(key: string): VeditDocument {
   }
 }
 
-/** An image already available to the site, offered in the image picker. */
+/**
+ * A file the site can use: an image in the picker, or an upload a record
+ * points at. Only `url` is promised; the rest is there when the store knows it.
+ */
 export interface VeditAsset {
   url: string
+  id?: string
+  kind?: 'image' | 'file' | 'video'
   name?: string
+  mime?: string
+  size?: number
   width?: number
   height?: number
 }

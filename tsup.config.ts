@@ -25,7 +25,17 @@ export default defineConfig([
   },
   {
     ...shared,
-    // Deliberately without the directive: these run on the server.
-    entry: { server: 'src/server.ts', api: 'src/api.ts', mcp: 'src/mcp.ts' },
+    // Deliberately without the directive: these run on the server. `content` is
+    // pure and runs anywhere, but it has no React in it either, so the directive
+    // would only be noise.
+    entry: {
+      server: 'src/server.ts',
+      api: 'src/api.ts',
+      mcp: 'src/mcp.ts',
+      content: 'src/content.ts',
+      'content-server': 'src/content-server.ts',
+      media: 'src/media.ts',
+      auth: 'src/auth.ts',
+    },
   },
 ])

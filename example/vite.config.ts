@@ -13,7 +13,13 @@ export default defineConfig({
     },
   },
   resolve: {
+    // Subpaths first: Vite matches aliases in insertion order, and the bare
+    // `vedit` key would otherwise turn `vedit/content` into `index.ts/content`.
     alias: {
+      'vedit/content': fileURLToPath(new URL('../src/content.ts', import.meta.url)),
+      'vedit/content-server': fileURLToPath(new URL('../src/content-server.ts', import.meta.url)),
+      'vedit/media': fileURLToPath(new URL('../src/media.ts', import.meta.url)),
+      'vedit/auth': fileURLToPath(new URL('../src/auth.ts', import.meta.url)),
       vedit: fileURLToPath(new URL('../src/index.ts', import.meta.url)),
     },
   },

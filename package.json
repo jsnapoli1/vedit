@@ -34,6 +34,26 @@
       "import": "./dist/internal.js",
       "require": "./dist/internal.cjs"
     },
+    "./content": {
+      "types": "./dist/content.d.ts",
+      "import": "./dist/content.js",
+      "require": "./dist/content.cjs"
+    },
+    "./content-server": {
+      "types": "./dist/content-server.d.ts",
+      "import": "./dist/content-server.js",
+      "require": "./dist/content-server.cjs"
+    },
+    "./media": {
+      "types": "./dist/media.d.ts",
+      "import": "./dist/media.js",
+      "require": "./dist/media.cjs"
+    },
+    "./auth": {
+      "types": "./dist/auth.d.ts",
+      "import": "./dist/auth.js",
+      "require": "./dist/auth.cjs"
+    },
     "./package.json": "./package.json"
   },
   "files": [
