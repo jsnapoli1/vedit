@@ -3,9 +3,16 @@
  * and the Fetch handler that serves them. Deliberately without `'use client'`.
  */
 
-/** The layout of the tables `sqlContentStore` creates. Read from `vedit_meta` on init. */
-export const STORE_SCHEMA_VERSION = 1
+export { STORE_SCHEMA_VERSION, contentStore } from './content-server/store'
+export { memoryContentStore, memoryRowStore } from './content-server/memory'
+export { sqlContentStore, sqlRowStore } from './content-server/sql'
+export { betterSqliteDriver, d1Driver, nodeSqliteDriver, numberPlaceholders, postgresDriver } from './content-server/drivers'
+export { contentClientFromStore } from './content-server/client'
 
+export type { MemoryContentStoreOptions } from './content-server/memory'
+export type { SqlContentStoreOptions, SqlDialect, SqlRowStoreOptions } from './content-server/sql'
+export type { D1Like, PgLike, SqliteLike } from './content-server/drivers'
+export type { ContentClientFromStoreOptions } from './content-server/client'
 export type {
   ContentSpec,
   Row,
@@ -23,6 +30,9 @@ export type {
   RecordQuery,
   RecordVersion,
   SourceSchema,
+  VeditCapabilities,
+  VeditContentClient,
   VeditRecord,
+  VeditUser,
 } from './content/types'
 export type { DocumentStage } from './core/types'
