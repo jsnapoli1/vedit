@@ -29,6 +29,7 @@ import { VeditErrorBoundary, type VeditErrorBoundaryProps } from './ErrorBoundar
 import { componentManifest, type ComponentRegistry, type ComponentSummary } from './registry'
 import { RealtimeSession, type SessionSnapshot } from './session'
 import type { Peer, VeditRealtime } from './realtime'
+import type { VeditContentClient } from '../content/types'
 
 export interface VeditConfig {
   breakpoints: BreakpointWidths
@@ -123,8 +124,20 @@ export interface VeditProviderProps {
   /**
    * Whether the editor may be opened at all. Defaults to true in development or
    * when the URL carries `?vedit=1`, so production visitors never load the UI.
+   * `'auth'` leaves it to the content client: on when this person may write or
+   * could sign in, off for everyone else.
    */
-  enabled?: boolean
+  enabled?: boolean | 'auth'
+  /**
+   * Where records live, when the site lets vedit own its content. Turns on the
+   * Data panel, record bindings and sign-in. See `vedit/content`.
+   */
+  content?: VeditContentClient
+  /**
+   * Keys of documents shared by every page — a nav, a footer. Loaded alongside
+   * this page's document; an `Editable` with a matching `scope` edits them.
+   */
+  sharedKeys?: string[]
   /** Open the editor immediately. */
   defaultEditing?: boolean
   /** Let the editor target elements that aren't wrapped in `<Editable>`. */
@@ -235,12 +248,29 @@ export function VeditProvider({
   onError,
   onSave,
   components,
+  content,
+  sharedKeys,
 }: VeditProviderProps) {
   const key = documentKey ?? (typeof window !== 'undefined' ? window.location.pathname : 'default')
   const [store] = useState(
-    () => new VeditStore({ key, adapter: adapter ?? localStorageAdapter(), autosaveMs }),
+    () =>
+      new VeditStore({
+        key,
+        adapter: adapter ?? localStorageAdapter(),
+        autosaveMs,
+        content,
+        shared: sharedKeys,
+      }),
   )
-  const isEnabled = enabled ?? defaultEnabled()
+  // With `enabled="auth"` the answer arrives with the capabilities, so it is
+  // read from the store rather than decided once. `'required'` still counts as
+  // on: the editor host is what shows the sign-in form.
+  const auth = useSyncExternalStore(
+    store.subscribe,
+    () => store.getState().auth,
+    () => store.getState().auth,
+  )
+  const isEnabled = enabled === 'auth' ? auth !== 'none' : (enabled ?? defaultEnabled())
   // When this page is the artboard inside someone else's canvas it renders no
   // chrome of its own; it just hands its store to the editor in the parent window.
   const [framedByEditor] = useState(isCanvasChild)
@@ -271,7 +301,11 @@ export function VeditProvider({
 
   useEffect(() => {
     // The framed page is the editor's own copy, so it starts from the draft.
-    if (!initialDocument) void store.load(framedByEditor ? 'draft' : 'published')
+    const stage = framedByEditor ? 'draft' : 'published'
+    if (!initialDocument) void store.load(stage)
+    // A server-rendered page already has its document; it still needs the
+    // shared ones and, with a content client, to know who is looking.
+    else void store.loadSite(stage)
   }, [store, initialDocument, framedByEditor])
 
   useEffect(() => {
@@ -432,9 +466,19 @@ function EditorCrashed({
 
 /** Emits the override stylesheet. Rendered in view mode too — visitors see the edits. */
 function OverrideStyles() {
-  const { config } = useVeditContext()
+  const { store, config } = useVeditContext()
   const doc = useVeditState((state) => state.doc)
-  const css = useMemo(() => documentToCss(doc, config.breakpoints), [doc, config.breakpoints])
+  const shared = useVeditState((state) => state.shared)
+  const css = useMemo(
+    () =>
+      store
+        .documents()
+        .map(({ doc: each }) => documentToCss(each, config.breakpoints))
+        .filter(Boolean)
+        .join('\n'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [doc, shared, config.breakpoints],
+  )
   if (!css) return null
   return <style data-vedit-overrides="" dangerouslySetInnerHTML={{ __html: css }} />
 }

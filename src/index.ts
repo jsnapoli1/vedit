@@ -107,6 +107,7 @@ export type {
   FormRule,
   FormValues,
   EditorTool,
+  HistoryEntry,
   InsertedNode,
   NodeKind,
   NodeOverride,
@@ -123,3 +124,16 @@ export type {
   VeditState,
   VeditVersion,
 } from './core/types'
+export type { Capability } from './core/store'
+
+/** The shapes the store speaks when a site opts into `vedit/content`. */
+export type {
+  RecordBinding,
+  RecordChanges,
+  RecordOperation,
+  SourceSchema,
+  VeditCapabilities,
+  VeditContentClient,
+  VeditRecord,
+  VeditUser,
+} from './content/types'

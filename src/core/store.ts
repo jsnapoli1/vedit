@@ -1,7 +1,21 @@
 import type { RealtimeSession } from './session'
 import { inspectDocument } from './migrate'
-import { applyOperations, newInsertedId, type VeditOperation } from './operations'
-import { parseItemId } from '../runtime/repeat'
+import { applyOperations, newInsertedId, OperationError, type VeditOperation } from './operations'
+import { itemId, parseItemId } from '../runtime/repeat'
+import { applyRecordOperations } from '../content/operations'
+import { overlayChanges } from '../content/overlay'
+import { newRecordId, remapIds } from '../content/ids'
+import { isAsset } from '../content/assets'
+import type {
+  RecordBinding,
+  RecordChanges,
+  RecordOperation,
+  RecordQuery,
+  SourceSchema,
+  VeditCapabilities,
+  VeditContentClient,
+  VeditRecord,
+} from '../content/types'
 import {
   deleteStyles,
   mergeStyles,
@@ -14,6 +28,7 @@ import {
   type DesignToken,
   type Breakpoint,
   type EditorTool,
+  type HistoryEntry,
   type InsertedNode,
   type NodeKind,
   type NodeOverride,
@@ -31,6 +46,20 @@ import {
 
 const HISTORY_LIMIT = 100
 
+/** What the store may be asked whether someone can do. */
+export type Capability = 'write' | 'publish' | 'upload' | 'data:write' | 'data:delete'
+
+/**
+ * Override keys that are the *content* of a node rather than its look. On a
+ * bound node these belong to the record, in this order of preference when a
+ * patch carries more than one: rich text wins over plain text, as it does in the
+ * document.
+ */
+const BOUND_KEYS = ['html', 'text', 'src', 'href', 'alt'] as const
+
+/** `null` names the page's own document; a string names a shared one. */
+type DocKey = string | null
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
@@ -46,6 +75,10 @@ export class VeditStore {
   private registrySnapshot: RegisteredNode[] = []
   /** Exposed so the provider can hand the same adapter to the realtime session. */
   readonly adapter: VeditAdapter
+  /** Where records live, when the site has opted into `vedit/content`. */
+  readonly content: VeditContentClient | null
+  /** Keys of the documents shared across pages, in the order they were given. */
+  readonly sharedKeys: string[]
   private autosaveTimer: ReturnType<typeof setTimeout> | null = null
   private noticeTimer: ReturnType<typeof setTimeout> | null = null
   readonly autosaveMs: number
@@ -60,10 +93,20 @@ export class VeditStore {
     this.set({ sessionId: session?.self.id ?? null })
   }
 
-  constructor(opts: { key: string; adapter: VeditAdapter; autosaveMs?: number }) {
+  constructor(opts: {
+    key: string
+    adapter: VeditAdapter
+    content?: VeditContentClient
+    shared?: string[]
+    autosaveMs?: number
+  }) {
     const doc = emptyDocument(opts.key)
     this.adapter = opts.adapter
+    this.content = opts.content ?? null
+    this.sharedKeys = [...(opts.shared ?? [])]
     this.autosaveMs = opts.autosaveMs ?? 0
+    const shared: Record<string, VeditDocument> = {}
+    for (const key of this.sharedKeys) shared[key] = emptyDocument(key)
     this.state = {
       doc,
       saved: doc,
@@ -85,6 +128,16 @@ export class VeditStore {
       dropIndicator: null,
       past: [],
       future: [],
+      data: {},
+      records: {},
+      schema: null,
+      pendingPublish: {},
+      capabilities: null,
+      // Without a client there is nobody to sign in to, so the editor may open.
+      auth: this.content ? 'none' : 'ok',
+      shared,
+      sharedSaved: shared,
+      sharedPublished: {},
     }
   }
 
@@ -162,21 +215,108 @@ export class VeditStore {
     return id ? this.registry.get(id) : undefined
   }
 
+  /* ------------------------------------------------------------- documents */
+
+  /** The page's document and every shared one, in a fixed order. */
+  documents(): Array<{ key: string; doc: VeditDocument }> {
+    return [
+      { key: this.state.doc.key, doc: this.state.doc },
+      ...this.sharedKeys.map((key) => ({ key, doc: this.documentAt(key) })),
+    ]
+  }
+
+  /** The document a node's overrides live in: a shared one when it is scoped, else the page's. */
+  docOf(id: string): VeditDocument {
+    return this.documentAt(this.docKeyOf(id))
+  }
+
+  private documentAt(key: DocKey): VeditDocument {
+    if (key === null) return this.state.doc
+    return this.state.shared[key] ?? emptyDocument(key)
+  }
+
+  /**
+   * Which document `id` belongs to. A registered node says so with its scope;
+   * without one, the answer comes from whatever it sits inside — a placed node
+   * from its parent, an item of a repeat from its template — so a link added to
+   * a nav that lives in the site document lands in the site document too.
+   */
+  private docKeyOf(id: string): DocKey {
+    if (!this.sharedKeys.length) return null
+    const seen = new Set<string>()
+    let current: string | null = id
+    while (current && !seen.has(current)) {
+      seen.add(current)
+      const registered: RegisteredNode | undefined =
+        this.registry.get(current) ?? this.registry.get(parseItemId(current)?.templateId ?? '')
+      if (registered) {
+        if (registered.scope) return registered.scope
+        current = registered.parentId
+        continue
+      }
+      const placed = this.findInserted(current)
+      if (!placed) return null
+      if (placed.key !== null) return placed.key
+      current = placed.node.parentId
+    }
+    return null
+  }
+
+  private findInserted(id: string): { key: DocKey; node: InsertedNode } | null {
+    const own = this.state.doc.inserted.find((node) => node.id === id)
+    if (own) return { key: null, node: own }
+    for (const key of this.sharedKeys) {
+      const node = this.state.shared[key]?.inserted.find((candidate) => candidate.id === id)
+      if (node) return { key, node }
+    }
+    return null
+  }
+
   /* ------------------------------------------------------------------- doc */
 
-  private commit(doc: VeditDocument, opts: { history?: boolean } = {}) {
+  private entry(): HistoryEntry {
+    return { doc: this.state.doc, data: this.state.data, shared: this.state.shared }
+  }
+
+  /**
+   * Record one change — to the page, to a shared document, to the pending record
+   * edits, or several at once — as one undo step.
+   */
+  private commitEntry(next: Partial<HistoryEntry>, opts: { history?: boolean } = {}) {
     const history = opts.history !== false
-    const past = history ? [...this.state.past, this.state.doc].slice(-HISTORY_LIMIT) : this.state.past
-    this.set({
-      doc: { ...doc, updatedAt: new Date().toISOString() },
-      past,
+    const stamp = new Date().toISOString()
+    const patch: Partial<VeditState> = {
+      past: history ? [...this.state.past, this.entry()].slice(-HISTORY_LIMIT) : this.state.past,
       future: history ? [] : this.state.future,
-    })
+    }
+    if (next.doc) patch.doc = { ...next.doc, updatedAt: stamp }
+    if (next.data) patch.data = next.data
+    if (next.shared) {
+      const shared = { ...this.state.shared }
+      for (const [key, doc] of Object.entries(next.shared)) shared[key] = { ...doc, updatedAt: stamp }
+      patch.shared = shared
+    }
+    this.set(patch)
     this.scheduleAutosave()
   }
 
+  private commit(doc: VeditDocument, opts: { history?: boolean } = {}) {
+    this.commitEntry({ doc }, opts)
+  }
+
+  /** Commit several documents, keyed the way `docKeyOf` keys them, as one step. */
+  private commitDocs(docs: Map<DocKey, VeditDocument>, extra: { data?: RecordChanges } = {}, opts: { history?: boolean } = {}) {
+    const next: Partial<HistoryEntry> = {}
+    for (const [key, doc] of docs) {
+      if (key === null) next.doc = doc
+      else (next.shared ??= {})[key] = doc
+    }
+    if (extra.data) next.data = extra.data
+    this.commitEntry(next, opts)
+  }
+
   getOverride(id: string): NodeOverride {
-    return this.state.doc.nodes[id] ?? {}
+    return this.docOf(id).nodes[id] ?? {}
   }
 
   /**
@@ -211,35 +351,72 @@ export class VeditStore {
    */
   resetRepeatItem(id: string) {
     if (!parseItemId(id)) return
-    const nodes = { ...this.state.doc.nodes }
-    if (!(id in nodes)) return
+    const key = this.docKeyOf(id)
+    const doc = this.documentAt(key)
+    if (!(id in doc.nodes)) return
+    const nodes = { ...doc.nodes }
     delete nodes[id]
-    this.commit({ ...this.state.doc, nodes })
+    this.commitDocs(new Map([[key, { ...doc, nodes }]]))
+  }
+
+  /**
+   * Change one or more nodes' overrides and commit the lot as one step. Each edit
+   * names the node that was clicked; the document it lives in comes from that,
+   * and the node actually written follows the repeat scope unless `redirect` is
+   * off. Documents are grouped so a multi-selection spanning the page and a
+   * shared nav is still one undo.
+   */
+  private editNodes(
+    edits: Array<[rawId: string, change: (override: NodeOverride) => NodeOverride]>,
+    opts: { history?: boolean; redirect?: boolean; data?: RecordChanges } = {},
+  ) {
+    const docs = new Map<DocKey, VeditDocument>()
+    for (const [rawId, change] of edits) {
+      const key = this.docKeyOf(rawId)
+      const id = opts.redirect === false ? rawId : this.writeTarget(rawId)
+      const doc = docs.get(key) ?? this.documentAt(key)
+      const nodes = { ...doc.nodes }
+      const pruned = pruneOverride(change(clone(nodes[id] ?? {})))
+      if (pruned) nodes[id] = pruned
+      else delete nodes[id]
+      docs.set(key, { ...doc, nodes })
+    }
+    this.commitDocs(docs, { data: opts.data }, opts)
+  }
+
+  /**
+   * Split a patch for a bound node: the content goes to the record it shows,
+   * the rest (visibility, styling, a class) stays with the document.
+   */
+  private splitBound(
+    binding: RecordBinding,
+    patch: NodeOverride,
+  ): { record: Record<string, unknown> | null; rest: NodeOverride } {
+    const rest: NodeOverride = { ...patch }
+    let value: unknown
+    let found = false
+    for (const key of BOUND_KEYS) {
+      if (!(key in patch)) continue
+      const candidate = rest[key]
+      delete rest[key]
+      if (!found && candidate !== undefined) {
+        found = true
+        // Alt text describes the asset, so it is kept on the asset rather than
+        // replacing it.
+        if (key === 'alt') {
+          const current = this.recordValue(binding)
+          value = isAsset(current) ? { ...current, alt: candidate } : { url: current ?? '', alt: candidate }
+        } else {
+          value = candidate
+        }
+      }
+    }
+    return { record: found ? { [binding.field]: value } : null, rest }
   }
 
   /** Merge a patch into a node's override. `undefined` values delete keys. */
   update(rawId: string, patch: NodeOverride, opts: { history?: boolean } = {}) {
-    // Inside a repeat this is where "all cards" versus "this card" is decided.
-    // Doing it here rather than at each call site means no panel can forget.
-    const id = this.writeTarget(rawId)
-    const current = this.getOverride(id)
-    const merged: NodeOverride = { ...current, ...patch }
-    if (patch.style) merged.style = { ...current.style, ...patch.style }
-    if (patch.responsive) {
-      merged.responsive = { ...current.responsive }
-      for (const [bp, styles] of Object.entries(patch.responsive)) {
-        const key = bp as Exclude<Breakpoint, 'base'>
-        merged.responsive[key] = { ...current.responsive?.[key], ...styles }
-      }
-    }
-    for (const [key, value] of Object.entries(patch)) {
-      if (value === undefined) delete (merged as Record<string, unknown>)[key]
-    }
-    const nodes = { ...this.state.doc.nodes }
-    const pruned = pruneOverride(merged)
-    if (pruned) nodes[id] = pruned
-    else delete nodes[id]
-    this.commit({ ...this.state.doc, nodes }, opts)
+    this.updateMany([rawId], patch, opts)
   }
 
   /** The cell of the state × breakpoint matrix the editor is currently writing to. */
@@ -255,12 +432,7 @@ export class VeditStore {
   ) {
     // Every style write lands here, so the repeat scope is honoured for styles
     // exactly as it is for content.
-    const id = this.writeTarget(rawId)
-    const nodes = { ...this.state.doc.nodes }
-    const pruned = pruneOverride(change(clone(nodes[id] ?? {})))
-    if (pruned) nodes[id] = pruned
-    else delete nodes[id]
-    this.commit({ ...this.state.doc, nodes }, opts)
+    this.editNodes([[rawId, change]], opts)
   }
 
   /** Set style declarations in the active state and breakpoint. */
@@ -272,13 +444,10 @@ export class VeditStore {
   /** Write declarations on several nodes as one change, e.g. re-ordering siblings. */
   setStyleMany(entries: Array<[string, StyleMap]>, opts: { history?: boolean } = {}) {
     const { state, breakpoint } = this.cell
-    const nodes = { ...this.state.doc.nodes }
-    for (const [id, styles] of entries) {
-      const pruned = pruneOverride(mergeStyles(clone(nodes[id] ?? {}), state, breakpoint, styles))
-      if (pruned) nodes[id] = pruned
-      else delete nodes[id]
-    }
-    this.commit({ ...this.state.doc, nodes }, opts)
+    this.editNodes(
+      entries.map(([id, styles]) => [id, (override) => mergeStyles(override, state, breakpoint, styles)]),
+      { ...opts, redirect: false },
+    )
   }
 
   setDropIndicator(rect: VeditState['dropIndicator']) {
@@ -315,30 +484,72 @@ export class VeditStore {
       if (patch.tokens) next.tokens = patch.tokens
       return next
     }
+    const mergeEntry = (entry: HistoryEntry): HistoryEntry => ({ ...entry, doc: merge(entry.doc) })
 
     // Their change is merged into the undo stack as well as the live document.
     // Undo walks back through *your* actions; stepping back should not take
     // someone else's work with it.
     this.set({
       doc: merge(this.state.doc),
-      past: this.state.past.map(merge),
-      future: this.state.future.map(merge),
+      past: this.state.past.map(mergeEntry),
+      future: this.state.future.map(mergeEntry),
     })
   }
 
   /**
    * Apply a batch of document operations — the same vocabulary the HTTP API and
    * the MCP server speak. One undo step for the batch, whatever it contains.
+   *
+   * Operations are grouped by the document they touch: an insert into a nav that
+   * lives in the site document changes the site document, in the same step as
+   * whatever the batch did to the page.
    */
   apply(operations: VeditOperation[]): string[] {
-    const { doc, changed } = applyOperations(this.state.doc, operations)
-    this.commit(doc)
+    if (!Array.isArray(operations)) throw new OperationError('Expected an array of operations', 0, operations)
+    const groups = new Map<DocKey, { operations: VeditOperation[]; positions: number[] }>()
+    operations.forEach((operation, index) => {
+      const key = this.operationDocKey(operation)
+      const group = groups.get(key) ?? { operations: [], positions: [] }
+      group.operations.push(operation)
+      group.positions.push(index)
+      groups.set(key, group)
+    })
+
+    const docs = new Map<DocKey, VeditDocument>()
+    const changed: string[] = []
+    for (const [key, group] of groups) {
+      try {
+        const result = applyOperations(this.documentAt(key), group.operations)
+        docs.set(key, result.doc)
+        changed.push(...result.changed)
+      } catch (error) {
+        // Report the position in the batch the caller sent, not in the group.
+        if (error instanceof OperationError) {
+          throw new OperationError(error.message, group.positions[error.index] ?? error.index, error.operation)
+        }
+        throw error
+      }
+    }
+    this.commitDocs(docs)
     return changed
+  }
+
+  private operationDocKey(operation: VeditOperation): DocKey {
+    if (!operation || typeof operation !== 'object') return null
+    switch (operation.op) {
+      case 'insert-node':
+        return typeof operation.parentId === 'string' ? this.docKeyOf(operation.parentId) : null
+      case 'set-token':
+      case 'remove-token':
+        return null
+      default:
+        return typeof operation.id === 'string' ? this.docKeyOf(operation.id) : null
+    }
   }
 
   /** Snapshot the document so a drag gesture collapses into one undo step. */
   beginHistory() {
-    this.set({ past: [...this.state.past, this.state.doc].slice(-HISTORY_LIMIT), future: [] })
+    this.set({ past: [...this.state.past, this.entry()].slice(-HISTORY_LIMIT), future: [] })
   }
 
   /** Remove a declaration from the active cell, falling back to the site's styling. */
@@ -354,37 +565,51 @@ export class VeditStore {
   /** Remove declarations from several nodes at once, for a multi-selection edit. */
   clearStylesMany(ids: string[], properties: string[]) {
     const { state, breakpoint } = this.cell
-    const nodes = { ...this.state.doc.nodes }
-    for (const id of ids) {
-      const pruned = pruneOverride(deleteStyles(clone(nodes[id] ?? {}), state, breakpoint, properties))
-      if (pruned) nodes[id] = pruned
-      else delete nodes[id]
-    }
-    this.commit({ ...this.state.doc, nodes })
+    this.editNodes(
+      ids.map((id) => [id, (override) => deleteStyles(override, state, breakpoint, properties)]),
+      { redirect: false },
+    )
   }
 
-  /** Apply a content patch to several nodes at once. */
-  updateMany(rawIds: string[], patch: NodeOverride) {
-    const nodes = { ...this.state.doc.nodes }
+  /**
+   * Apply a content patch to several nodes at once.
+   *
+   * A node bound to a record takes its content from the record, so text, rich
+   * text, a source or a destination written to it becomes a record edit rather
+   * than a document one. That is decided on the node that was clicked, before
+   * the repeat scope redirects the write: the binding names one row, and "all
+   * cards" has no meaning for it. Whatever is left in the patch — visibility,
+   * a class — goes to the document the usual way, in the same undo step.
+   */
+  updateMany(rawIds: string[], patch: NodeOverride, opts: { history?: boolean } = {}) {
+    const records: RecordOperation[] = []
+    const entries: Array<[string, (override: NodeOverride) => NodeOverride]> = []
     // Deduplicated: several selected cards of one repeat share a template, so
     // without this the same write would be applied once per selected item.
-    const ids = [...new Set(rawIds.map((id) => this.writeTarget(id)))]
-    for (const id of ids) {
-      const merged: NodeOverride = { ...(nodes[id] ?? {}), ...patch }
-      for (const [key, value] of Object.entries(patch)) {
-        if (value === undefined) delete (merged as Record<string, unknown>)[key]
+    const targets = new Set<string>()
+    for (const rawId of rawIds) {
+      const binding = this.registry.get(rawId)?.binding
+      let rest = patch
+      if (binding) {
+        const split = this.splitBound(binding, patch)
+        rest = split.rest
+        if (split.record) records.push({ op: 'set-record', source: binding.source, id: binding.id, data: split.record })
       }
-      const pruned = pruneOverride(merged)
-      if (pruned) nodes[id] = pruned
-      else delete nodes[id]
+      if (!Object.keys(rest).length) continue
+      const target = this.writeTarget(rawId)
+      if (targets.has(target)) continue
+      targets.add(target)
+      entries.push([rawId, (override) => mergeContent(override, rest)])
     }
-    this.commit({ ...this.state.doc, nodes })
+    const data = records.length ? applyRecordOperations(this.state.data, records) : undefined
+    if (entries.length) this.editNodes(entries, { ...opts, data })
+    else if (data) this.commitEntry({ data }, opts)
   }
 
   /** Read a declaration from the active cell. */
   styleValue(id: string, property: string): string | number | undefined {
     const { state, breakpoint } = this.cell
-    return readStyleValue(this.state.doc.nodes[id], state, breakpoint, property)
+    return readStyleValue(this.docOf(id).nodes[id], state, breakpoint, property)
   }
 
   /**
@@ -397,11 +622,19 @@ export class VeditStore {
    * saves for their own reasons. Opening a page must never write to it.
    */
   stageMigratedProps(id: string, props: Record<string, unknown>, version: number) {
-    const override = this.state.doc.nodes[id] ?? {}
+    const key = this.docKeyOf(id)
+    const override = this.documentAt(key).nodes[id] ?? {}
     if (override.propsVersion === version) return
     const next: NodeOverride = { ...override, props, propsVersion: version }
     const write = (doc: VeditDocument): VeditDocument => ({ ...doc, nodes: { ...doc.nodes, [id]: next } })
-    this.set({ doc: write(this.state.doc), saved: write(this.state.saved) })
+    if (key === null) {
+      this.set({ doc: write(this.state.doc), saved: write(this.state.saved) })
+      return
+    }
+    this.set({
+      shared: { ...this.state.shared, [key]: write(this.documentAt(key)) },
+      sharedSaved: { ...this.state.sharedSaved, [key]: write(this.state.sharedSaved[key] ?? emptyDocument(key)) },
+    })
   }
 
   /** Set one of the props a component declared as editable. */
@@ -458,7 +691,8 @@ export class VeditStore {
     kind: InsertedNode['kind'],
     options: { component?: string; index?: number; shape?: ShapeSpec } = {},
   ): string {
-    const { doc, created } = applyOperations(this.state.doc, [
+    const key = this.docKeyOf(parentId)
+    const { doc, created } = applyOperations(this.documentAt(key), [
       {
         op: 'insert-node',
         parentId,
@@ -468,7 +702,7 @@ export class VeditStore {
         index: options.index,
       },
     ])
-    this.commit(doc)
+    this.commitDocs(new Map([[key, doc]]))
     const id = created[0]
     this.select(id)
     return id
@@ -476,17 +710,19 @@ export class VeditStore {
 
   /** Copy an inserted element, styles and all, right after the original. */
   duplicateInserted(id: string): string | null {
-    const source = this.state.doc.inserted.find((node) => node.id === id)
-    if (!source) return null
+    const placed = this.findInserted(id)
+    if (!placed) return null
+    const { key, node: source } = placed
+    const doc = this.documentAt(key)
     const copyId = newInsertedId(source.parentId)
-    const inserted = this.state.doc.inserted.map((node) =>
+    const inserted = doc.inserted.map((node) =>
       node.parentId === source.parentId && node.index > source.index
         ? { ...node, index: node.index + 1 }
         : node,
     )
     inserted.push({ ...source, id: copyId, index: source.index + 1 })
-    const nodes = { ...this.state.doc.nodes, [copyId]: clone(this.getOverride(id)) }
-    this.commit({ ...this.state.doc, nodes, inserted })
+    const nodes = { ...doc.nodes, [copyId]: clone(doc.nodes[id] ?? {}) }
+    this.commitDocs(new Map([[key, { ...doc, nodes, inserted }]]))
     this.select(copyId)
     return copyId
   }
@@ -498,7 +734,7 @@ export class VeditStore {
 
   /** Shift an inserted element one place earlier or later among its siblings. */
   nudgeOrder(id: string, delta: number) {
-    const node = this.state.doc.inserted.find((candidate) => candidate.id === id)
+    const node = this.findInserted(id)?.node
     if (!node) return
     this.apply([{ op: 'move-node', id, index: Math.max(0, node.index + delta) }])
   }
@@ -509,9 +745,122 @@ export class VeditStore {
   }
 
   insertedFor(parentId: string): InsertedNode[] {
-    return this.state.doc.inserted
+    return this.docOf(parentId).inserted
       .filter((n) => n.parentId === parentId)
       .sort((a, b) => a.index - b.index)
+  }
+
+  /* --------------------------------------------------------------- records */
+
+  /** True when the site has given the editor somewhere to keep records. */
+  get supportsContent(): boolean {
+    return this.content !== null
+  }
+
+  /**
+   * Whether this person may do something. Without a content client there is
+   * nobody to ask, so everything is allowed; with one, nothing is until the
+   * capabilities have been fetched.
+   */
+  can(action: Capability): boolean {
+    if (!this.content) return true
+    const can = this.state.capabilities?.can
+    if (!can) return false
+    switch (action) {
+      case 'write':
+        return can.write
+      case 'publish':
+        return can.publish
+      case 'upload':
+        return can.upload
+      case 'data:write':
+        return can.data.write
+      case 'data:delete':
+        return can.data.delete
+    }
+  }
+
+  /** Fold record operations into the pending changes, as one undo step. */
+  applyRecords(operations: RecordOperation[]) {
+    this.commitEntry({ data: applyRecordOperations(this.state.data, operations) })
+  }
+
+  setRecord(source: string, id: string, patch: Record<string, unknown>) {
+    this.applyRecords([{ op: 'set-record', source, id, data: patch }])
+  }
+
+  /** Add a record; the id is temporary until Save, when the server picks a real one. */
+  createRecord(source: string, data: Record<string, unknown> = {}): string {
+    const id = newRecordId()
+    this.applyRecords([{ op: 'create-record', source, id, data }])
+    return id
+  }
+
+  deleteRecord(source: string, id: string) {
+    this.applyRecords([{ op: 'delete-record', source, id }])
+  }
+
+  reorderRecords(source: string, order: string[]) {
+    this.applyRecords([{ op: 'reorder-records', source, order }])
+  }
+
+  /** What a bound node shows right now: the pending edit if there is one, else the fetched row. */
+  recordValue(binding: RecordBinding): unknown {
+    const { source, id, field } = binding
+    const entry = this.state.data[source]
+    if (entry?.delete?.includes(id)) return undefined
+    const created = entry?.create?.find((record) => record.id === id)
+    if (created) return created[field]
+    const patch = entry?.update?.[id]
+    if (patch && field in patch) return patch[field]
+    return this.state.records[source]?.find((record) => record.id === id)?.[field]
+  }
+
+  /** The rows of a source with the pending changes applied. */
+  recordsFor(source: string, rows?: VeditRecord[]): VeditRecord[] {
+    const schema = this.state.schema?.find((candidate) => candidate.name === source)
+    return overlayChanges(source, rows ?? this.state.records[source] ?? [], this.state.data, schema)
+  }
+
+  /**
+   * Fetch a source's rows and keep them. Editors read the draft so the page shows
+   * what they last saved; anyone else reads what is live.
+   */
+  async loadRecords(source: string, query: RecordQuery = {}): Promise<VeditRecord[]> {
+    if (!this.content) return this.recordsFor(source)
+    const stage: DocumentStage = this.can('write') ? 'draft' : 'published'
+    const rows = await this.content.list(source, { ...query, stage })
+    this.set({ records: { ...this.state.records, [source]: rows } })
+    return this.recordsFor(source, rows)
+  }
+
+  async loadSchema(): Promise<SourceSchema[]> {
+    if (!this.content) return []
+    const schema = await this.content.schema()
+    this.set({ schema })
+    return schema
+  }
+
+  async refreshCapabilities(): Promise<VeditCapabilities | null> {
+    if (!this.content) return null
+    const capabilities = await this.content.capabilities()
+    this.set({
+      capabilities,
+      auth: capabilities.user ? 'ok' : capabilities.login ? 'required' : 'none',
+    })
+    return capabilities
+  }
+
+  async login(email: string, password: string) {
+    if (!this.content?.login) throw new Error('This site cannot sign you in')
+    await this.content.login(email, password)
+    await this.refreshCapabilities()
+  }
+
+  async logout() {
+    if (!this.content) return
+    await this.content.logout?.()
+    await this.refreshCapabilities()
   }
 
   /* --------------------------------------------------------------- history */
@@ -520,9 +869,11 @@ export class VeditStore {
     const previous = this.state.past.at(-1)
     if (!previous) return
     this.set({
-      doc: previous,
+      doc: previous.doc,
+      data: previous.data,
+      shared: previous.shared,
       past: this.state.past.slice(0, -1),
-      future: [this.state.doc, ...this.state.future].slice(0, HISTORY_LIMIT),
+      future: [this.entry(), ...this.state.future].slice(0, HISTORY_LIMIT),
     })
     this.scheduleAutosave()
   }
@@ -531,15 +882,30 @@ export class VeditStore {
     const next = this.state.future[0]
     if (!next) return
     this.set({
-      doc: next,
-      past: [...this.state.past, this.state.doc].slice(-HISTORY_LIMIT),
+      doc: next.doc,
+      data: next.data,
+      shared: next.shared,
+      past: [...this.state.past, this.entry()].slice(-HISTORY_LIMIT),
       future: this.state.future.slice(1),
     })
     this.scheduleAutosave()
   }
 
+  get hasRecordChanges(): boolean {
+    return Object.keys(this.state.data).length > 0
+  }
+
   get dirty(): boolean {
-    return JSON.stringify(stripTimestamp(this.state.doc)) !== JSON.stringify(stripTimestamp(this.state.saved))
+    if (this.hasRecordChanges) return true
+    if (differs(this.state.doc, this.state.saved)) return true
+    return this.sharedKeys.some((key) => differs(this.documentAt(key), this.state.sharedSaved[key]))
+  }
+
+  /** True while something saved has not reached visitors: a document, or committed records. */
+  get unpublished(): boolean {
+    if (this.state.doc !== this.state.published) return true
+    if (Object.keys(this.state.pendingPublish).length) return true
+    return this.sharedKeys.some((key) => this.state.shared[key] !== this.state.sharedPublished[key])
   }
 
   /* ------------------------------------------------------------ persistence */
@@ -559,11 +925,42 @@ export class VeditStore {
       const loaded = await this.adapter.load(this.state.doc.key, { stage })
       if (loaded == null) {
         this.set({ saved: this.state.doc, status: 'ready', past: [], future: [] })
-        return
+      } else {
+        this.adopt(loaded)
       }
-      this.adopt(loaded)
     } catch (error) {
       this.set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+      return
+    }
+    await this.loadSite(stage)
+  }
+
+  /**
+   * The rest of what a page needs besides its own document: the shared documents
+   * and, with a content client, who this person is. Separate from `load` so a
+   * page rendered with `initialDocument` can still fetch them.
+   */
+  async loadSite(stage: DocumentStage = 'published') {
+    if (this.sharedKeys.length) {
+      try {
+        const shared = { ...this.state.shared }
+        for (const key of this.sharedKeys) {
+          const loaded = await this.adapter.load(key, { stage })
+          shared[key] = loaded == null ? emptyDocument(key) : this.inspect(loaded, key)
+        }
+        this.set({ shared, sharedSaved: shared })
+      } catch (error) {
+        this.set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+        return
+      }
+    }
+    if (!this.content) return
+    try {
+      await this.refreshCapabilities()
+    } catch (error) {
+      // The page itself loaded; only the question of who is editing went
+      // unanswered, so the editor stays closed rather than the page erroring.
+      this.set({ capabilities: null, auth: 'none', error: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -580,26 +977,102 @@ export class VeditStore {
    * than quietly overwrite.
    */
   private adopt(incoming: unknown) {
-    const report = inspectDocument(incoming, this.state.doc.key)
-    const doc = report.doc.key === this.state.doc.key ? report.doc : { ...report.doc, key: this.state.doc.key }
+    const doc = this.inspect(incoming, this.state.doc.key)
     this.set({ doc, saved: doc, status: 'ready', past: [], future: [] })
+  }
+
+  private inspect(incoming: unknown, key: string): VeditDocument {
+    const report = inspectDocument(incoming, key)
     if (report.warnings.length) {
       this.notify(report.future ? report.warnings[0] : `Repaired the stored document: ${report.warnings.join(' ')}`)
     }
+    return report.doc.key === key ? report.doc : { ...report.doc, key }
   }
 
+  /**
+   * Records go first, because the document may refer to rows that do not exist
+   * yet: a style on a card added this session is keyed by a temporary id, and
+   * only the server's answer says what to call it. A commit that fails leaves the
+   * changes where they are, so trying again sends them once and not twice.
+   */
   async save() {
     if (this.autosaveTimer) clearTimeout(this.autosaveTimer)
-    const doc = this.state.doc
     this.set({ status: 'saving', error: null })
     try {
-      await this.adapter.save(doc)
-      this.set({ saved: doc, status: 'ready' })
+      if (this.content && this.hasRecordChanges) {
+        const stage: DocumentStage = this.can('publish') ? 'draft' : 'published'
+        const data = this.state.data
+        const result = await this.content.commit(data, { stage })
+        this.remapAfterCommit(data, result.idMap, stage)
+      }
+      const pending = this.documents().filter(({ key, doc }) => differs(doc, this.savedFor(key)))
+      for (const { doc } of pending) await this.adapter.save(doc)
+      const patch: Partial<VeditState> = { status: 'ready' }
+      const sharedSaved = { ...this.state.sharedSaved }
+      for (const { key, doc } of pending) {
+        if (key === this.state.doc.key) patch.saved = doc
+        else sharedSaved[key] = doc
+      }
+      patch.sharedSaved = sharedSaved
+      this.set(patch)
       this.notify('Changes saved')
     } catch (error) {
-      this.set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+      const message = error instanceof Error ? error.message : String(error)
+      this.set({ status: 'error', error: message })
+      this.notify(message)
       throw error
     }
+  }
+
+  private savedFor(key: string): VeditDocument | undefined {
+    return key === this.state.doc.key ? this.state.saved : this.state.sharedSaved[key]
+  }
+
+  /** Rename every temporary record id the server has now replaced. */
+  private remapAfterCommit(committed: RecordChanges, idMap: Record<string, string>, stage: DocumentStage) {
+    const rename = (id: string) => idMap[id] ?? id
+    const renameItem = (id: string) => {
+      const parsed = parseItemId(id)
+      return parsed && parsed.key in idMap ? itemId(parsed.templateId, rename(parsed.key)) : id
+    }
+    const mapDocs = (docs: Record<string, VeditDocument>) => {
+      const next: Record<string, VeditDocument> = {}
+      for (const [key, doc] of Object.entries(docs)) next[key] = remapIds(doc, idMap)
+      return next
+    }
+    const mapEntry = (entry: HistoryEntry): HistoryEntry => ({
+      doc: remapIds(entry.doc, idMap),
+      data: remapIds(entry.data, idMap),
+      shared: mapDocs(entry.shared),
+    })
+
+    const pendingPublish = { ...this.state.pendingPublish }
+    if (stage === 'draft') {
+      for (const [source, entry] of Object.entries(remapIds(committed, idMap))) {
+        const ids = new Set(pendingPublish[source] ?? [])
+        for (const record of entry.create ?? []) ids.add(record.id)
+        for (const id of Object.keys(entry.update ?? {})) ids.add(id)
+        for (const id of entry.delete ?? []) ids.add(id)
+        for (const id of entry.order ?? []) ids.add(id)
+        pendingPublish[source] = [...ids]
+      }
+    }
+
+    this.set({
+      data: {},
+      pendingPublish,
+      doc: remapIds(this.state.doc, idMap),
+      saved: remapIds(this.state.saved, idMap),
+      published: this.state.published ? remapIds(this.state.published, idMap) : null,
+      shared: mapDocs(this.state.shared),
+      sharedSaved: mapDocs(this.state.sharedSaved),
+      sharedPublished: mapDocs(this.state.sharedPublished),
+      past: this.state.past.map(mapEntry),
+      future: this.state.future.map(mapEntry),
+      selection: this.state.selection.map(renameItem),
+      hovered: this.state.hovered ? renameItem(this.state.hovered) : null,
+      inlineEditing: this.state.inlineEditing ? renameItem(this.state.inlineEditing) : null,
+    })
   }
 
   /** Make the saved draft the one visitors see. */
@@ -608,8 +1081,18 @@ export class VeditStore {
     if (this.dirty) await this.save()
     this.set({ status: 'saving', error: null })
     try {
-      await this.adapter.publish(this.state.doc)
-      this.set({ status: 'ready', published: this.state.doc })
+      let published = this.state.published
+      const sharedPublished = { ...this.state.sharedPublished }
+      for (const { key, doc } of this.documents()) {
+        const live = key === this.state.doc.key ? published : sharedPublished[key]
+        if (doc === live) continue
+        await this.adapter.publish(doc)
+        if (key === this.state.doc.key) published = doc
+        else sharedPublished[key] = doc
+      }
+      const pending = this.state.pendingPublish
+      if (this.content?.publish && Object.keys(pending).length) await this.content.publish(pending)
+      this.set({ status: 'ready', published, sharedPublished, pendingPublish: {} })
       this.notify('Published — visitors see this now')
     } catch (error) {
       this.set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
@@ -629,14 +1112,21 @@ export class VeditStore {
     const doc = inspectDocument(loaded, this.state.doc.key).doc
     this.set({
       doc: { ...doc, key: this.state.doc.key },
-      past: [...this.state.past, this.state.doc].slice(-HISTORY_LIMIT),
+      past: [...this.state.past, this.entry()].slice(-HISTORY_LIMIT),
       future: [],
     })
     this.notify('Version restored — save to keep it')
   }
 
   discard() {
-    this.set({ doc: this.state.saved, past: [], future: [], selection: [] })
+    this.set({
+      doc: this.state.saved,
+      data: {},
+      shared: { ...this.state.sharedSaved },
+      past: [],
+      future: [],
+      selection: [],
+    })
   }
 
   private scheduleAutosave() {
@@ -717,9 +1207,31 @@ export class VeditStore {
   kindOf(id: string): NodeKind {
     const registered = this.getNode(id)
     if (registered) return registered.kind
-    const inserted = this.state.doc.inserted.find((n) => n.id === id)
-    return inserted?.kind ?? 'box'
+    return this.findInserted(id)?.node.kind ?? 'box'
   }
+}
+
+/** Merge a content patch into an override; `undefined` values delete keys. */
+function mergeContent(current: NodeOverride, patch: NodeOverride): NodeOverride {
+  const merged: NodeOverride = { ...current, ...patch }
+  if (patch.style) merged.style = { ...current.style, ...patch.style }
+  if (patch.responsive) {
+    merged.responsive = { ...current.responsive }
+    for (const [bp, styles] of Object.entries(patch.responsive)) {
+      const key = bp as Exclude<Breakpoint, 'base'>
+      merged.responsive[key] = { ...current.responsive?.[key], ...styles }
+    }
+  }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete (merged as Record<string, unknown>)[key]
+  }
+  return merged
+}
+
+function differs(a: VeditDocument | undefined, b: VeditDocument | undefined): boolean {
+  if (a === b) return false
+  if (!a || !b) return true
+  return JSON.stringify(stripTimestamp(a)) !== JSON.stringify(stripTimestamp(b))
 }
 
 function stripTimestamp(doc: VeditDocument) {
