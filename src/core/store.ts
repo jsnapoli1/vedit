@@ -647,13 +647,37 @@ export class VeditStore {
     }, this.autosaveMs)
   }
 
-  async uploadImage(file: File): Promise<string> {
-    if (this.adapter.uploadImage) return this.adapter.uploadImage(file)
-    return await fileToDataUrl(file)
+  /**
+   * Store a file the editor picked and hand back where it now lives, or null
+   * when this site has nowhere to put it. Images always have somewhere: an
+   * adapter without any upload gets a data URL, which is small enough to live in
+   * the document. A PDF is not, so without a real store a file is refused and
+   * the editor is told why rather than handed a 4 MB href.
+   */
+  async uploadAsset(file: File, { kind }: { kind: 'image' | 'file' | 'video' }): Promise<VeditAsset | null> {
+    if (this.adapter.uploadAsset) {
+      return this.adapter.uploadAsset(file, { accept: kind === 'image' ? ['image/*'] : undefined })
+    }
+    if (kind !== 'image') {
+      this.notify('This site cannot store files')
+      return null
+    }
+    const url = this.adapter.uploadImage ? await this.adapter.uploadImage(file) : await fileToDataUrl(file)
+    return { url, kind, name: file.name, mime: file.type, size: file.size }
   }
 
-  async listAssets(): Promise<VeditAsset[]> {
-    return this.adapter.listAssets ? this.adapter.listAssets() : []
+  async uploadImage(file: File): Promise<string> {
+    const asset = await this.uploadAsset(file, { kind: 'image' })
+    if (!asset) throw new Error('This site cannot store images')
+    return asset.url
+  }
+
+  canUpload(kind: 'image' | 'file' | 'video'): boolean {
+    return typeof this.adapter.uploadAsset === 'function' || kind === 'image'
+  }
+
+  async listAssets(opts?: { kind?: 'image' | 'file' | 'video'; query?: string }): Promise<VeditAsset[]> {
+    return this.adapter.listAssets ? this.adapter.listAssets(opts) : []
   }
 
   get canListAssets(): boolean {

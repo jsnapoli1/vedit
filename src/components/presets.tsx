@@ -22,3 +22,8 @@ export const EditableBox = forwardRef<HTMLElement, PresetProps>(function Editabl
 export const EditableLink = forwardRef<HTMLElement, PresetProps>(function EditableLink(props, ref) {
   return <Editable ref={ref} kind="link" as={(props.as ?? 'a') as ElementType} {...props} />
 })
+
+/** A download — a datasheet, a brochure — whose file can be replaced in the editor. */
+export const EditableFile = forwardRef<HTMLElement, PresetProps>(function EditableFile(props, ref) {
+  return <Editable ref={ref} kind="file" as={(props.as ?? 'a') as ElementType} {...props} />
+})

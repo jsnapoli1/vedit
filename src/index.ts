@@ -32,7 +32,7 @@ export type {
   ComponentSummary,
 } from './core/registry'
 export type { EditableProps } from './components/Editable'
-export { EditableText, EditableImage, EditableBox, EditableLink } from './components/presets'
+export { EditableText, EditableImage, EditableBox, EditableLink, EditableFile } from './components/presets'
 export { useEditable, labelFromId } from './components/useEditable'
 export { useRepeatItem } from './components/repeatContext'
 export type { RepeatItem } from './components/repeatContext'

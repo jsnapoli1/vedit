@@ -36,6 +36,7 @@ import {
 } from '../../runtime/animation'
 import { parseFilter, withFilter, type FilterParts } from '../../runtime/filter'
 import { sanitizeSvg } from '../../runtime/sanitize'
+import { isFileHref } from '../../runtime/fileHref'
 import { SHAPE_PRESETS, parseShape } from '../../runtime/shape'
 import { TokenPicker } from './Tokens'
 import {
@@ -180,6 +181,7 @@ export function Inspector() {
             <StateSwitch id={id} />
             <PropsSection id={id} />
             <ContentSection id={id} kind={kind} />
+            {kind === 'file' ? <FileSection id={id} /> : null}
             {/* Geometry is one node's shape, so there is nothing sensible to fan
                 out across a selection — unlike every style below it. */}
             {kind === 'shape' ? <ShapeSection id={id} /> : null}
@@ -864,7 +866,7 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
     )
   }
 
-  const isLinkish = kind === 'link' || kind === 'button'
+  const isLinkish = kind === 'link' || kind === 'button' || kind === 'file'
   if (kind !== 'text' && !isLinkish) return null
 
   return (
@@ -1067,6 +1069,155 @@ function AssetLibrary({ onPick }: { onPick: (url: string) => void }) {
           style={{ backgroundImage: `url("${asset.url.replace(/"/g, '%22')}")` }}
           onClick={() => onPick(asset.url)}
         />
+      ))}
+    </div>
+  )
+}
+
+/* --------------------------------------------------------------------- file */
+
+function fileNameOf(url: string): string {
+  const path = url.split(/[?#]/)[0]
+  const last = path.split('/').filter(Boolean).at(-1) ?? ''
+  try {
+    return decodeURIComponent(last)
+  } catch {
+    return last
+  }
+}
+
+function isFileAsset(asset: VeditAsset): boolean {
+  return asset.kind ? asset.kind === 'file' : isFileHref(asset.url)
+}
+
+function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * The file behind a download link. Its copy and destination are edited under
+ * Content like any link's; this is where the file itself is swapped, so a new
+ * datasheet is one pick rather than a URL someone has to know in advance.
+ */
+function FileSection({ id }: { id: string }) {
+  const store = useVeditStore()
+  const node = store.getNode(id)
+  const [text] = useContentValue(id, 'text')
+  const [href] = useContentValue(id, 'href')
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [browsing, setBrowsing] = useState(false)
+  const [picked, setPicked] = useState<VeditAsset | null>(null)
+
+  const current = href ?? node?.element.getAttribute('href') ?? ''
+  const name = fileNameOf(current)
+  // The size is only known for a file that came through the store this session;
+  // a link from source code says nothing about what is behind it.
+  const size = picked && picked.url === current ? picked.size : undefined
+
+  const apply = (asset: VeditAsset) => {
+    setPicked(asset)
+    const patch: { href: string; text?: string } = { href: asset.url }
+    // Copy that was the old file's name follows the file, so a link never reads
+    // "datasheet-v1.pdf" while handing over v2. Any other copy is left alone.
+    const label = text ?? node?.sourceText
+    const nextName = asset.name ?? fileNameOf(asset.url)
+    if (label && label === name && nextName) patch.text = nextName
+    store.update(id, patch)
+  }
+
+  return (
+    <Section title="File">
+      <div className="vedit-file">
+        <span className="vedit-file-name" title={current || undefined}>
+          {name || 'No file yet'}
+        </span>
+        {size !== undefined ? <span className="vedit-hint">{formatBytes(size)}</span> : null}
+      </div>
+      <Row>
+        <button
+          type="button"
+          className="vedit-btn"
+          style={{ flex: 1, background: 'var(--vedit-panel-2)' }}
+          disabled={uploading}
+          onClick={() => fileInput.current?.click()}
+        >
+          {uploading ? 'Uploading…' : 'Replace…'}
+        </button>
+        {store.canListAssets ? (
+          <button
+            type="button"
+            className="vedit-btn"
+            style={{ flex: 1, background: 'var(--vedit-panel-2)' }}
+            onClick={() => setBrowsing(!browsing)}
+          >
+            {browsing ? 'Close library' : 'Library…'}
+          </button>
+        ) : null}
+        <input
+          ref={fileInput}
+          type="file"
+          accept="*/*"
+          hidden
+          onChange={async (event) => {
+            const file = event.target.files?.[0]
+            if (!file) return
+            setUploading(true)
+            try {
+              const asset = await store.uploadAsset(file, { kind: 'file' })
+              if (asset) apply(asset)
+            } finally {
+              setUploading(false)
+              event.target.value = ''
+            }
+          }}
+        />
+      </Row>
+      {browsing ? (
+        <FileLibrary
+          onPick={(asset) => {
+            apply(asset)
+            setBrowsing(false)
+          }}
+        />
+      ) : null}
+    </Section>
+  )
+}
+
+/** Files already stored, by name: a thumbnail of a PDF says nothing. */
+function FileLibrary({ onPick }: { onPick: (asset: VeditAsset) => void }) {
+  const store = useVeditStore()
+  const [assets, setAssets] = useState<VeditAsset[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    store
+      .listAssets({ kind: 'file' })
+      // An adapter from before there was a filter answers with its whole
+      // library, which by its old contract is images — so anything it did not
+      // label is sorted by what its url ends in.
+      .then((result) => !cancelled && setAssets(result.filter(isFileAsset)))
+      .catch((cause) => !cancelled && setError(cause instanceof Error ? cause.message : String(cause)))
+    return () => {
+      cancelled = true
+    }
+  }, [store])
+
+  if (error) return <div className="vedit-hint">Could not load the library: {error}</div>
+  if (!assets) return <div className="vedit-hint">Loading…</div>
+  if (!assets.length) return <div className="vedit-hint">No files stored yet.</div>
+
+  return (
+    <div className="vedit-files">
+      {assets.map((asset) => (
+        <button key={asset.url} type="button" title={asset.url} onClick={() => onPick(asset)}>
+          <span className="vedit-file-name">{asset.name ?? fileNameOf(asset.url)}</span>
+          {asset.size !== undefined ? <span className="vedit-hint">{formatBytes(asset.size)}</span> : null}
+        </button>
       ))}
     </div>
   )
