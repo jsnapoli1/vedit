@@ -81,6 +81,7 @@ export class VeditStore {
   private nodeListeners = new Set<() => void>()
   private registry = new Map<string, RegisteredNode>()
   private registrySnapshot: RegisteredNode[] = []
+  private pendingSources = new Set<string>()
   /** Exposed so the provider can hand the same adapter to the realtime session. */
   readonly adapter: VeditAdapter
   /** Where records live, when the site has opted into `vedit/content`. */
@@ -843,6 +844,18 @@ export class VeditStore {
     const rows = await this.content.list(source, { ...query, stage })
     this.set({ records: { ...this.state.records, [source]: rows } })
     return this.recordsFor(source, rows)
+  }
+
+  /**
+   * Fetch a source once, for a bound node that nothing else feeds — a tagline
+   * bound to a global, say, on a page that never calls `useVeditRecords`. Every
+   * such node on the page shares one request, and a failure is not retried:
+   * the node keeps showing its own children, which is the fallback anyway.
+   */
+  ensureRecords(source: string): void {
+    if (!this.content || source in this.state.records || this.pendingSources.has(source)) return
+    this.pendingSources.add(source)
+    void this.loadRecords(source).catch(() => undefined)
   }
 
   async loadSchema(): Promise<SourceSchema[]> {

@@ -201,12 +201,13 @@ test.describe('editing content on the catalog', () => {
     await saveDraft(page)
     await publish(page)
 
-    // A visitor: no session, no editor, just the other page. The tagline is
-    // read back from the server, where the bound edit lands; a visitor's page
-    // does not fetch the global on its own yet, so the page is no witness.
+    // A visitor: no session, no editor, just the other page. The brand comes
+    // from the shared document, the tagline from the global the node is bound
+    // to — the page fetches that source itself, so both show without an editor.
     await page.context().clearCookies()
     await page.goto('/catalog/sheet', { waitUntil: 'domcontentloaded' })
     await expect(page.locator('.nav .brand')).toHaveText(brand)
+    await expect(page.locator('.nav .tagline')).toHaveText(tagline)
     await expect(page.locator('.vedit-root')).toHaveCount(0)
     expect((await record(request, 'site', 'global')).tagline).toBe(tagline)
   })

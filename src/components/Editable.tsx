@@ -1,4 +1,4 @@
-import { createElement, forwardRef, useMemo, type ElementType, type ReactNode, type Ref } from 'react'
+import { createElement, forwardRef, useEffect, useMemo, type ElementType, type ReactNode, type Ref } from 'react'
 import { useEditable } from './useEditable'
 import { useVeditContext, useVeditState } from '../core/context'
 import { findComponent, type AnyComponentDefinition } from '../core/registry'
@@ -273,9 +273,16 @@ function useBoundValue(binding: RecordBinding | undefined, bind: string | Record
           ?.fields.find((field) => field.name === binding.field)?.type === 'richtext'
       : false,
   )
+  const item = typeof bind === 'string' && repeat?.source && isRecord(repeat.item) ? repeat.item[bind] : undefined
+  // A node bound outside a repeat has no host row to fall back on, so it asks
+  // for its source itself. Effects never run on the server, which is what keeps
+  // a server render from fetching.
+  const source = binding && item === undefined ? binding.source : undefined
+  useEffect(() => {
+    if (source) store.ensureRecords(source)
+  }, [store, source])
   if (!binding) return { bound: undefined, richtext: false }
   if (stored !== undefined) return { bound: stored, richtext }
-  const item = typeof bind === 'string' && repeat?.source && isRecord(repeat.item) ? repeat.item[bind] : undefined
   return { bound: item, richtext }
 }
 

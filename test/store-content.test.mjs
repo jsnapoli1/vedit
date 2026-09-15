@@ -326,6 +326,20 @@ test('after a save the saved rows stay on the page', async () => {
   assert.equal(store.getState().records.cards[1]._status, undefined)
 })
 
+test('ensureRecords fetches a source once and leaves a loaded one alone', async () => {
+  const { store, calls } = makeStore({ rows: { site: [{ id: 'global', tagline: 'Ships today' }] } })
+  store.ensureRecords('site')
+  store.ensureRecords('site')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.equal(calls.filter((call) => call[0] === 'list').length, 1)
+  assert.equal(store.recordValue({ source: 'site', id: 'global', field: 'tagline' }), 'Ships today')
+
+  store.ensureRecords('site')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(calls.filter((call) => call[0] === 'list').length, 1)
+})
+
 test('loading a site with a content client fetches the schema alongside capabilities', async () => {
   const schema = [{ name: 'cards', fields: [{ name: 'title', type: 'richtext' }] }]
   const { store, calls } = makeStore({ schema })
