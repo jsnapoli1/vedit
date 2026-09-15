@@ -7,6 +7,7 @@ import { SHAPE_PRESETS } from '../../runtime/shape'
 import { sanitizeSvg } from '../../runtime/sanitize'
 import { containerFor } from '../interactions'
 import { startPlacementDrag } from '../dragToPlace'
+import { useBoundRepeat } from '../hooks'
 import { useEditorTarget } from '../target'
 import {
   IconCircle,
@@ -57,6 +58,11 @@ export function InsertPanel() {
   const nodes = useVeditNodes()
   const selection = useVeditState((state) => state.selection)
   const target = useMemo(() => insertionTarget(store, selection, nodes), [store, selection, nodes])
+  const repeat = useBoundRepeat(selection.length === 1 ? selection[0] : null)
+  const rowLabel = useVeditState((state) =>
+    repeat ? state.schema?.find((entry) => entry.name === repeat.source)?.label ?? repeat.source : '',
+  )
+  const canWriteData = useVeditState(() => store.can('data:write'))
 
   const grouped = useMemo(() => groupComponents(config.components), [config.components])
 
@@ -88,6 +94,33 @@ export function InsertPanel() {
 
   return (
     <div className="vedit-panel-body">
+      {/* First, because it is the one thing here that is not placed anywhere: a
+          row is data, and the card for it appears wherever the host renders the
+          rows. It can't be dragged for the same reason. */}
+      {repeat ? (
+        <div className="vedit-section">
+          <div className="vedit-section-title">Rows</div>
+          <button
+            type="button"
+            className="vedit-insert-item"
+            disabled={!canWriteData}
+            aria-label={`Add a ${rowLabel} row`}
+            title={
+              canWriteData
+                ? `Add another ${rowLabel} row after the ones on the page`
+                : 'This site has not let you change its rows'
+            }
+            onClick={() => store.createRecord(repeat.source, {})}
+          >
+            <span className="vedit-insert-name">
+              <IconPlus width={11} height={11} />
+              Add {rowLabel} row
+            </span>
+            <span className="vedit-insert-note">A new row of {repeat.source}, shown as the others are.</span>
+          </button>
+        </div>
+      ) : null}
+
       <div className="vedit-section">
         <div className="vedit-section-title">Adding to</div>
         <div className="vedit-hint" data-vedit-insert-target="">

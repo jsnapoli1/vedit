@@ -568,4 +568,9 @@ html.vedit-editing .vedit-inserted-button {
 .vedit-data-actions { display: flex; justify-content: flex-end; }
 .vedit-data-delete { border-color: var(--vedit-border); color: #ffb4ac; }
 .vedit-json { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; min-height: 80px; margin-bottom: 4px; }
+
+/* ------------------------------------------------------------------- rows */
+.vedit-rows { display: flex; gap: 4px; margin-bottom: 6px; }
+.vedit-rows .vedit-btn { flex: 1; padding: 0 6px; background: var(--vedit-panel-2); }
+.vedit-rows .vedit-btn:hover:not(:disabled) { border-color: var(--vedit-accent); }
 `
