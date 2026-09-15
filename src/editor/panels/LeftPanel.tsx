@@ -2,18 +2,20 @@ import { useRef, useState } from 'react'
 import { useVeditState, useVeditStore } from '../../core/context'
 import { moveFocus } from '../focus'
 import { CommentsPanel } from './Comments'
+import { DataPanel } from './Data'
 import { InsertPanel } from './Insert'
 import { HistoryPanel } from './History'
 import { IssuesPanel } from './Issues'
 import { LayersTree } from './Layers'
 import { TokensPanel } from './Tokens'
 
-type Tab = 'layers' | 'insert' | 'tokens' | 'issues' | 'notes' | 'history'
+type Tab = 'layers' | 'insert' | 'tokens' | 'data' | 'issues' | 'notes' | 'history'
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'layers', label: 'Layers' },
   { id: 'insert', label: 'Insert' },
   { id: 'tokens', label: 'Tokens' },
+  { id: 'data', label: 'Data' },
   { id: 'issues', label: 'Checks' },
   { id: 'notes', label: 'Notes' },
   { id: 'history', label: 'History' },
@@ -24,10 +26,15 @@ export function LeftPanel() {
   const [tab, setTab] = useState<Tab>('layers')
   // Re-render when a session appears so the Notes tab can show up.
   useVeditState((state) => state.sessionId)
-  // History only earns a tab when the adapter can actually provide it.
+  // Likewise when the capabilities arrive, since the Data tab rides on them.
+  useVeditState((state) => state.capabilities)
+  // History only earns a tab when the adapter can actually provide it, and Data
+  // only when the site has given the editor somewhere to keep records.
   const tabs = TABS.filter(
     (entry) =>
-      (entry.id !== 'history' || store.supportsHistory) && (entry.id !== 'notes' || !!store.session),
+      (entry.id !== 'history' || store.supportsHistory) &&
+      (entry.id !== 'notes' || !!store.session) &&
+      (entry.id !== 'data' || store.supportsContent),
   )
 
   const strip = useRef<HTMLDivElement>(null)
@@ -61,6 +68,7 @@ export function LeftPanel() {
       {tab === 'layers' ? <LayersTree /> : null}
       {tab === 'insert' ? <InsertPanel /> : null}
       {tab === 'tokens' ? <TokensPanel /> : null}
+      {tab === 'data' ? <DataPanel /> : null}
       {tab === 'issues' ? <IssuesPanel /> : null}
       {tab === 'notes' ? <CommentsPanel /> : null}
       {tab === 'history' ? <HistoryPanel /> : null}

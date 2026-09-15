@@ -50,7 +50,9 @@ export function PropField({
 }) {
   const label = field.label ?? field.name.replace(/([A-Z])/g, ' $1').replace(/^\w/, (c) => c.toUpperCase())
   const current = value ?? source
-  const overridden = value !== undefined
+  // A record field has no source value underneath it, so there is nothing to
+  // reset to and the override marks would only say "this has a value".
+  const overridden = value !== undefined && !record
   const reset = () => onChange(undefined)
 
   const options = (field.options ?? []).map((option) =>

@@ -527,4 +527,45 @@ html.vedit-editing .vedit-inserted-button {
 .vedit-signin-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
 .vedit-signin-actions .vedit-btn { height: 30px; padding: 0 14px; }
 .vedit-signin-actions .vedit-btn:not(.vedit-btn-primary) { border-color: var(--vedit-border); }
+
+/* ------------------------------------------------------------------- data */
+.vedit-data-crumbs { flex: none; }
+.vedit-data-crumbs button:disabled { cursor: default; }
+.vedit-data-crumbs button:disabled:hover { background: none; }
+.vedit-data-list { display: flex; flex-direction: column; padding: 4px 0; }
+.vedit-data-item, .vedit-data-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
+  padding: 6px 12px; border: 0; background: transparent; text-align: left;
+  color: inherit; cursor: pointer;
+}
+.vedit-data-item:hover, .vedit-data-row:hover { background: var(--vedit-panel-2); }
+.vedit-data-item:focus-visible, .vedit-data-row:focus-visible { outline-offset: -2px; }
+.vedit-data-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.vedit-data-kind { flex: none; color: var(--vedit-muted); font-size: 10px; }
+/* Three columns that keep their width across rows, so the statuses line up. */
+.vedit-data-row { display: grid; grid-template-columns: minmax(0, 1fr) 58px 70px; gap: 6px; }
+.vedit-data-head {
+  cursor: default; padding-top: 2px; padding-bottom: 4px;
+  color: var(--vedit-muted); font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+}
+.vedit-data-head:hover { background: transparent; }
+.vedit-data-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vedit-data-status { color: var(--vedit-muted); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; }
+.vedit-data-status[data-status="draft"], .vedit-data-status[data-status="new"] { color: #f0c674; }
+.vedit-data-status[data-status="changed"] { color: var(--vedit-accent); }
+.vedit-data-updated { color: var(--vedit-muted); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vedit-data-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--vedit-border);
+}
+.vedit-data-toolbar .vedit-btn { border-color: var(--vedit-border); }
+.vedit-data-form { margin: 0; padding: 10px 12px 6px; border: 0; min-width: 0; }
+.vedit-data-form:disabled { opacity: .55; }
+.vedit-data-field { margin-bottom: 8px; }
+.vedit-data-field .vedit-label { width: 72px; }
+/* A record value is not an override of anything; the accent bar would say it was. */
+.vedit-data-form .vedit-field[data-overridden="true"] { box-shadow: none; }
+.vedit-data-actions { display: flex; justify-content: flex-end; }
+.vedit-data-delete { border-color: var(--vedit-border); color: #ffb4ac; }
+.vedit-json { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; min-height: 80px; margin-bottom: 4px; }
 `
