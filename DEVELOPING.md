@@ -435,17 +435,19 @@ site. Breaking one is a bug even if the tests pass.
 
 ## Testing
 
-**`npm test`** — 337 unit tests, run against `dist/` rather than `src/`, so they
+**`npm test`** — 475 unit tests, run against `dist/` rather than `src/`, so they
 check what actually ships. Pure logic lives here: the CSS emitter, the layer
 matrix, the store, migration, the operations vocabulary, the open API, the MCP
-server, diffing, contrast maths, the relay, the escaping rules.
+server, diffing, contrast maths, the relay, the escaping rules, and the content
+layer: the store over memory and SQL, the handler, media, auth, binding.
 
-**`npm run test:e2e`** — 89 browser tests over the real editor. 74 of them cover
+**`npm run test:e2e`** — 95 browser tests over the real editor. 80 of them cover
 behaviour: selection, breakpoints, states, component props, re-ordering,
 publishing, composing a page out of registered components, placing and styling
 shapes and importing an SVG that tries to run a script, filling in and submitting
-a form, two people collaborating, driving it all from a keyboard, and what
-happens when the editor throws. The remaining 15 are the visual suite below.
+a form, two people collaborating, driving it all from a keyboard, what happens
+when the editor throws, and the catalog: signing in, replacing a datasheet,
+editing bound rows and the Data panel against a real content server. The remaining 15 are the visual suite below.
 
 **`npm run test:frameworks`** — the matrix `INTEGRATING.md` promises. One minimal
 app per framework under `examples/` (Next App Router, Next Pages Router, Remix,
