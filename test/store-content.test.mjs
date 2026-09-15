@@ -10,13 +10,13 @@ const EDITOR = {
 }
 
 /** A content client that remembers what it was asked, sharing `calls` with the adapter. */
-function fakeClient({ calls = [], capabilities = EDITOR, rows = {}, fail = () => false } = {}) {
+function fakeClient({ calls = [], capabilities = EDITOR, rows = {}, schema = [], fail = () => false } = {}) {
   let caps = capabilities
   let serial = 0
   const client = {
     async schema() {
       calls.push(['schema'])
-      return []
+      return schema
     },
     async list(source, query) {
       calls.push(['list', source, query])
@@ -81,7 +81,7 @@ const node = (id, extra = {}) => ({
   ...extra,
 })
 
-const bound = (id, binding) => node(id, { binding })
+const bound = (id, binding, extra = {}) => node(id, { binding, ...extra })
 
 const makeStore = (opts = {}) => {
   const { client, calls, setCapabilities } = fakeClient(opts)
@@ -213,6 +213,34 @@ test('a content edit on a bound node writes the record, not the document', () =>
   assert.equal(store.getOverride('cards.title').text, undefined)
 })
 
+test('copy on a bound link stays in the document while the href goes to the record', () => {
+  const { store } = makeStore()
+  const binding = { source: 'cards', id: 'r1', field: 'datasheet' }
+  store.register(bound('cards.link~r1', binding, { kind: 'link' }))
+
+  store.updateMany(['cards.link~r1'], { text: 'Download', href: 'https://example.test/sheet.pdf' })
+
+  assert.deepEqual(store.getState().data, {
+    cards: { update: { r1: { datasheet: 'https://example.test/sheet.pdf' } } },
+  })
+  assert.equal(store.getOverride('cards.link').text, 'Download')
+  assert.equal(store.getOverride('cards.link').href, undefined)
+  assert.equal(store.getState().past.length, 1, 'one step for both halves')
+
+  // An image keeps its alt in the document too: only the source is the record's.
+  store.register(bound('cards.photo~r1', { source: 'cards', id: 'r1', field: 'photo' }, { kind: 'image' }))
+  store.updateMany(['cards.photo~r1'], { src: 'https://example.test/a.png', alt: 'A part' })
+  assert.equal(store.getState().data.cards.update.r1.photo, 'https://example.test/a.png')
+  assert.equal(store.getOverride('cards.photo').alt, 'A part')
+  assert.equal(store.getOverride('cards.photo').src, undefined)
+
+  // A box has no content to bind, so everything written to it is the document's.
+  store.register(bound('cards.box~r1', { source: 'cards', id: 'r1', field: 'title' }, { kind: 'box' }))
+  store.updateMany(['cards.box~r1'], { text: 'Nope' })
+  assert.equal(store.getState().data.cards.update.r1.title, undefined)
+  assert.equal(store.getOverride('cards.box').text, 'Nope')
+})
+
 test('a style edit on a bound repeat item still follows the repeat scope', () => {
   const { store } = makeStore()
   store.register(bound('cards.title~r1', { source: 'cards', id: 'r1', field: 'title' }))
@@ -257,6 +285,72 @@ test('save commits records before the document, then remaps temp ids everywhere'
   assert.equal(store.dirty, false)
   assert.equal(past.length, before, 'saving is not an undo step')
   assert.ok(!JSON.stringify(past).includes(id), 'history was remapped too')
+})
+
+test('after a save the saved rows stay on the page', async () => {
+  const rows = {
+    cards: [
+      { id: 'a', title: 'A', _status: 'published' },
+      { id: 'b', title: 'B', _status: 'published' },
+    ],
+  }
+  const { store } = makeStore({ rows })
+  await store.refreshCapabilities()
+  await store.loadRecords('cards')
+
+  store.setRecord('cards', 'a', { title: 'AA' })
+  store.deleteRecord('cards', 'b')
+  const temp = store.createRecord('cards', { title: 'C' })
+  assert.deepEqual(
+    store.recordsFor('cards').map((row) => [row.id, row.title]),
+    [
+      ['a', 'AA'],
+      [temp, 'C'],
+    ],
+  )
+
+  await store.save()
+
+  assert.deepEqual(store.getState().data, {})
+  assert.deepEqual(
+    store.recordsFor('cards').map((row) => [row.id, row.title]),
+    [
+      ['a', 'AA'],
+      ['real-1', 'C'],
+    ],
+  )
+  assert.deepEqual(store.getState().records.cards.map((row) => row.id), ['a', 'real-1'])
+  assert.equal(store.recordValue({ source: 'cards', id: 'real-1', field: 'title' }), 'C')
+  // Nothing the server did not say is made up about the rows.
+  assert.equal(store.getState().records.cards[0]._status, 'published')
+  assert.equal(store.getState().records.cards[1]._status, undefined)
+})
+
+test('loading a site with a content client fetches the schema alongside capabilities', async () => {
+  const schema = [{ name: 'cards', fields: [{ name: 'title', type: 'richtext' }] }]
+  const { store, calls } = makeStore({ schema })
+  assert.equal(store.getState().schema, null)
+
+  await store.load()
+
+  assert.deepEqual(store.getState().schema, schema)
+  assert.equal(calls.filter((call) => call[0] === 'schema').length, 1, 'fetched once')
+  assert.equal(calls.filter((call) => call[0] === 'capabilities').length, 1)
+  assert.equal(store.getState().auth, 'ok')
+})
+
+test('a schema fetch that fails does not cost the capabilities', async () => {
+  const { store, calls } = makeStore()
+  store.content.schema = async () => {
+    calls.push(['schema'])
+    throw new Error('no schema today')
+  }
+
+  await store.load()
+
+  assert.equal(store.getState().auth, 'ok')
+  assert.equal(store.getState().status, 'ready')
+  assert.equal(store.getState().schema, null)
 })
 
 test('a failed commit keeps the changes and the second save commits them once', async () => {

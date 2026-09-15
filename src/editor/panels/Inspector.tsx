@@ -533,7 +533,9 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
     // anything has been overridden.
     const boundSrc = binding ? assetUrl(bound) || undefined : undefined
     const current = (binding ? boundSrc : src) ?? node?.element.getAttribute('src') ?? null
-    const currentAlt = binding ? assetAlt(bound) : alt
+    // Alt written here is the document's on a bound image too; the asset's own
+    // description stands in until there is one.
+    const currentAlt = alt ?? (binding ? assetAlt(bound) : undefined)
     return (
       <Section title="Image">
         <ImagePreview id={id} src={current} />
@@ -591,7 +593,6 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
           <TextField
             value={currentAlt ?? ''}
             placeholder="Describe the image"
-            disabled={locked}
             onChange={(next) => setAlt(next || undefined)}
           />
         </Row>
@@ -609,14 +610,14 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
   const isLinkish = kind === 'link' || kind === 'button' || kind === 'file'
   if (kind !== 'text' && !isLinkish) return null
 
-  // A bound link keeps its destination on the record and its copy in the code;
-  // a bound text node keeps its copy on the record. The store sends any content
-  // written to a bound node to the record, so the copy of a bound link is not
-  // offered for editing here — it would land on the destination.
+  // A bound link keeps its destination on the record and its copy in the
+  // document, like any other node's; a bound text node keeps its copy on the
+  // record. The store splits a write the same way, so the copy of a bound link
+  // is edited here as usual and never lands on the destination.
   const bindsCopy = !!binding && !isLinkish
   const boundText = bound !== undefined ? textOf(bound) : node?.element.textContent ?? ''
   const copy = bindsCopy ? boundText : text ?? node?.sourceText ?? ''
-  const copyLocked = locked || (!!binding && isLinkish)
+  const copyLocked = locked && bindsCopy
 
   return (
     <Section title="Content">
@@ -627,11 +628,10 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
         value={copy}
         placeholder="Type the copy for this element"
         disabled={copyLocked}
-        title={binding && isLinkish ? 'The copy of a bound link is set in the code' : undefined}
         onChange={(event) => setText(event.target.value)}
       />
       {bindsCopy ? null : <VariableHints node={node} value={copy} />}
-      {text !== undefined && !binding ? (
+      {text !== undefined && !bindsCopy ? (
         <Row>
           <button type="button" className="vedit-btn" style={{ flex: 1 }} onClick={() => setText(undefined)}>
             Restore original copy

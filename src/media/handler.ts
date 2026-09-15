@@ -33,6 +33,7 @@ export interface MediaHandlerOptions {
  *     POST   /v1/media            multipart `file` (+ `alt`) → the asset
  *     GET    /v1/media?kind=&q=   { items }
  *     GET    /v1/media/{id}       the bytes; `?download=1` for an attachment
+ *     HEAD   /v1/media/{id}       the same headers, no bytes
  *     DELETE /v1/media/{id}
  */
 export function createMediaHandler(options: MediaHandlerOptions) {
@@ -45,7 +46,7 @@ export function createMediaHandler(options: MediaHandlerOptions) {
 
     const method = request.method.toUpperCase()
     const id = segments.length === 2 ? segments[1] : null
-    const allowed = id === null ? ['GET', 'POST'] : ['GET', 'DELETE']
+    const allowed = id === null ? ['GET', 'POST'] : ['GET', 'HEAD', 'DELETE']
     if (!allowed.includes(method)) {
       return json({ error: 'Method not allowed on this route' }, 405, { allow: allowed.join(', ') })
     }
@@ -89,6 +90,13 @@ export function createMediaHandler(options: MediaHandlerOptions) {
       'content-disposition': `${disposition}; filename="${quoteFilename(asset.name)}"`,
     })
     if (Number.isFinite(asset.size)) headers.set('content-length', String(asset.size))
+    // A HEAD is what a CDN, a link checker or `curl -I` asks before fetching:
+    // the same answer, minus the bytes. The stream the store opened is closed
+    // rather than left to the collector, since on disk it holds a file open.
+    if (method === 'HEAD') {
+      void body.cancel().catch(() => undefined)
+      return new Response(null, { status: 200, headers })
+    }
     return new Response(body, { status: 200, headers })
   }
 

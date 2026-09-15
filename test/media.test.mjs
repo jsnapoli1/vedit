@@ -215,7 +215,7 @@ test('the handler accepts a multipart upload, returns the asset and serves it ba
   assert.equal(wrong.headers.get('allow'), 'GET, POST')
   const wrongItem = await handle(new Request(`https://site.test/vedit/v1/media/${asset.id}`, { method: 'POST' }))
   assert.equal(wrongItem.status, 405)
-  assert.equal(wrongItem.headers.get('allow'), 'GET, DELETE')
+  assert.equal(wrongItem.headers.get('allow'), 'GET, HEAD, DELETE')
 
   const quoted = await (await handle(upload('a "quoted" name.txt', 'text/plain', 'x'))).json()
   const servedQuoted = await handle(new Request(`https://site.test/vedit/v1/media/${quoted.id}`))
@@ -255,6 +255,36 @@ test('download=1 switches the disposition to attachment', async () => {
   assert.equal(response.headers.get('content-disposition'), 'attachment; filename="sheet.pdf"')
   const inline = await handle(new Request(`https://site.test/vedit/v1/media/${asset.id}?download=0`))
   assert.equal(inline.headers.get('content-disposition'), 'inline; filename="sheet.pdf"')
+})
+
+test('a HEAD on an asset answers the headers without the body', async () => {
+  const seen = []
+  const handle = handlerWith({
+    authorize: (request, { action }) => {
+      seen.push(action)
+      return true
+    },
+  })
+  const asset = await (await handle(upload('sheet.pdf', 'application/pdf', '%PDF-1.4'))).json()
+  seen.length = 0
+
+  const head = await handle(new Request(`https://site.test/vedit/v1/media/${asset.id}`, { method: 'HEAD' }))
+  assert.equal(head.status, 200)
+  assert.equal(head.headers.get('content-type'), 'application/pdf')
+  assert.equal(head.headers.get('content-length'), '8')
+  assert.equal(head.headers.get('cache-control'), 'public, max-age=31536000, immutable')
+  assert.equal(head.headers.get('content-disposition'), 'inline; filename="sheet.pdf"')
+  assert.equal(head.body, null)
+  assert.deepEqual(seen, ['read'], 'a HEAD is a read')
+
+  const missing = await handle(new Request('https://site.test/vedit/v1/media/nope.pdf', { method: 'HEAD' }))
+  assert.equal(missing.status, 404)
+
+  // The Allow list says so; the collection is a listing, which stays GET and POST.
+  const wrongItem = await handle(new Request(`https://site.test/vedit/v1/media/${asset.id}`, { method: 'POST' }))
+  assert.equal(wrongItem.headers.get('allow'), 'GET, HEAD, DELETE')
+  const collection = await handle(new Request('https://site.test/vedit/v1/media', { method: 'HEAD' }))
+  assert.equal(collection.status, 405)
 })
 
 test('delete removes the asset and a later get is 404', async () => {

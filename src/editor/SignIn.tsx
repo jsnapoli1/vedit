@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useVeditStore } from '../core/context'
 import { EDITOR_CSS } from './styles'
 
@@ -41,7 +42,12 @@ export function SignIn({ onCancel }: { onCancel: () => void }) {
     }
   }
 
-  return (
+  if (typeof document === 'undefined') return null
+
+  // Portalled to the body like the rest of the chrome: rendered in place it
+  // would sit inside the page's own tree, where the scanner rightly reads a
+  // `data-vedit-ui` as a page borrowing the attribute and says so.
+  return createPortal(
     <div className="vedit-root vedit-signin-backdrop" data-vedit-ui="" role="region" aria-label="vedit editor">
       <form className="vedit-panel vedit-signin" onSubmit={(event) => void submit(event)} aria-label="Sign in">
         <div className="vedit-panel-head">Sign in to edit</div>
@@ -88,6 +94,7 @@ export function SignIn({ onCancel }: { onCancel: () => void }) {
           </div>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body,
   )
 }

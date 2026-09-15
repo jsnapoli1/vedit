@@ -5,7 +5,7 @@ import { itemId, parseItemId } from '../runtime/repeat'
 import { applyRecordOperations } from '../content/operations'
 import { overlayChanges } from '../content/overlay'
 import { newRecordId, remapIds } from '../content/ids'
-import { isAsset } from '../content/assets'
+import { warnOnce } from './env'
 import type {
   RecordBinding,
   RecordChanges,
@@ -50,12 +50,20 @@ const HISTORY_LIMIT = 100
 export type Capability = 'write' | 'publish' | 'upload' | 'data:write' | 'data:delete'
 
 /**
- * Override keys that are the *content* of a node rather than its look. On a
- * bound node these belong to the record, in this order of preference when a
- * patch carries more than one: rich text wins over plain text, as it does in the
- * document.
+ * Which override keys are the *content* a node takes from its record, by what
+ * the node is: an image shows the record as its source, a link, a file or a
+ * button as its destination, text as its copy. Only these go to the record on a
+ * bound node. Everything else written to it — a link's copy, an image's alt,
+ * visibility, a class — is the document's, exactly as it is on any other node;
+ * a box or a component has no content to bind.
  */
-const BOUND_KEYS = ['html', 'text', 'src', 'href', 'alt'] as const
+const BOUND_KEYS: Partial<Record<NodeKind, ReadonlyArray<'html' | 'text' | 'src' | 'href'>>> = {
+  text: ['html', 'text'],
+  image: ['src'],
+  link: ['href'],
+  file: ['href'],
+  button: ['href'],
+}
 
 /** `null` names the page's own document; a string names a shared one. */
 type DocKey = string | null
@@ -385,33 +393,35 @@ export class VeditStore {
   }
 
   /**
-   * Split a patch for a bound node: the content goes to the record it shows,
-   * the rest (visibility, styling, a class) stays with the document.
+   * Split a patch for a bound node: the content the node shows from its record
+   * goes to the record, the rest (a link's copy, visibility, styling, a class)
+   * stays with the document.
    */
   private splitBound(
     binding: RecordBinding,
+    kind: NodeKind,
     patch: NodeOverride,
   ): { record: Record<string, unknown> | null; rest: NodeOverride } {
+    const keys = BOUND_KEYS[kind]
+    if (!keys) return { record: null, rest: patch }
     const rest: NodeOverride = { ...patch }
-    let value: unknown
-    let found = false
-    for (const key of BOUND_KEYS) {
-      if (!(key in patch)) continue
-      const candidate = rest[key]
-      delete rest[key]
-      if (!found && candidate !== undefined) {
-        found = true
-        // Alt text describes the asset, so it is kept on the asset rather than
-        // replacing it.
-        if (key === 'alt') {
-          const current = this.recordValue(binding)
-          value = isAsset(current) ? { ...current, alt: candidate } : { url: current ?? '', alt: candidate }
-        } else {
-          value = candidate
-        }
-      }
-    }
-    return { record: found ? { [binding.field]: value } : null, rest }
+    for (const key of keys) delete rest[key]
+    // Copy can arrive as both plain and rich text; the record holds one value,
+    // which the page reads back the way the schema says. So a rich-text field
+    // takes the markup and any other field the plain text, when both are given.
+    const order: ReadonlyArray<'html' | 'text' | 'src' | 'href'> =
+      kind === 'text' && !this.isRichtext(binding) ? ['text', 'html'] : keys
+    const value = order.map((key) => patch[key]).find((candidate) => candidate !== undefined)
+    return { record: value !== undefined ? { [binding.field]: value } : null, rest }
+  }
+
+  /** Whether the schema calls a bound field rich text. False until the schema is known. */
+  private isRichtext(binding: RecordBinding): boolean {
+    return (
+      this.state.schema
+        ?.find((source) => source.name === binding.source)
+        ?.fields.find((field) => field.name === binding.field)?.type === 'richtext'
+    )
   }
 
   /** Merge a patch into a node's override. `undefined` values delete keys. */
@@ -588,10 +598,11 @@ export class VeditStore {
     // without this the same write would be applied once per selected item.
     const targets = new Set<string>()
     for (const rawId of rawIds) {
-      const binding = this.registry.get(rawId)?.binding
+      const node = this.registry.get(rawId)
+      const binding = node?.binding
       let rest = patch
-      if (binding) {
-        const split = this.splitBound(binding, patch)
+      if (node && binding) {
+        const split = this.splitBound(binding, node.kind, patch)
         rest = split.rest
         if (split.record) records.push({ op: 'set-record', source: binding.source, id: binding.id, data: split.record })
       }
@@ -955,8 +966,18 @@ export class VeditStore {
       }
     }
     if (!this.content) return
+    // The schema comes with the capabilities, for the visitor as much as the
+    // editor: a bound rich-text field renders as markup only once the page knows
+    // it is one, and a visitor never opens the panel that would otherwise ask.
+    // Its failure is a warning, not the page's error — the rows still render.
+    const schema = this.state.schema
+      ? Promise.resolve()
+      : this.loadSchema().then(
+          () => undefined,
+          (error: unknown) => warnOnce('schema', 'could not load the content schema', error),
+        )
     try {
-      await this.refreshCapabilities()
+      await Promise.all([this.refreshCapabilities(), schema])
     } catch (error) {
       // The page itself loaded; only the question of who is editing went
       // unanswered, so the editor stays closed rather than the page erroring.
@@ -1028,7 +1049,13 @@ export class VeditStore {
     return key === this.state.doc.key ? this.state.saved : this.state.sharedSaved[key]
   }
 
-  /** Rename every temporary record id the server has now replaced. */
+  /**
+   * Rename every temporary record id the server has now replaced, and fold what
+   * was committed into the rows already fetched. The pending changes are cleared
+   * here, so without this the page would fall back to the rows as they were
+   * before the edit until they were loaded again: a title typed into a card
+   * would revert the moment Save finished.
+   */
   private remapAfterCommit(committed: RecordChanges, idMap: Record<string, string>, stage: DocumentStage) {
     const rename = (id: string) => idMap[id] ?? id
     const renameItem = (id: string) => {
@@ -1046,9 +1073,10 @@ export class VeditStore {
       shared: mapDocs(entry.shared),
     })
 
+    const changes = remapIds(committed, idMap)
     const pendingPublish = { ...this.state.pendingPublish }
     if (stage === 'draft') {
-      for (const [source, entry] of Object.entries(remapIds(committed, idMap))) {
+      for (const [source, entry] of Object.entries(changes)) {
         const ids = new Set(pendingPublish[source] ?? [])
         for (const record of entry.create ?? []) ids.add(record.id)
         for (const id of Object.keys(entry.update ?? {})) ids.add(id)
@@ -1058,8 +1086,21 @@ export class VeditStore {
       }
     }
 
+    // Only sources already fetched: a source nothing on this page has loaded
+    // has no rows to fold into, and a created row on its own would be mistaken
+    // for the whole source. The rows keep what the server told us on read —
+    // `_status` and the like are its to say, not guessed here.
+    const records = { ...this.state.records }
+    for (const source of Object.keys(changes)) {
+      const rows = records[source]
+      if (!rows) continue
+      const schema = this.state.schema?.find((candidate) => candidate.name === source)
+      records[source] = overlayChanges(source, rows, changes, schema)
+    }
+
     this.set({
       data: {},
+      records,
       pendingPublish,
       doc: remapIds(this.state.doc, idMap),
       saved: remapIds(this.state.saved, idMap),

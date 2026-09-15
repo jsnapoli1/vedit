@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import {
   Editable,
   EditableFile,
@@ -7,7 +6,6 @@ import {
   httpAdapter,
   useVeditEditing,
   useVeditRecords,
-  useVeditStore,
   type VeditRecord,
 } from 'vedit'
 import { httpContentClient } from 'vedit/content'
@@ -74,20 +72,7 @@ function CatalogNav() {
   )
 }
 
-/**
- * A bound rich-text field renders as markup only once the store knows the
- * field's type, and the store fetches the schema on demand for the inspector.
- * A visitor never opens the inspector, so the page asks for it up front.
- */
-function useSchema() {
-  const store = useVeditStore()
-  useEffect(() => {
-    if (store.supportsContent && !store.getState().schema) void store.loadSchema().catch(() => undefined)
-  }, [store])
-}
-
 function CatalogPage() {
-  useSchema()
   const rows = useVeditRecords('products', { orderBy: 'position' })
   return (
     <>

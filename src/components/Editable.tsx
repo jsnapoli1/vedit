@@ -207,7 +207,9 @@ const EditableNode = function EditableNode({
   if (boundUrl !== undefined) {
     if (resolvedKind === 'image') {
       props.src = safeUrl(assetUrl(boundUrl), { allowDataImage: true }) ?? ''
-      const alt = assetAlt(boundUrl)
+      // Alt is the document's even on a bound image — it describes this use of
+      // the asset — with the asset's own description standing in for it.
+      const alt = override.alt ?? assetAlt(boundUrl)
       if (alt !== undefined) props.alt = alt
     } else {
       props.href = safeUrl(assetUrl(boundUrl)) ?? '#'
