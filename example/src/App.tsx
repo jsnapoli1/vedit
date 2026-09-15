@@ -17,6 +17,7 @@ import {
   type VeditDocument,
 } from 'vedit'
 import { blocks, ContactForm } from './blocks'
+import { CatalogApp } from './catalog'
 
 /** Inline so the demo works with no network. Swap in a real photo through the editor. */
 const PLACEHOLDER_ART =
@@ -198,6 +199,10 @@ export function App() {
   // place instead of loading it into the canvas.
   const canvas = new URLSearchParams(window.location.search).get('mode') !== 'overlay'
   const path = window.location.pathname
+
+  // `/catalog*` is served by `content-server.mjs` and has a provider of its own,
+  // so the routes above keep their localStorage adapter and their screenshots.
+  if (path.startsWith('/catalog')) return <CatalogApp path={path} canvas={canvas} user={demoUser()} />
 
   return (
     <VeditProvider

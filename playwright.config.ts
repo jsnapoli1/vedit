@@ -38,10 +38,20 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], viewport: VIEWPORT },
     },
   ],
-  webServer: {
-    command: 'npm run dev --prefix example -- --port 5178 --strictPort',
-    url: 'http://localhost:5178',
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  // The demo and, behind its `/vedit` proxy, the content server the `/catalog`
+  // pages talk to. The second needs `npm run build` first: it imports `dist/`.
+  webServer: [
+    {
+      command: 'npm run dev --prefix example -- --port 5178 --strictPort',
+      url: 'http://localhost:5178',
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+    {
+      command: 'node example/content-server.mjs',
+      url: 'http://localhost:5180/vedit/v1/capabilities',
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+  ],
 })

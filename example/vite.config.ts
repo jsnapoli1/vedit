@@ -6,10 +6,12 @@ import { fileURLToPath } from 'node:url'
 export default defineConfig({
   plugins: [react()],
   // The demo's `?rt=sse` mode talks to `realtime-server.mjs`, proxied so the
-  // EventSource stays same-origin.
+  // EventSource stays same-origin; the `/catalog` pages talk to
+  // `content-server.mjs` the same way, so its session cookie is a first-party one.
   server: {
     proxy: {
       '/realtime': { target: 'http://localhost:5179', changeOrigin: true },
+      '/vedit': { target: 'http://localhost:5180', changeOrigin: true },
     },
   },
   resolve: {

@@ -47,6 +47,16 @@ body {
 .price { font-size: 32px; font-weight: 700; margin: 0 0 6px; letter-spacing: -.02em; }
 .card .btn { margin-top: 14px; }
 
+/* ------------------------------------------------------- the catalog pages */
+.nav .tagline { color: #94a3b8; font-size: 14px; }
+.card h3 { margin: 0 0 8px; font-size: 18px; }
+.card-body { color: #64748b; line-height: 1.6; font-size: 15px; }
+.card-body p { margin: 0; }
+.sheet { padding: 24px 48px 96px; }
+.sheet-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.sheet-table th, .sheet-table td { text-align: left; padding: 12px 8px; border-bottom: 1px solid #e2e8f0; }
+.sheet-table th { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #64748b; }
+
 /* ------------------------------------------------ blocks placed by the editor */
 .block { padding: 56px 48px; }
 .block h2 { font-size: 34px; letter-spacing: -.02em; margin: 0 0 14px; }
