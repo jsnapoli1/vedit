@@ -20,6 +20,8 @@ export { isTempId, newRecordId, remapIds } from './content/ids'
 export { validateRecord } from './content/validate'
 export { matchWhere, parseRecordQuery, segmentsAfterVersion, sortRows } from './content/query'
 export { assetUrl, isAsset } from './content/assets'
+export { httpContentClient, localContentClient } from './content/client'
+export type { HttpContentClientOptions, LocalContentClientOptions } from './content/client'
 
 export type {
   AccessAction,
