@@ -51,13 +51,18 @@ export async function openCatalog(page: Page, options: { as?: string; path?: str
   await page.waitForTimeout(800)
 }
 
-/** The artboard for a route, once its page has loaded inside the canvas. */
+/**
+ * The artboard for a route, once its page has loaded inside the canvas. An
+ * exact route wins over a longer one that starts the same way, so `/catalog`
+ * is never answered with the `/catalog/sheet` artboard beside it.
+ */
 export function artboard(page: Page, path = '/'): Frame {
   const frames = page.frames().filter((frame) => frame.url().includes('vedit-canvas'))
   const match =
     path === '/'
       ? frames.find((frame) => new URL(frame.url()).pathname === '/')
-      : frames.find((frame) => new URL(frame.url()).pathname.startsWith(path))
+      : frames.find((frame) => new URL(frame.url()).pathname === path) ??
+        frames.find((frame) => new URL(frame.url()).pathname.startsWith(path))
   if (!match) throw new Error(`No artboard for ${path}; have ${frames.map((f) => f.url()).join(', ')}`)
   return match
 }
