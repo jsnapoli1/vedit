@@ -9,7 +9,7 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
-## Unreleased
+## 0.9.0 — 2026-09-15
 
 The document format is unchanged at version 1. Everything here is additive and
 opt-in: four new entry points, a handful of new optional props, and a new node
