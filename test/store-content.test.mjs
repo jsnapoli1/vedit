@@ -382,6 +382,36 @@ test('capabilities decide auth: none, required or ok', async () => {
   }
 })
 
+test('can reports upload, publish and data permissions from capabilities', async () => {
+  const { store, setCapabilities } = makeStore({
+    capabilities: {
+      user: { id: 'u2', email: 'ann@example.com', role: 'author' },
+      login: true,
+      can: { write: true, publish: false, upload: true, data: { write: true, delete: false } },
+    },
+  })
+  await store.load()
+  assert.equal(store.can('write'), true)
+  assert.equal(store.can('publish'), false)
+  assert.equal(store.can('upload'), true)
+  assert.equal(store.can('data:write'), true)
+  assert.equal(store.can('data:delete'), false)
+
+  // A change on the server shows the moment the capabilities are fetched again.
+  setCapabilities({ ...EDITOR, can: { write: false, publish: false, upload: false, data: { write: false, delete: false } } })
+  await store.refreshCapabilities()
+  assert.equal(store.can('upload'), false)
+  assert.equal(store.can('data:write'), false)
+})
+
+test('without a content client every capability is allowed', () => {
+  const store = new VeditStore({ key: 'home', adapter: memoryAdapter() })
+  for (const action of ['write', 'publish', 'upload', 'data:write', 'data:delete']) {
+    assert.equal(store.can(action), true, action)
+  }
+  assert.equal(store.getState().capabilities, null)
+})
+
 test('login refreshes capabilities', async () => {
   const { store, calls } = makeStore({
     capabilities: { user: null, login: true, can: { write: false, publish: false, upload: false, data: { write: false, delete: false } } },
