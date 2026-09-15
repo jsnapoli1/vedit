@@ -39,8 +39,10 @@ Feature-wise, this is past what most 1.0s ship with. That isn't the question a
 version number answers.
 
 **1.0 is a promise**: the public API and the saved document format won't change
-without a major version. The mechanics of that promise exist — the format is
-migrated on load, and the supported surface is separated from the internals. As
+without a major version — and, since `vedit/content` landed, neither will the
+content API's routes nor the store's table shapes. The mechanics of that promise
+exist — the format is migrated on load, the store writes its own schema version
+into `vedit_meta`, and the supported surface is separated from the internals. As
 of 0.3 the product was the whole shape it was aiming at: editing an existing page
 and building a new one out of the same components. 0.4 through 0.6 spent
 themselves on the gap this document used to describe.
@@ -102,7 +104,9 @@ Worth being specific, because the gaps below are easier to read against it.
   can't go stale any more than `vars` can. Editing a card edits every card, which
   is what someone means often enough to be the default, and scoping to one is a
   click. No expressions, no filters, no sorts — the thing that turns page
-  builders into bad programming languages didn't get in.
+  builders into bad programming languages didn't get in. Rows can now be added
+  and removed, but only when the array is a collection vedit keeps, so the
+  buttons say what they do.
 - **Forms collect without the library storing anything.** A form's shape is a
   component prop, so the document format never moved to hold one. Someone with
   no access to the code can add a question, remove one, reorder them and say
@@ -266,29 +270,37 @@ change to let them.
 The temptation is more features, because features are the fun part and the list of
 things this doesn't do is easy to write. But every one of them widens the API that
 1.0 promises to keep. Character-level merging, i18n variants, a hosted backend,
-and **reading** data — expressions, bindings, filters, sorts — are all defensible,
-and none of them is the reason someone would or wouldn't trust this.
+and **computing** — expressions, filters, sorts — are all defensible, and none of
+them is the reason someone would or wouldn't trust this.
 
 **Reading data and collecting it are different questions**, and an earlier draft
-of this list ran them together as "data bindings." Reading is where a page
-builder grows a programming language: an expression that computes something the
-code did not, evaluated against stored text. `repeat` and `vars` went as far in
-that direction as this should go — the host supplies the values, the document
-stores only names. That restraint still stands.
+of this list ran them together as "data bindings." Reading is now answered by
+binding, and the answer kept the line: `bind` names a field of a record, the way
+`vars` names a value and `repeat` names an array. The document stores a name;
+the host's code says where the record comes from. What it still does not do is
+compute — no expression evaluates against stored text, no filter or sort lives
+in the document — because that is where a page builder grows a programming
+language.
 
 Collecting is the reverse, and it is inside the line this library draws. A
-visitor types something and it leaves for an endpoint the host owns; nothing is
-computed and nothing is stored here. Forms shipped for that reason rather than
-as an exception — see "What this is for" above. What kept the cost small is that
-a form's shape is a component prop, so the document format never moved: the
-addition to the frozen surface is one `EditableFieldType` value, one hook, and
-the types around them.
+visitor types something and it leaves for an endpoint the host owns. Forms
+shipped for that reason rather than as an exception — see "What this is for"
+above. What kept the cost small is that a form's shape is a component prop, so
+the document format never moved: the addition to the frozen surface is one
+`EditableFieldType` value, one hook, and the types around them.
 
-Two lines held while adding it. Validation is a closed set of rules rather than a
-regex someone types, because a rule is stored data that runs against every
-visitor's keystroke — that is precisely where an expression language stops being
-free. And submissions go to the host's endpoint and are never stored here, which
-kept every vedit write surface gated by `authorize` instead of adding a public,
-unauthenticated one the API is not ready for.
+Two lines held while adding forms, and one of them has since moved on purpose.
+Validation is a closed set of rules rather than a regex someone types, because a
+rule is stored data that runs against every visitor's keystroke — that is
+precisely where an expression language stops being free; that one stands. The
+other was that submissions are never stored here. Now: vedit stores a submission
+only into a source the host declared — a collection with `create: 'public'`,
+written by the host's own endpoint — and every other write surface is still
+gated by `authorize` or a session. That change came with `vedit/content`, which
+is opt-in: a CMS a site chooses, with the collections in code, the store's table
+shapes versioned from day one, and nothing of it loaded by a site that does not
+pass `content` to the provider. `vedit` alone is still droppable rather than a
+framework you migrate to; `vedit/content` is the thing you would have run beside
+it.
 
 The version number is a promise about stability. Earn it with use, not scope.

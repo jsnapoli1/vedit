@@ -348,9 +348,12 @@ native `required` and `type` attributes so it still degrades to browser
 validation without JavaScript. Errors appear when someone leaves a field and
 update live afterwards, so nobody is scolded halfway through typing their email.
 
-**Submissions go to your endpoint. vedit never stores one** — there is no
-submissions store and nothing in the editor to read them in, because the data is
-the visitor's and belongs in your backend. `action` must be same-origin or an
+**Submissions go to your endpoint.** vedit stores a submission only into a
+source the host declared: your endpoint can write it into a `vedit/content`
+collection with `access: { create: 'public', read: 'admin' }` (see
+[Content](#content)), and then it shows in the Data panel. Without one there is
+no submissions store and nothing in the editor to read them in, because the data
+is the visitor's and belongs in your backend. `action` must be same-origin or an
 absolute `https:` URL, since it comes out of the stored document.
 
 Two things this asks of your endpoint. **Validate again on the server** — the
@@ -558,7 +561,121 @@ const adapter = {
 
 Everything past `save` is optional; the editor hides what an adapter can't do.
 Without `uploadImage`, picking a local image inlines it as a data URL — handy for
-a quick look, not something to save into production content.
+a quick look, not something to save into production content. `uploadAsset` and
+`listAssets` are the same two for any kind of file; `httpAdapter` gets them from
+one `mediaEndpoint`, the media route of the content server below.
+
+---
+
+## Content
+
+Everything above is a layer on top of content that lives in your repository.
+`vedit/content` is the other thing, and it is a CMS you opt into: the products,
+the team, the FAQ live as records in a store vedit owns, and the editor edits
+them on the page they appear on. `vedit` alone stays droppable — nothing here
+loads unless you pass `content` to the provider — and the line about what code
+decides still holds, because the collections are declared in code.
+
+Declare them, mount the handler, render the rows:
+
+```ts
+// schema.ts — shared by the server and the pages
+import { defineCollections, defineGlobals } from 'vedit/content'
+
+export const collections = defineCollections({
+  products: {
+    titleField: 'title',
+    orderField: 'position',
+    fields: {
+      title: { type: 'text', required: true },
+      blurb: 'richtext',
+      datasheet: { type: 'file', label: 'Datasheet' },
+      category: { type: 'relation', to: 'categories' },
+      position: 'number',
+    },
+  },
+  categories: { titleField: 'name', fields: { name: { type: 'text', required: true } } },
+})
+
+export const globals = defineGlobals({
+  site: { fields: { tagline: 'text', contact: 'text' } },
+})
+```
+
+```ts
+// the server — one Fetch handler for records, files and sign-in
+import { createContentHandler, sqlContentStore, nodeSqliteDriver } from 'vedit/content-server'
+import { fsMediaStore } from 'vedit/media'
+import { createAuth, usersCollection } from 'vedit/auth'
+import { DatabaseSync } from 'node:sqlite'
+
+const store = sqlContentStore(nodeSqliteDriver(new DatabaseSync('./content.sqlite')), {
+  dialect: 'sqlite',
+  collections: { ...collections, _users: usersCollection },
+  globals,
+})
+const auth = createAuth({ store, secret: process.env.VEDIT_SECRET, bootstrap: { email: 'you@example.com', password: '…' } })
+await store.init()
+
+export const handle = createContentHandler({ collections, globals, store, media: fsMediaStore('./media'), auth })
+```
+
+```tsx
+// the page
+import { Editable, EditableFile, EditableText, VeditProvider, httpAdapter, useVeditRecords } from 'vedit'
+import { httpContentClient } from 'vedit/content'
+
+<VeditProvider
+  adapter={httpAdapter({ endpoint: '/vedit', mediaEndpoint: '/vedit/v1/media', staged: true })}
+  content={httpContentClient({ endpoint: '/vedit' })}
+  enabled="auth"
+  sharedKeys={['site']}
+>
+
+function Catalog() {
+  const rows = useVeditRecords('products', { orderBy: 'position' })
+  return (
+    <Editable id="products" repeat={rows} source="products">
+      <div className="card">
+        <Editable id="products.title" as="h3" bind="title">Untitled</Editable>
+        <Editable id="products.blurb" bind="blurb" />
+        <EditableFile id="products.datasheet" href="#" bind="datasheet">Datasheet</EditableFile>
+      </div>
+    </Editable>
+  )
+}
+```
+
+`useVeditRecords` gives a visitor the published rows and an editor the drafts
+with their own unsaved edits laid on top. `repeat` with a `source` says the
+cards are rows, so the inspector grows a **Rows** section — add, duplicate,
+remove, move — and `bind` says which field a card shows. An edit to a bound
+node goes to the record rather than to the document; the styling stays with the
+document as before, and Save commits both in one go. `<EditableFile>` is a
+download whose file can be replaced from the inspector; bound to a `file` field,
+the upload lands in the record. A global is bound outright, with
+`bind={{ source: 'site', id: 'global', field: 'tagline' }}`.
+
+`scope="site"` on an `<Editable>` puts its overrides in a document every page
+shares — a nav, a footer — so an edit made on one page is already there on the
+next. `sharedKeys` on the provider says which of those documents to load.
+
+`enabled="auth"` leaves the gate to the server: the editor is on for someone who
+may write or could sign in, and off for everyone else. `createAuth` keeps users
+in the store as a `_users` collection, signs sessions into an `HttpOnly` cookie
+with a bearer fallback, and gives each role what it needs — an author writes
+drafts, an editor publishes, an admin manages users. The editor shows a sign-in
+form before any page loads when the server wants one, hides Publish from an
+author, and adds a **Data** tab: every source as a table, every record as a form
+built from the schema.
+
+The store is three tables that keep each record as JSON, so adding a field is a
+code change and never a migration; `sqlContentStore` takes Node's built-in
+SQLite, better-sqlite3, D1 or Postgres through a driver, and
+`memoryContentStore` is for tests and demos. Every
+route is under one prefix, and the same nine record tools reach it over MCP.
+The full recipe is [INTEGRATING.md §11](./INTEGRATING.md#11-optional-let-vedit-own-the-content);
+the routes are in [API.md](./API.md#4-the-content-api).
 
 ---
 
@@ -594,9 +711,9 @@ a CJS consumer gets the whole thing, editor included.)
 
 **Components**
 
-- `<VeditProvider>` — `documentKey`, `adapter`, `enabled`, `defaultEditing`, `auto`, `autoSelector`, `breakpoints`, `initialDocument`, `canvas`, `pages`, `realtime`, `user`, `realtimeRoom`, `autosaveMs`, `onSave`
-- `<Editable id as kind label container fields>` — the general case; renders any tag or component
-- `<EditableText>` `<EditableImage>` `<EditableBox>` `<EditableLink>` — presets
+- `<VeditProvider>` — `documentKey`, `adapter`, `enabled` (a boolean, or `"auth"` to let the content server decide), `content`, `sharedKeys`, `defaultEditing`, `auto`, `autoSelector`, `breakpoints`, `initialDocument`, `canvas`, `pages`, `realtime`, `user`, `realtimeRoom`, `autosaveMs`, `onSave`
+- `<Editable id as kind label container fields>` — the general case; renders any tag or component. `repeat` and `source` make it a list of rows, `bind` shows a record field, `scope` puts its overrides in a shared document
+- `<EditableText>` `<EditableImage>` `<EditableBox>` `<EditableLink>` `<EditableFile>` — presets
 - `<VeditSlot id as label>` — a region whose contents live in the document
 - `defineComponents({...})` / `defineComponent({...})` — the components a page may be built from
 - `componentManifest(registry)` — the same list without the components, for the API and MCP
@@ -605,6 +722,7 @@ a CJS consumer gets the whole thing, editor included.)
 
 - `useVeditEditing()` → `[editing, setEditing]`, for your own "Edit page" button
 - `useEditable({ id, kind, label, container, fields, props })` → `{ ref, veditProps, props, override }`
+- `useVeditRecords(source, { rows, where, orderBy, populate, fallback })` → the rows of a content source, as this person should see them
 - `useVeditSession()` → `{ peers, comments, staleSince, session }` — build your own presence UI
 - `useVeditState(selector)`, `useVeditStore()`, `useVeditNodes()` for deeper integration
 
@@ -626,6 +744,10 @@ a CJS consumer gets the whole thing, editor included.)
 | `vedit/server` | `createVeditHandler()`, `createRealtimeHandler()`, their `createUnsafeLocal…` counterparts, `fileStore()`, `veditStyleTag()` |
 | `vedit/api` | `createVeditApi()`, `remoteStore()` — the open HTTP API. See [API.md](./API.md) |
 | `vedit/mcp` | `createVeditMcpServer()`, `serveStdio()`, `createMcpHandler()`, `notifyEditors()` |
+| `vedit/content` | `defineCollections()`, `defineGlobals()`, `httpContentClient()`, `localContentClient()`, `applyRecordOperations()`, `validateRecord()` — the schema and the client, no React. See [Content](#content) |
+| `vedit/content-server` | `createContentHandler()`, `createUnsafeLocalContentHandler()`, `memoryContentStore()`, `sqlContentStore()` with `nodeSqliteDriver()`, `betterSqliteDriver()`, `d1Driver()`, `postgresDriver()`, `contentClientFromStore()` |
+| `vedit/media` | `createMediaHandler()`, `fsMediaStore()`, `r2MediaStore()`, `memoryMediaStore()`, `DEFAULT_ACCEPT` |
+| `vedit/auth` | `createAuth()`, `usersCollection`, `hashPassword()`, `verifyPassword()` |
 | `vedit/internal` | The library's own workings — the layer matrix, the scanner, the sanitizers, `auditPage`, the transform and gradient parsers. **Not supported**: these can change in a minor release |
 
 **Designing with an agent**
@@ -634,10 +756,11 @@ a CJS consumer gets the whole thing, editor included.)
 claude mcp add vedit -- npx -y vedit-mcp --dir ./content
 ```
 
-20 MCP tools over the same documents the editor writes: read what a page
-overrides, restyle it, add a section, check the CSS it would produce, publish it.
-Edits land on the draft, so an agent proposes and a person publishes. Full detail
-in [API.md](./API.md).
+20 MCP tools over the same documents the editor writes — 29 with a content
+source, when `--content-endpoint` or `--content-db` names one: read what a page
+overrides, restyle it, add a section, check the CSS it would produce, publish
+it; list a collection's records, change one, add one. Edits land on the draft,
+so an agent proposes and a person publishes. Full detail in [API.md](./API.md).
 
 **The document**
 
@@ -713,6 +836,12 @@ Treat it as only as trustworthy as whoever can write to your store:
   same terms, and for the same reason: an open relay lets anyone who finds it
   read every edit in progress and post messages your editors will act on.
   `createUnsafeLocalRealtimeHandler()` is the opted-out version.
+- **Authorize the content server the same way.** `createContentHandler` needs
+  `auth` or `authorize`, and `createMediaHandler` needs `authorize` — an open
+  upload endpoint is free hosting for anyone who finds it.
+  `createUnsafeLocalContentHandler()` is the opted-out version. Records are
+  validated against their collection before anything is written, and a
+  `password` field is hashed on the way in and never read back.
 - Style values and token names are stripped of anything that could end a rule or
   leave the `<style>` element; property names that aren't property names are
   dropped.
@@ -777,6 +906,11 @@ Open it twice with `?as=Sam` and `?as=Alex` to see presence and comments across
 two tabs. `node example/realtime-server.mjs` starts the SSE relay, and `?rt=sse`
 points the demo at it instead of the cross-tab channel — the same path two people
 on two machines would take.
+
+`/catalog` is the half where vedit owns the content. `node example/content-server.mjs`
+serves the records, files and sign-in it needs (sam@example.com / vedit-demo)
+from `example/schema.mjs`, and Vite proxies `/vedit` to it; the page is
+`example/src/catalog.tsx`.
 
 ### Tests
 

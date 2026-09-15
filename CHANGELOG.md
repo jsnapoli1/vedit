@@ -9,6 +9,144 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## Unreleased
+
+The document format is unchanged at version 1. Everything here is additive and
+opt-in: four new entry points, a handful of new optional props, and a new node
+kind, and none of it loads until a site passes `content` to the provider. A
+document written by 0.8 opens untouched. **A site that already uses vedit has
+nothing to do.**
+
+What is added is a content layer. Until now vedit was a layer over content that
+lives in your repository; `vedit/content` is the other thing — a CMS you opt
+into, with the collections declared in code, a store vedit owns, and the editor
+editing the rows on the page they appear on. `vedit` alone stays what it was.
+
+### Added
+
+- **`vedit/content`, `vedit/content-server`, `vedit/media`, `vedit/auth`** — the
+  content layer, as four entry points that stay out of the bundle of a site that
+  does not use them.
+
+  `defineCollections` and `defineGlobals` declare sources in code: fields of
+  thirteen types (text, textarea, richtext, number, boolean, date, json, select,
+  image, file, video, relation, password), access per source per action as a
+  level or a function of the request, drafts and twenty versions per record by
+  default, hooks after a change. The record type is inferred; nothing is
+  generated. `createContentHandler` is one Fetch handler over a store — records,
+  publishing, versions — with the media and auth handlers mounted beside it
+  under one prefix. Access is checked for every record of every source before
+  anything is written, and a commit is one transaction, so a save across two
+  sources lands whole or not at all.
+
+  The store keeps each record as JSON in three tables and never needs a
+  migration when a field is added. `sqlContentStore` reaches SQLite, D1 or
+  Postgres through a driver typed against what it calls rather than the library
+  it wraps — the package still has no dependencies, and a host installs only
+  the one database library it uses. `memoryContentStore` is for tests and
+  demos. A store of your own is a `RowStore`: six operations, and drafts,
+  publishing and versions come for free on top.
+
+  `createMediaHandler` stores any kind of file — `fsMediaStore` on disk,
+  `r2MediaStore` in a bucket — behind a mime allowlist and a size limit, and
+  serves it back with a year-long cache header and its original name.
+
+  `createAuth` keeps users in the store as a `_users` collection, hashes
+  passwords with PBKDF2 through `crypto.subtle` so it runs on Workers, signs a
+  session into an `HttpOnly` cookie with a bearer fallback, refuses a cookie on
+  a cross-site post, and rate-limits sign-ins. Roles are a ladder — author,
+  editor, admin — and `authorize` plugs into the document and realtime handlers
+  as it is.
+
+- **`content` on `<VeditProvider>`**, and what it turns on. Pass an
+  `httpContentClient` and the editor learns the site's sources: the left panel
+  gains a **Data** tab with every source as a table and every record as a form
+  built from the schema; Save commits record changes first and remaps the ids
+  the server chose into everything that referenced them; Publish publishes the
+  records committed since the last one. A record edit is one undo step, like
+  any other.
+
+- **`bind`, `source` and `scope` on `<Editable>`**, and `useVeditRecords`.
+  `repeat` with a `source` says the items are rows of that collection, and the
+  inspector grows a **Rows** section — add, duplicate, remove, move — with the
+  Insert panel offering *Add … row*. The controls 0.7 said would be lying are
+  honest here, because the store owns the array. `bind` says which field a
+  node shows; an edit to it goes to the record rather than to the document,
+  and the styling stays with the document. `useVeditRecords(source)` returns
+  the rows as this person should see them: published for a visitor, the draft
+  with unsaved edits laid on top for an editor, so a row added shows as a card
+  before anything is saved. `scope="site"` puts a node's overrides in a
+  document every page shares, loaded through `sharedKeys` on the provider — a
+  nav edited on one page is already edited on the next.
+
+- **`<EditableFile>`** and the `file` node kind — a download whose file can be
+  replaced from the inspector. A bare `<a>` whose `href` ends in a document
+  extension is picked up as one by the scanner too. Bound to a `file` field the
+  upload lands in the record; unbound it writes the URL into `href`, like an
+  image.
+
+- **`enabled="auth"`** on the provider, and a sign-in form. The editor is on
+  for someone who may write or could sign in, and off for everyone else;
+  someone who could sign in sees the form before any page loads. Publish is
+  hidden from a role that may not publish, Upload and Replace from one that may
+  not upload, Delete in the Data panel from one that may not delete.
+
+- **Nine MCP tools over records** — `list_sources`, `describe_source`,
+  `list_records`, `get_record`, `set_record`, `create_record`, `delete_record`,
+  `reorder_records`, `publish_records` — offered when `createVeditMcpServer` is
+  given a `content` client. `vedit-mcp` gains `--content-endpoint <url>` for a
+  deployed content server and `--content-db <file> --schema <module>` for a
+  SQLite file on disk, loading `node:sqlite` only when asked. Twenty tools
+  without a content source, twenty-nine with one.
+
+- **`HEAD` on a media file**, answering with the same headers and no bytes, for
+  a CDN or a link checker.
+
+- **`mediaEndpoint` on `httpAdapter`** — one route for uploads and the library,
+  any kind of file, in place of `uploadEndpoint` and `assetsEndpoint`; and
+  `uploadAsset` and `listAssets({ kind, query })` on the adapter interface, so
+  an adapter of your own can store a PDF as readily as an image. `uploadImage`
+  still works and is what the editor falls back to for an image.
+
+### Changed
+
+- **`VeditState.past` and `future` are `HistoryEntry[]`**, not `VeditDocument[]`.
+  An entry is `{ doc, data, shared }` — the page, the pending record changes and
+  every shared document, taken together — because undo has to restore all three
+  at once: a record edit and a style edit made in turn are two steps back, not
+  one and a stray. Anything reading the length is unaffected; anything reading an
+  entry as a document now reads `entry.doc`. `VeditState` is a supported
+  export, which is why this is here and not under Added.
+
+- **`sanitizeHtml` takes `{ profile: 'inline' | 'block' }`.** The default is
+  `inline`, the whitelist it always had. `block` is for a rich text field:
+  headings, lists, blockquotes, links and images as well, with `script`,
+  `style`, `iframe`, `object`, `embed`, `svg` and `math` removed with their
+  subtrees rather than unwrapped. On the server, where there is no parser, both
+  profiles are the same regex pass, and a record's rich text is stored as that
+  pass leaves it.
+
+- **`EditableFieldType` gains `file`, `video`, `relation` and `richtext`**, and
+  `EditableField` gains `to`, `many` and `accept` for them. The inspector draws
+  an asset picker for the first two, a select over the related source for the
+  third, and a sanitised HTML editor for the fourth; the Data panel's forms use
+  the same controls.
+
+- **`VeditAsset` gains `id`, `kind`, `mime` and `size`.** All optional; `url` is
+  still the only promise, and an adapter that returns `{ url }` is unchanged.
+
+- **Three lines in the README and the roadmap moved.** *"vedit never stores a
+  submission"* is now *vedit stores a submission only into a source the host
+  declared* — a collection with `create: 'public'` is a form endpoint, and it
+  is the host's endpoint that writes to it. *"Droppable, not a framework you
+  migrate to"* still holds for `vedit` alone; `vedit/content` is a CMS you opt
+  into, and the docs say so plainly, with the drop-in story first. And the 1.0
+  promise now covers the content API and the store's table shapes as well as
+  the document format, which is why the store writes a schema version of its
+  own (`vedit_meta`, `STORE_SCHEMA_VERSION`) from day one.
+
+---
+
 ## 0.8.0 — 2026-09-10
 
 The document format is unchanged at version 1. Everything here is additive:

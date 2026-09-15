@@ -61,8 +61,39 @@ src/
     Editable.tsx   the general case, plus rendering placed components
     Shape.tsx      an inserted shape: preset geometry, or re-sanitised import
     Slot.tsx       VeditSlot: a region whose contents live in the document
-    presets.tsx    EditableText / Image / Box / Link
-    useEditable.ts registration + prop merging
+    presets.tsx    EditableText / Image / Box / Link / File
+    useEditable.ts registration + prop merging, `bind` and `scope` resolved here
+    useVeditRecords.ts  the rows of a source, published for a visitor, draft + local edits for an editor
+
+  content/         the content layer's pure core — no React, no server; both bundles import it
+    types.ts       collections, fields, access, records, the client interface
+    schema.ts      defineCollections, normalizeFields, what a role may do
+    operations.ts  RecordOperation and the fold into RecordChanges
+    overlay.ts     rows with the pending changes applied — what a bound repeat renders
+    ids.ts         temp ids, and remapping them after a commit
+    validate.ts    a record against its fields; rich text sanitised here
+    query.ts       where/orderBy/limit, and the URL form of them
+    assets.ts      an asset-typed field's value, object or bare URL
+    client.ts      httpContentClient and localContentClient
+
+  content-server/  vedit/content-server
+    types.ts       VeditContentStore, and the RowStore underneath it
+    store.ts       drafts, publishing, versions — written once over a RowStore
+    memory.ts      a RowStore in two maps
+    sql.ts         a RowStore in three tables, over a driver
+    drivers.ts     node:sqlite, better-sqlite3, D1, pg — typed against what they call
+    handler.ts     createContentHandler: the routes, access per source, media and auth mounted beside
+    client.ts      contentClientFromStore, for MCP and scripts
+
+  media/           vedit/media: put/get/delete/list of bytes with their metadata
+    handler.ts     upload, list, serve with cache and disposition headers
+    fs.ts, r2.ts, memory.ts   the stores; ids.ts is what keeps an id inside them
+
+  auth/            vedit/auth: users in the content store, sessions in a cookie
+    index.ts       createAuth — login routes, CSRF rule, rate limit, roles → actions
+    password.ts    PBKDF2 through crypto.subtle
+    token.ts       the signed session token
+    users.ts       the _users collection
 
   auto/            the DOM scanner for unwrapped elements
   runtime/         pure functions, unit-testable without a browser
@@ -81,18 +112,38 @@ src/
     interactions.ts every page-level gesture
     Overlay/Presence/CommentsLayer   things drawn over the page
     panels/        toolbar, layers, insert, inspector, tokens, checks, notes, history
+      Data.tsx     every source as a table, every record as a form from the schema
+      fields.tsx   PropField: one control per field type, shared by the inspector and Data
+    SignIn.tsx     the form shown instead of the chrome while the server wants a login
     a11y.ts        the contrast and structure checks
 
   server.ts          vedit/server: document handler, file store, SSR helper
   realtime-server.ts the SSE relay
   api.ts             vedit/api: the open HTTP surface, and a client for it
-  mcp.ts             vedit/mcp: the same vocabulary as MCP tools
+  mcp.ts             vedit/mcp: the same vocabulary as MCP tools, plus the record tools
+  content.ts         vedit/content: the barrel over content/
+  content-server.ts  vedit/content-server
+  media.ts           vedit/media
+  auth.ts            vedit/auth
   index.ts           the supported API
   internal.ts        the rest, exported and explicitly unsupported
+
+example/
+  content-server.mjs the content, media and auth handlers behind /catalog, in one Node file
+  schema.mjs         the catalog's collections and globals — the server and vedit-mcp --schema read the same file
+  src/catalog.tsx    the demo pages that bind rows, replace a file and share a nav
 ```
 
-Rough sizes: `core` 2.3k lines, `editor` 5k, everything else under 900. The
-editor is the big half, and it is the half a visitor never downloads.
+Rough sizes: `core` 4.4k lines, `editor` 8.6k, `runtime` 2k, the content layer
+(`content`, `content-server`, `media`, `auth`) 3.8k together, everything else
+about 1k or less. The editor is the big half, and it is the half a visitor
+never downloads.
+
+`content/` is imported by both the browser bundle and the server ones, and the
+same pure code ends up in each. That duplication is deliberate: the editor
+needs the fold and the overlay to show an edit before it is saved, the server
+needs the same fold to commit it, and one module with no React and no I/O is
+how they stay identical.
 
 ---
 
@@ -228,6 +279,7 @@ uses it:
 { load, save,                     // required
   publish, listVersions, loadVersion,   // → Publish button, History tab
   uploadImage, listAssets,              // → Upload, image library
+  uploadAsset,                          // → the same for any kind of file; preferred over uploadImage
   listComments, saveComment, deleteComment }  // → comments persist
 ```
 
@@ -270,7 +322,59 @@ to select it and delete it.
 `mcp.ts`, in the `all` array: a name, a description a model can act on, a JSON
 Schema, and a `run` that goes through `applyOperations`. Mark it `write: true` if
 it changes anything — that is what `--read-only` filters on. Then a line in
-API.md, because a tool nobody knows about is not a feature.
+API.md, because a tool nobody knows about is not a feature. A tool over records
+goes in `recordTools` instead and runs through the content client, so it is
+offered only when there is one.
+
+### Add a field type
+
+A field type is two things that have to agree: what the server accepts and
+what the editor draws.
+
+1. `content/types.ts` — the name on `FieldType`, and any option it needs on
+   `FieldSpec` (`to` and `many` are the pattern)
+2. `content/validate.ts` — `typeProblem`, so a record carrying the wrong shape
+   is refused with the field's name, and anything that must be cleaned on the
+   way in is cleaned there (`richtext` is the worked example)
+3. `editor/panels/fields.tsx` — a case in `PropField`, which is the one control
+   the inspector and the Data panel share; `core/types.ts` `EditableFieldType`
+   if a component prop may be of it too
+4. `components/Editable.tsx` — only if a bound node should render it in some
+   way other than as text; image and file resolve an asset to its URL there
+5. `mcp.ts` — nothing, unless `describe_source` should say more about it
+6. A unit test against `dist/content.js` for the validation, and a line in
+   INTEGRATING.md's list of types
+
+The type name is stored in nothing — the schema lives in code — so adding one
+moves no version. Renaming one is a code change for the host and nothing else.
+
+### Add a content source
+
+The store, the media store and the auth are each an interface with one or two
+reference implementations, and none of them knows about the others.
+
+- **A database**: implement `RowStore` — `init`, `select`, `selectOne`,
+  `batch`, `versions`, `meta` — and hand it to `contentStore`. `batch` is the
+  one promise that matters: every operation lands or none does. Drafts,
+  publishing and versions are written once in `content-server/store.ts` and
+  come for free. For a SQL database it is smaller still: a `SqlDriver` is
+  `query` and an atomic `batch`, typed against what it calls rather than the
+  library it wraps (`drivers.ts`), so the package takes no database types and
+  a host installs only the one it uses.
+- **Somewhere files live**: implement `VeditMediaStore` — `put`, `get`,
+  `delete`, `list` — owning the bytes and the metadata together, so a listing
+  never joins two places that can disagree. Check every id with `isSafeId`
+  before touching the backend; the handler does too, but a store is also
+  called from code.
+- **A different way to know who is asking**: pass `authorize` to
+  `createContentHandler` instead of `auth`. A trusted request is an admin,
+  anything else a visitor. The finer grain — roles, per-source rules — only
+  exists through `createAuth`, because that is where the user's role comes
+  from.
+
+A store of any kind is tested against `dist/content-server.js` with the same
+list of cases `test/content-store.test.mjs` runs over the memory and SQLite
+stores; a new implementation should pass that list unchanged.
 
 ---
 
@@ -406,8 +510,18 @@ can't check any other way.
 - **No CSS files, no runtime dependencies.** React is the only peer.
 - **The browser and server entries stay apart.** `src/index.ts` and
   `src/internal.ts` are browser code and ship `'use client'` (added post-build;
-  see `scripts/use-client.mjs`). `src/server.ts`, `src/api.ts` and `src/mcp.ts`
-  are server code and deliberately don't.
+  see `scripts/use-client.mjs`). `src/server.ts`, `src/api.ts`, `src/mcp.ts`,
+  `src/content.ts`, `src/content-server.ts`, `src/media.ts` and `src/auth.ts`
+  are server code and deliberately don't — `vedit/content` has no React in it
+  even though a page imports it, which is what lets a schema module be shared
+  with the server.
+- **Node-only code is imported inside the function that needs it.** `fileStore`
+  and `fsMediaStore` reach `node:` modules through a dynamic import, the SQLite
+  driver takes a database the host already opened, and nothing in `src/`
+  imports `node:sqlite` at all (`bin/vedit-mcp.mjs` does, lazily, for
+  `--content-db`), so every server bundle loads on Workers and the parts that
+  can't run there are the only ones that fail. Auth uses `crypto.subtle` and no
+  `node:crypto` for the same reason.
 - **`src/index.ts` is a promise.** Anything exported there is supported. If a
   helper is only exported because something needed it, it belongs in
   `src/internal.ts`.

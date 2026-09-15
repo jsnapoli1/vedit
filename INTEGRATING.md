@@ -191,7 +191,10 @@ function PlanCard() {
 ```
 
 What this deliberately does not do: add, remove or reorder rows. The host owns
-the array, so those controls would be lying about what they can change.
+the array, so those controls would be lying about what they can change. They
+appear only when the rows are records vedit keeps — that is
+[step 11](#11-optional-let-vedit-own-the-content), and it is a different
+decision.
 
 ---
 
@@ -446,10 +449,13 @@ with errors focuses the first bad field and posts nothing.
 { "formId": "contact", "values": { "email": "someone@example.com" }, "submittedAt": "..." }
 ```
 
-Or pass `onSubmit` and handle it in code instead. **vedit never stores a
-submission** — there is no submissions store and nothing in the editor to read
-them in, because the data is the visitor's and belongs in your backend, next to
-whatever you already use for email and retention.
+Or pass `onSubmit` and handle it in code instead. **vedit stores a submission
+only into a source you declared.** Without one there is no submissions store
+and nothing in the editor to read them in, because the data is the visitor's
+and belongs in your backend, next to whatever you already use for email and
+retention. With [step 11](#11-optional-let-vedit-own-the-content) your endpoint
+can write it into a collection whose access says `create: 'public'`, and it
+turns up in the Data panel for whoever may read that source.
 
 `action` must be same-origin or an absolute `https:` URL. An `action` comes out of
 the stored document, so an unrestricted one would be a way to redirect every
@@ -626,6 +632,286 @@ Full detail in [API.md](./API.md).
 
 ---
 
+## 11. Optional: let vedit own the content
+
+Everything before this step is a layer over content that lives in your
+repository. This step is different in kind, the way step 5 was: the products,
+the team, the FAQ become records in a store vedit owns, and you are choosing it
+over a CMS you would otherwise run beside it. `vedit/content` is that CMS.
+Nothing here loads until you pass `content` to the provider, so a site that
+stops at step 10 is unchanged.
+
+What you get for it: rows edited on the page they appear on, a file replaced
+from the inspector, a nav that is one document for every page, sign-in and roles
+without a second system, a Data panel for the tables nobody wants a page for,
+and the same records reachable from an agent.
+
+### The schema
+
+Collections and globals are declared in code, and only in code — the editor
+never adds a field, which is the line the rest of this library draws. Put them
+in a module both the server and the pages import:
+
+```ts
+// schema.ts
+import { defineCollections, defineGlobals } from 'vedit/content'
+
+export const collections = defineCollections({
+  products: {
+    label: 'Products',
+    titleField: 'title',          // names a record in lists
+    orderField: 'position',       // a number field the editor may reorder by
+    fields: {
+      title: { type: 'text', required: true },
+      blurb: 'richtext',          // a bare type is the whole spec
+      datasheet: { type: 'file', label: 'Datasheet' },
+      category: { type: 'relation', to: 'categories' },
+      price: 'number',
+      position: 'number',
+    },
+  },
+  categories: {
+    label: 'Categories',
+    titleField: 'name',
+    fields: { name: { type: 'text', required: true } },
+  },
+  inquiries: {
+    fields: { email: { type: 'text', required: true }, message: 'textarea' },
+    drafts: false,
+    access: { create: 'public', read: 'admin', update: 'admin', delete: 'admin' },
+  },
+})
+
+export const globals = defineGlobals({
+  site: { label: 'Site', fields: { tagline: 'text', contact: 'text' } },
+})
+```
+
+Field types are `text`, `textarea`, `richtext`, `number`, `boolean`, `date`,
+`json`, `select` (with `options`), `image`, `file`, `video`, `relation` (with
+`to`, and `many` for a list of ids) and `password`, which is write-only: the
+server hashes it and never reads it back. A field carries `label`, `required`,
+`help` and `default` when it needs them. `InferRecord<typeof collections.products>`
+is the record type; nothing is generated.
+
+Access is per source, per action — `read`, `create`, `update`, `delete`,
+`publish` — and each is a level or a function of the request. The levels are
+`public`, `author`, `editor`, `admin`, each including the ones before it; the
+defaults are read for everyone, create, update and delete for an author, publish
+for an editor. The `inquiries` source above is the shape of a form endpoint:
+anyone may add a row, only an admin may see them.
+
+Every collection keeps a draft apart from the live copy, so an edit is invisible
+to visitors until published, and keeps the last twenty copies of each record
+(`versions` changes the count). `drafts: false` writes straight to what
+visitors see, for a source where a draft makes no sense — users, inquiries. A
+global is a collection with exactly one record, whose id is `global`.
+
+### The server
+
+One Fetch handler serves records, files and sign-in under one prefix, and mounts
+where `createVeditHandler` does:
+
+```ts
+// app/vedit/[...path]/route.ts
+import { createContentHandler, sqlContentStore, nodeSqliteDriver } from 'vedit/content-server'
+import { fsMediaStore } from 'vedit/media'
+import { createAuth, usersCollection } from 'vedit/auth'
+import { DatabaseSync } from 'node:sqlite'
+import { collections, globals } from './schema'
+
+const store = sqlContentStore(nodeSqliteDriver(new DatabaseSync('./content.sqlite')), {
+  dialect: 'sqlite',
+  collections: { ...collections, _users: usersCollection },   // the store holds users too
+  globals,
+})
+const auth = createAuth({
+  store,
+  secret: process.env.VEDIT_SECRET!,                          // at least 16 characters
+  bootstrap: { email: 'you@example.com', password: process.env.VEDIT_BOOTSTRAP! },
+})
+await store.init()                                            // creates the tables once
+
+const handle = createContentHandler({
+  collections, globals, store,                                // leave _users out here: auth adds it
+  media: fsMediaStore('./media'),
+  auth,
+})
+export { handle as GET, handle as HEAD, handle as POST, handle as DELETE }
+```
+
+**The store.** `sqlContentStore` creates three tables — `vedit_records`,
+`vedit_versions`, `vedit_meta` — and keeps each record as JSON in them, so
+adding a field to the schema is a code change and never a migration. It reaches
+the database through a driver written against what the driver calls rather
+than the library it wraps, so the package needs no database types and you
+install only the one you use: `nodeSqliteDriver` for Node's built-in SQLite
+(22.13 or newer), `betterSqliteDriver` for `better-sqlite3`, `d1Driver` for a
+Cloudflare D1 binding, `postgresDriver` for a `pg` client or pool. Every commit
+is one batch — one transaction, or D1's own `batch` — so a save that touches
+two sources lands whole or not at all. `where` on `id` is a point read; every
+other filter, the ordering and the limit run in process, which is right for
+tables of hundreds of rows and would not be for millions. `memoryContentStore`
+is the same semantics with no database, for tests, demos and a first look.
+
+A store of your own implements `VeditContentStore` — `init`, `sources`, `list`,
+`get`, `commit`, `publish`, `versions`, `restoreVersion` — or, much less work,
+a `RowStore` handed to `contentStore`, which adds drafts, publishing and
+versions on top of six row operations.
+
+**Media.** `fsMediaStore(dir)` keeps the bytes and a JSON sidecar per file on
+disk; `r2MediaStore(bucket)` uses an R2 binding, with the asset in the object's
+custom metadata. The handler accepts multipart uploads up to `maxBytes`
+(25 MB) of the mime types in `accept` — `DEFAULT_ACCEPT` is images, mp4 and
+webm, PDF, zip, the Office formats, plain text and CSV, and nothing a browser
+would run — and serves them back with a year-long cache header and a
+`Content-Disposition` carrying the original name. Pass `publicUrl` when a CDN
+sits in front of the bucket. Uploads need the `upload` capability; anyone may
+read.
+
+**Auth.** `createAuth` keeps users in the store as a `_users` collection —
+email, name, role, and a `password` field the handler hashes with PBKDF2-SHA256
+through `crypto.subtle`, so it runs on Workers as it does on Node. `bootstrap`
+creates the first admin on the first request when there are no users; from
+then on users are rows in the Data panel, admin-only. `secret` signs the
+session token and has to be at least 16 characters; keep it out of the repo.
+A sign-in sets an `HttpOnly`, `SameSite=Lax` cookie, `Secure` when the request
+came over https, and returns the same token for a script to send as
+`Authorization: Bearer …`. A cookie is only honoured on a non-GET request the
+browser says came from your own site (`Sec-Fetch-Site`, or `Origin` on older
+browsers) — a form another site posts at you is refused with a 403 rather than
+acted on. After ten failed sign-ins from one address for one email in fifteen
+minutes the next is a 429; that count is kept in memory, so it is per process,
+or per isolate on an edge runtime, where it slows an attacker rather than
+stopping one.
+
+Roles are a ladder. An author reads drafts, writes, uploads and edits records;
+an editor also publishes and deletes; an admin also manages `_users`. The
+handler asks the collection's access rule as well, so a source can be narrower
+than the role.
+
+Without `auth`, pass `authorize` instead — the same callback the document
+handler takes, with a second argument saying what the request is trying to do.
+A trusted request acts as an admin and any other as a visitor. Leaving both out
+is a `TypeError`; `createUnsafeLocalContentHandler` is the open version, for a
+laptop.
+
+Locally, `node example/content-server.mjs` in this repository is the whole thing
+in one file, with a memory store and a temp directory, and is what the demo's
+`/catalog` pages talk to.
+
+### The client
+
+```tsx
+import { VeditProvider, httpAdapter } from 'vedit'
+import { httpContentClient } from 'vedit/content'
+
+<VeditProvider
+  adapter={httpAdapter({ endpoint: '/vedit', mediaEndpoint: '/vedit/v1/media', staged: true })}
+  content={httpContentClient({ endpoint: '/vedit' })}
+  enabled="auth"
+  sharedKeys={['site']}
+>
+```
+
+`content` is what turns the rest on. `httpContentClient` talks to the handler
+with `credentials: 'same-origin'`, so the session cookie rides along, and keeps
+the token a sign-in returns as a bearer for the case where there is no cookie.
+`mediaEndpoint` on the adapter points the inspector's Upload and Library at the
+same server for files of any kind, in place of `uploadEndpoint` and
+`assetsEndpoint`.
+
+`enabled="auth"` hands the question of step 8 to the server: the editor is on
+when this person may write or could sign in, and off for everyone else. Someone
+who could sign in sees the sign-in form before any page loads, and nothing
+else. Keep `enabled` a boolean if you already have a session of your own — the
+content client still works, and the two gates are independent.
+
+`sharedKeys` lists the documents every page loads besides its own, for the nav
+and the footer below. Each is an ordinary document under that key, saved and
+published by the same adapter.
+
+### Rendering records
+
+```tsx
+import { Editable, EditableFile, EditableText, useVeditRecords } from 'vedit'
+
+function Catalog() {
+  const rows = useVeditRecords('products', { orderBy: 'position' })
+  return (
+    <Editable id="products" repeat={rows} source="products">
+      <div className="card">
+        <Editable id="products.title" as="h3" bind="title">Untitled</Editable>
+        <Editable id="products.blurb" as="div" bind="blurb" />
+        <EditableFile id="products.datasheet" href="#" bind="datasheet">Datasheet</EditableFile>
+      </div>
+    </Editable>
+  )
+}
+
+<EditableText id="tagline" bind={{ source: 'site', id: 'global', field: 'tagline' }}>
+  Parts that ship the day you order.
+</EditableText>
+```
+
+`useVeditRecords` returns the rows as this person should see them: a visitor
+gets what is published — the `rows` you pass from a server fetch, or one
+request for them — and someone editing gets the drafts with their own unsaved
+edits laid on top, so a title typed into a card shows in that card and a row
+added shows as a card before anything is saved. It never suspends; the first
+render is `rows`, `fallback` or nothing. `where`, `orderBy` and `populate`
+(relation fields to resolve into the records they point at) are the query.
+
+`repeat` with a `source` says the items are rows of that collection. That is
+what lets the children bind by field name, and what makes the inspector show a
+**Rows** section on a card — add, duplicate, remove, move up and down — and the
+Insert panel offer *Add Products row*. The controls that step 3 said would be
+lying are honest here, because the store owns the array.
+
+`bind` says which field a node shows. What is bound is the content: the text,
+or the HTML for a `richtext` field, the `src` of an image, the `href` of a link
+or file. An edit to it goes to the record rather than to the document, and
+styling stays with the document as before — a bold title on one card is still
+an override under that card's id. Until the row is known the children render
+as written, which is what a visitor sees for a record with no value yet. A
+field name resolves against the enclosing repeat; the object form names a
+record outright, for a global or a row rendered on its own.
+
+`<EditableFile>` is a link to a download. Unbound, the inspector's **Replace…**
+uploads a file and writes its URL into `href`, like an image; bound to a `file`
+field, the upload lands in the record as an asset — `{ id, url, kind, name,
+mime, size }` — and the page renders its `url`. A bare `<a>` whose `href` ends
+in a document extension is picked up as a file by the scanner too.
+
+`scope="site"` on an `<Editable>` puts its overrides in the shared document of
+that name rather than the page's, so a nav edited on the home page is already
+edited on every other. Children inherit it. The key has to be in `sharedKeys`.
+
+### What the editor shows
+
+With `content` set, the left panel gains a **Data** tab: every source as a
+table (title, status, last change), every record as a form built from the
+schema, with New and Delete. Edits there go through the same Save and Publish
+as the page and are one undo step each. A source the caller may not update
+renders read-only; Delete is hidden without the `data:delete` capability.
+`_users` is there for an admin, with a password field that stores hashed.
+
+Save commits the record changes first, in one request, then saves the page and
+every shared document that changed; the ids the server chose for new rows are
+written back into anything that referenced the temporary ones. A commit that
+fails keeps the changes, so the next Save sends them once. Publish saves,
+publishes each document, then publishes the records committed since the last
+one. The Publish button is hidden from a role that may not publish, and Upload
+and Replace from one that may not upload — the same rule as an adapter without
+`publish`.
+
+**Check**: sign in, edit a bound title, Save — a `curl` of
+`/vedit/v1/content/products/<id>?stage=draft` with the cookie shows it, and
+without `stage=draft` does not until Publish. Sign out and the page shows the
+published copy.
+
+---
+
 ## Framework notes
 
 Each of these has a minimal example app under [`examples/`](./examples), built
@@ -668,6 +954,9 @@ machine; anything shared needs an endpoint.
 | Styles don't apply | Something in your CSS uses `!important`. Overrides use high specificity, not `!important`. |
 | A hover style does nothing | It was written at a breakpoint you aren't at. Check which breakpoint is selected in the toolbar. |
 | Client state resets when the editor opens | Expected: the canvas loads the page fresh in a frame. `canvas={false}` avoids it. |
+| A card has no **Rows** section | The `repeat` has no `source`. Naming the collection is what says the items are its rows. |
+| **Add row** adds a record but no card appears | The array came from somewhere other than `useVeditRecords`, so the page never sees the pending row. Render the rows through the hook; it returns exactly what you pass in for a visitor. |
+| `createContentHandler` throws about `_users` at startup | `usersCollection` belongs in the *store's* spec, so the store knows the source; the handler adds it to what it serves by itself when `auth` is given. Leave it out of the handler's `collections`. |
 
 ---
 
@@ -683,3 +972,8 @@ machine; anything shared needs an endpoint.
 - [ ] Edited, published, and confirmed as a signed-out visitor
 - [ ] Optional: `vedit/api` mounted with a real `authorize`, or `vedit-mcp`
       pointed at your documents
+- [ ] Optional: collections declared in code, `createContentHandler` mounted
+      with `auth` or `authorize`, `content` on the provider, and the `secret`
+      read from the environment
+- [ ] Optional: rows rendered through `useVeditRecords`, bound with `bind`, and
+      a Save checked as a draft before Publish
