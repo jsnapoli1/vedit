@@ -2,12 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useVeditNodes, useVeditState, useVeditStore } from '../../core/context'
 import {
   STYLE_STATES,
-  type EditableField,
-  type FormField,
-  type FormFieldType,
-  type FormRule,
   type NodeKind,
-  type PatternPreset,
   type RegisteredNode,
   type ShapePreset,
   type ShapeSpec,
@@ -23,7 +18,6 @@ import {
   serializeGradient,
   type Gradient,
 } from '../../runtime/gradient'
-import { autoCompleteFor } from '../../runtime/forms'
 import { unknownPlaceholders } from '../../runtime/interpolate'
 import { parseItemId } from '../../runtime/repeat'
 import { parseTransform, withTransform } from '../../runtime/transform'
@@ -36,9 +30,11 @@ import {
 } from '../../runtime/animation'
 import { parseFilter, withFilter, type FilterParts } from '../../runtime/filter'
 import { sanitizeSvg } from '../../runtime/sanitize'
-import { isFileHref } from '../../runtime/fileHref'
+import { assetUrl, isAsset } from '../../content/assets'
+import type { SourceField } from '../../content/types'
 import { SHAPE_PRESETS, parseShape } from '../../runtime/shape'
 import { TokenPicker } from './Tokens'
+import { AssetLibrary, PropField, fileNameOf, formatBytes } from './fields'
 import {
   useComputedStyle,
   useContentValue,
@@ -358,435 +354,6 @@ function PropsSection({ id }: { id: string }) {
   )
 }
 
-function PropField({
-  field,
-  value,
-  source,
-  onChange,
-}: {
-  field: EditableField
-  value: unknown
-  source: unknown
-  onChange: (next: unknown) => void
-}) {
-  const label = field.label ?? field.name.replace(/([A-Z])/g, ' $1').replace(/^\w/, (c) => c.toUpperCase())
-  const current = value ?? source
-  const overridden = value !== undefined
-  const reset = () => onChange(undefined)
-
-  const options = (field.options ?? []).map((option) =>
-    typeof option === 'string' ? { value: option, label: option } : option,
-  )
-
-  const control = () => {
-    switch (field.type) {
-      case 'boolean':
-        return (
-          <Segmented
-            value={current === undefined ? undefined : current ? 'on' : 'off'}
-            options={[
-              { value: 'on', label: 'On' },
-              { value: 'off', label: 'Off' },
-            ]}
-            onChange={(next) => onChange(next === undefined ? undefined : next === 'on')}
-          />
-        )
-      case 'select':
-        return options.length <= 3 ? (
-          <Segmented
-            value={current === undefined ? undefined : String(current)}
-            options={options.map((option) => ({ value: option.value, label: option.label }))}
-            onChange={(next) => onChange(next)}
-          />
-        ) : (
-          <select
-            className="vedit-select"
-            value={current === undefined ? '' : String(current)}
-            onChange={(event) => onChange(event.target.value || undefined)}
-          >
-            <option value="">default</option>
-            {options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        )
-      case 'number':
-        return (
-          <LengthField
-            value={current === undefined ? undefined : String(current)}
-            computed={source === undefined ? undefined : String(source)}
-            defaultUnit=""
-            step={field.step}
-            min={field.min}
-            onChange={(next) => onChange(next === undefined ? undefined : Number.parseFloat(next))}
-          />
-        )
-      case 'color':
-        return (
-          <ColorField
-            value={typeof current === 'string' ? current : undefined}
-            computed={typeof source === 'string' ? source : undefined}
-            onChange={(next) => onChange(next)}
-          />
-        )
-      case 'textarea':
-        return (
-          <textarea
-            className="vedit-textarea"
-            value={current === undefined ? '' : String(current)}
-            onChange={(event) => onChange(event.target.value || undefined)}
-          />
-        )
-      case 'fields':
-        return (
-          <FieldListEditor
-            value={Array.isArray(current) ? (current as FormField[]) : []}
-            onChange={(next) => onChange(next.length ? next : undefined)}
-          />
-        )
-      default:
-        return (
-          <TextField
-            value={current === undefined ? '' : String(current)}
-            placeholder={source === undefined ? field.type : String(source)}
-            overridden={overridden}
-            onChange={(next) => onChange(next || undefined)}
-          />
-        )
-    }
-  }
-
-  return (
-    <>
-      {field.type === 'textarea' || field.type === 'fields' ? (
-        <>
-          <div className="vedit-label" style={{ width: 'auto', marginBottom: 4 }}>
-            {label}
-          </div>
-          {control()}
-        </>
-      ) : (
-        <Row label={label} overridden={overridden} onReset={overridden ? reset : undefined}>
-          {control()}
-        </Row>
-      )}
-      {field.help ? <div className="vedit-hint" style={{ marginBottom: 6 }}>{field.help}</div> : null}
-    </>
-  )
-}
-
-/* ------------------------------------------------------------------ content */
-
-const FORM_FIELD_TYPES: FormFieldType[] = [
-  'text', 'textarea', 'email', 'tel', 'url', 'number', 'checkbox', 'select', 'radio', 'date',
-]
-
-/** Rules that mean something for a given control — no `minLength` on a checkbox. */
-function rulesFor(type: FormFieldType): FormRule['kind'][] {
-  const base: FormRule['kind'][] = ['required']
-  if (type === 'checkbox') return base
-  if (type === 'number') return [...base, 'min', 'max', 'integer']
-  if (type === 'select' || type === 'radio' || type === 'date') return base
-  const text: FormRule['kind'][] = [...base, 'minLength', 'maxLength', 'pattern', 'matches']
-  if (type === 'email') return [...text, 'email']
-  if (type === 'url') return [...text, 'url']
-  if (type === 'tel') return [...text, 'tel']
-  return text
-}
-
-const RULE_LABELS: Record<FormRule['kind'], string> = {
-  required: 'Required',
-  minLength: 'Min length',
-  maxLength: 'Max length',
-  min: 'Minimum',
-  max: 'Maximum',
-  email: 'Valid email',
-  url: 'Valid URL',
-  tel: 'Valid phone',
-  integer: 'Whole number',
-  pattern: 'Format',
-  matches: 'Matches field',
-}
-
-const PATTERN_LABELS: Array<{ value: PatternPreset; label: string }> = [
-  { value: 'usZip', label: 'US ZIP code' },
-  { value: 'usPhone', label: 'US phone' },
-  { value: 'postcodeUk', label: 'UK postcode' },
-  { value: 'slug', label: 'Slug' },
-  { value: 'hexColor', label: 'Hex colour' },
-]
-
-/**
- * Build a form by listing its controls.
- *
- * Validation is picked from a fixed set rather than typed as a pattern. A rule
- * is stored data that runs against every visitor's keystrokes, and an arbitrary
- * regex out of a document is a way to hang their tab — so the choice is a menu,
- * which also means every rule has a control and a name someone can read.
- */
-function FieldListEditor({
-  value,
-  onChange,
-}: {
-  value: FormField[]
-  onChange: (next: FormField[]) => void
-}) {
-  const [open, setOpen] = useState<number | null>(null)
-
-  const update = (index: number, patch: Partial<FormField>) =>
-    onChange(value.map((field, i) => (i === index ? { ...field, ...patch } : field)))
-
-  const move = (index: number, by: number) => {
-    const next = [...value]
-    const target = index + by
-    if (target < 0 || target >= next.length) return
-    const moved = next[target]
-    next[target] = next[index]
-    next[index] = moved
-    onChange(next)
-  }
-
-  const add = () => {
-    onChange([...value, { name: `field${value.length + 1}`, type: 'text', label: 'New field', rules: [] }])
-    setOpen(value.length)
-  }
-
-  const duplicates = new Set(
-    value.map((field) => field.name).filter((name, i, all) => all.indexOf(name) !== i),
-  )
-
-  return (
-    <div className="vedit-field-list">
-      {value.map((field, index) => {
-        const expanded = open === index
-        const kinds = rulesFor(field.type)
-        const rules = field.rules ?? []
-        const has = (kind: FormRule['kind']) => rules.some((rule) => rule.kind === kind)
-
-        const toggle = (kind: FormRule['kind']) => {
-          if (has(kind)) {
-            update(index, { rules: rules.filter((rule) => rule.kind !== kind) })
-            return
-          }
-          let added: FormRule
-          if (kind === 'minLength') added = { kind, value: 1 }
-          else if (kind === 'maxLength') added = { kind, value: 200 }
-          else if (kind === 'min' || kind === 'max') added = { kind, value: 0 }
-          else if (kind === 'pattern') added = { kind, preset: 'usZip' }
-          else if (kind === 'matches') {
-            added = { kind, field: value.find((other) => other.name !== field.name)?.name ?? '' }
-          } else added = { kind } as FormRule
-          update(index, { rules: [...rules, added] })
-        }
-
-        const numeric = (kind: 'minLength' | 'maxLength' | 'min' | 'max') => {
-          const rule = rules.find((entry) => entry.kind === kind)
-          return rule && 'value' in rule ? String(rule.value) : ''
-        }
-
-        const setNumeric = (kind: 'minLength' | 'maxLength' | 'min' | 'max', next: string) => {
-          const parsed = Number.parseFloat(next)
-          if (Number.isNaN(parsed)) return
-          update(index, {
-            rules: rules.map((rule) => (rule.kind === kind ? { kind, value: parsed } : rule)),
-          })
-        }
-
-        return (
-          <div key={index} className="vedit-field-item">
-            <div className="vedit-field-head">
-              <button
-                type="button"
-                className="vedit-field-toggle"
-                aria-expanded={expanded}
-                onClick={() => setOpen(expanded ? null : index)}
-              >
-                {field.label || field.name}
-                <span className="vedit-hint"> · {field.type}</span>
-              </button>
-              <button type="button" className="vedit-btn vedit-btn-icon" aria-label={`Move ${field.label || field.name} up`} onClick={() => move(index, -1)}>
-                ↑
-              </button>
-              <button type="button" className="vedit-btn vedit-btn-icon" aria-label={`Move ${field.label || field.name} down`} onClick={() => move(index, 1)}>
-                ↓
-              </button>
-              <button
-                type="button"
-                className="vedit-btn vedit-btn-icon"
-                aria-label={`Remove ${field.label || field.name}`}
-                onClick={() => onChange(value.filter((_, i) => i !== index))}
-              >
-                ×
-              </button>
-            </div>
-
-            {duplicates.has(field.name) ? (
-              <div className="vedit-hint vedit-warn">
-                Two fields are named “{field.name}”. They would submit under the same key, and one
-                answer would be lost.
-              </div>
-            ) : null}
-            {!field.label ? (
-              <div className="vedit-hint vedit-warn">
-                No label, so a screen reader announces nothing for this field.
-              </div>
-            ) : null}
-
-            {expanded ? (
-              <div className="vedit-field-body">
-                <Row label="Label">
-                  <TextField value={field.label ?? ''} onChange={(next) => update(index, { label: next })} />
-                </Row>
-                <Row label="Name">
-                  <TextField value={field.name} onChange={(next) => update(index, { name: next.trim() })} />
-                </Row>
-                <Row label="Type">
-                  <select
-                    className="vedit-select"
-                    value={field.type}
-                    onChange={(event) => {
-                      const type = event.target.value as FormFieldType
-                      const allowed = rulesFor(type)
-                      update(index, {
-                        type,
-                        rules: rules.filter((rule) => allowed.includes(rule.kind)),
-                      })
-                    }}
-                  >
-                    {FORM_FIELD_TYPES.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                </Row>
-                <Row label="Placeholder">
-                  <TextField
-                    value={field.placeholder ?? ''}
-                    onChange={(next) => update(index, { placeholder: next || undefined })}
-                  />
-                </Row>
-                <Row label="Help">
-                  <TextField
-                    value={field.help ?? ''}
-                    onChange={(next) => update(index, { help: next || undefined })}
-                  />
-                </Row>
-                <Row label="Autofill">
-                  <TextField
-                    value={field.autoComplete ?? ''}
-                    placeholder={autoCompleteFor(field) ?? 'off'}
-                    onChange={(next) => update(index, { autoComplete: next || undefined })}
-                  />
-                </Row>
-
-                {field.type === 'select' || field.type === 'radio' ? (
-                  <Row label="Options">
-                    <TextField
-                      value={(field.options ?? [])
-                        .map((option) => (typeof option === 'string' ? option : option.value))
-                        .join(', ')}
-                      onChange={(next) =>
-                        update(index, {
-                          options: next.split(',').map((part) => part.trim()).filter(Boolean),
-                        })
-                      }
-                    />
-                  </Row>
-                ) : null}
-
-                <div className="vedit-label" style={{ width: 'auto', margin: '8px 0 4px' }}>
-                  Validation
-                </div>
-                {kinds.map((kind) => (
-                  <div key={kind}>
-                    <Row label={RULE_LABELS[kind]}>
-                      <input
-                        type="checkbox"
-                        checked={has(kind)}
-                        aria-label={RULE_LABELS[kind]}
-                        onChange={() => toggle(kind)}
-                      />
-                    </Row>
-                    {has(kind) && (kind === 'minLength' || kind === 'maxLength' || kind === 'min' || kind === 'max') ? (
-                      <Row label="Value">
-                        <TextField value={numeric(kind)} onChange={(next) => setNumeric(kind, next)} />
-                      </Row>
-                    ) : null}
-                    {has(kind) && kind === 'pattern' ? (
-                      <Row label="Format">
-                        <select
-                          className="vedit-select"
-                          aria-label="Format"
-                          value={
-                            (rules.find((rule) => rule.kind === 'pattern') as
-                              | { preset: PatternPreset }
-                              | undefined)?.preset ?? 'usZip'
-                          }
-                          onChange={(event) =>
-                            update(index, {
-                              rules: rules.map((rule) =>
-                                rule.kind === 'pattern'
-                                  ? { kind: 'pattern', preset: event.target.value as PatternPreset }
-                                  : rule,
-                              ),
-                            })
-                          }
-                        >
-                          {PATTERN_LABELS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </Row>
-                    ) : null}
-                    {has(kind) && kind === 'matches' ? (
-                      <Row label="Field">
-                        <select
-                          className="vedit-select"
-                          aria-label="Field to match"
-                          value={
-                            (rules.find((rule) => rule.kind === 'matches') as
-                              | { field: string }
-                              | undefined)?.field ?? ''
-                          }
-                          onChange={(event) =>
-                            update(index, {
-                              rules: rules.map((rule) =>
-                                rule.kind === 'matches'
-                                  ? { kind: 'matches', field: event.target.value }
-                                  : rule,
-                              ),
-                            })
-                          }
-                        >
-                          {value
-                            .filter((other) => other.name !== field.name)
-                            .map((other) => (
-                              <option key={other.name} value={other.name}>
-                                {other.label || other.name}
-                              </option>
-                            ))}
-                        </select>
-                      </Row>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        )
-      })}
-      <button type="button" className="vedit-btn" style={{ width: '100%' }} onClick={add}>
-        Add field
-      </button>
-    </div>
-  )
-}
-
 function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
   const store = useVeditStore()
   const node = store.getNode(id)
@@ -798,6 +365,7 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [browsing, setBrowsing] = useState(false)
+  const canUpload = useVeditState(() => store.can('upload'))
 
   if (kind === 'image') {
     // Falls back to whatever the page is rendering, so the preview works before
@@ -813,45 +381,47 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
             onChange={(next) => setSrc(next || undefined)}
           />
         </Row>
-        <Row>
-          <button
-            type="button"
-            className="vedit-btn"
-            style={{ flex: 1, background: 'var(--vedit-panel-2)' }}
-            disabled={uploading}
-            onClick={() => fileInput.current?.click()}
-          >
-            {uploading ? 'Uploading…' : 'Upload…'}
-          </button>
-          {store.canListAssets ? (
+        {canUpload ? (
+          <Row>
             <button
               type="button"
               className="vedit-btn"
               style={{ flex: 1, background: 'var(--vedit-panel-2)' }}
-              onClick={() => setBrowsing(!browsing)}
+              disabled={uploading}
+              onClick={() => fileInput.current?.click()}
             >
-              {browsing ? 'Close library' : 'Library…'}
+              {uploading ? 'Uploading…' : 'Upload…'}
             </button>
-          ) : null}
-          <input
-            ref={fileInput}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={async (event) => {
-              const file = event.target.files?.[0]
-              if (!file) return
-              setUploading(true)
-              try {
-                setSrc(await store.uploadImage(file))
-              } finally {
-                setUploading(false)
-                event.target.value = ''
-              }
-            }}
-          />
-        </Row>
-        {browsing ? <AssetLibrary onPick={(url) => { setSrc(url); setBrowsing(false) }} /> : null}
+            {store.canListAssets ? (
+              <button
+                type="button"
+                className="vedit-btn"
+                style={{ flex: 1, background: 'var(--vedit-panel-2)' }}
+                onClick={() => setBrowsing(!browsing)}
+              >
+                {browsing ? 'Close library' : 'Library…'}
+              </button>
+            ) : null}
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={async (event) => {
+                const file = event.target.files?.[0]
+                if (!file) return
+                setUploading(true)
+                try {
+                  setSrc(await store.uploadImage(file))
+                } finally {
+                  setUploading(false)
+                  event.target.value = ''
+                }
+              }}
+            />
+          </Row>
+        ) : null}
+        {browsing ? <AssetLibrary kind="image" onPick={(asset) => { setSrc(asset.url); setBrowsing(false) }} /> : null}
         <Row label="Alt">
           <TextField value={alt ?? ''} placeholder="Describe the image" onChange={(next) => setAlt(next || undefined)} />
         </Row>
@@ -1038,92 +608,65 @@ function CropRow({ id }: { id: string }) {
   )
 }
 
-/** Images the adapter already knows about, so you rarely need to upload twice. */
-function AssetLibrary({ onPick }: { onPick: (url: string) => void }) {
-  const store = useVeditStore()
-  const [assets, setAssets] = useState<VeditAsset[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    store
-      .listAssets()
-      .then((result) => !cancelled && setAssets(result))
-      .catch((cause) => !cancelled && setError(cause instanceof Error ? cause.message : String(cause)))
-    return () => {
-      cancelled = true
-    }
-  }, [store])
-
-  if (error) return <div className="vedit-hint">Could not load the library: {error}</div>
-  if (!assets) return <div className="vedit-hint">Loading…</div>
-  if (!assets.length) return <div className="vedit-hint">The library is empty.</div>
-
-  return (
-    <div className="vedit-assets">
-      {assets.map((asset) => (
-        <button
-          key={asset.url}
-          type="button"
-          title={asset.name ?? asset.url}
-          style={{ backgroundImage: `url("${asset.url.replace(/"/g, '%22')}")` }}
-          onClick={() => onPick(asset.url)}
-        />
-      ))}
-    </div>
-  )
-}
-
 /* --------------------------------------------------------------------- file */
 
-function fileNameOf(url: string): string {
-  const path = url.split(/[?#]/)[0]
-  const last = path.split('/').filter(Boolean).at(-1) ?? ''
-  try {
-    return decodeURIComponent(last)
-  } catch {
-    return last
-  }
-}
-
-function isFileAsset(asset: VeditAsset): boolean {
-  return asset.kind ? asset.kind === 'file' : isFileHref(asset.url)
-}
-
-function formatBytes(size: number): string {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+/** What the file dialog offers for a bound field, which says its type but not its mimes. */
+function acceptFor(field: SourceField | undefined): string {
+  if (field?.type === 'image') return 'image/*'
+  if (field?.type === 'video') return 'video/*'
+  return '*/*'
 }
 
 /**
  * The file behind a download link. Its copy and destination are edited under
  * Content like any link's; this is where the file itself is swapped, so a new
  * datasheet is one pick rather than a URL someone has to know in advance.
+ *
+ * A node bound to a record field keeps the file there instead: the whole asset
+ * goes into the record, so the server knows the name and size and every page
+ * showing that row gets the new file. The href in the document is left alone.
  */
 function FileSection({ id }: { id: string }) {
   const store = useVeditStore()
   const node = store.getNode(id)
+  const binding = node?.binding
   const [text] = useContentValue(id, 'text')
   const [href] = useContentValue(id, 'href')
+  const bound = useVeditState(() => (binding ? store.recordValue(binding) : undefined))
+  const field = useVeditState((state) =>
+    binding
+      ? state.schema?.find((source) => source.name === binding.source)?.fields.find((entry) => entry.name === binding.field)
+      : undefined,
+  )
+  const canUpload = useVeditState(() => store.can('upload'))
   const fileInput = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [browsing, setBrowsing] = useState(false)
   const [picked, setPicked] = useState<VeditAsset | null>(null)
 
-  const current = href ?? node?.element.getAttribute('href') ?? ''
-  const name = fileNameOf(current)
-  // The size is only known for a file that came through the store this session;
-  // a link from source code says nothing about what is behind it.
-  const size = picked && picked.url === current ? picked.size : undefined
+  const current = binding
+    ? assetUrl(bound) || (node?.element.getAttribute('href') ?? '')
+    : href ?? node?.element.getAttribute('href') ?? ''
+  // A record holds the asset itself, name and size included. The document only
+  // holds an href, so there the size is known just for a file that came through
+  // the store this session; a link from source code says nothing about what is
+  // behind it.
+  const asset = isAsset(bound) ? bound : picked && picked.url === current ? picked : null
+  const name = asset?.name ?? fileNameOf(current)
+  const size = asset?.size
+  const kind = field?.type === 'image' || field?.type === 'video' ? field.type : 'file'
 
-  const apply = (asset: VeditAsset) => {
-    setPicked(asset)
-    const patch: { href: string; text?: string } = { href: asset.url }
+  const apply = (next: VeditAsset) => {
+    setPicked(next)
+    if (binding) {
+      store.setRecord(binding.source, binding.id, { [binding.field]: next })
+      return
+    }
+    const patch: { href: string; text?: string } = { href: next.url }
     // Copy that was the old file's name follows the file, so a link never reads
     // "datasheet-v1.pdf" while handing over v2. Any other copy is left alone.
     const label = text ?? node?.sourceText
-    const nextName = asset.name ?? fileNameOf(asset.url)
+    const nextName = next.name ?? fileNameOf(next.url)
     if (label && label === name && nextName) patch.text = nextName
     store.update(id, patch)
   }
@@ -1136,90 +679,62 @@ function FileSection({ id }: { id: string }) {
         </span>
         {size !== undefined ? <span className="vedit-hint">{formatBytes(size)}</span> : null}
       </div>
-      <Row>
-        <button
-          type="button"
-          className="vedit-btn"
-          style={{ flex: 1, background: 'var(--vedit-panel-2)' }}
-          disabled={uploading}
-          onClick={() => fileInput.current?.click()}
-        >
-          {uploading ? 'Uploading…' : 'Replace…'}
-        </button>
-        {store.canListAssets ? (
+      {binding ? (
+        <div className="vedit-hint" style={{ marginBottom: 6 }}>
+          Stored on the {binding.source} record, so every page showing it changes too.
+        </div>
+      ) : null}
+      {canUpload ? (
+        <Row>
           <button
             type="button"
             className="vedit-btn"
             style={{ flex: 1, background: 'var(--vedit-panel-2)' }}
-            onClick={() => setBrowsing(!browsing)}
+            disabled={uploading}
+            onClick={() => fileInput.current?.click()}
           >
-            {browsing ? 'Close library' : 'Library…'}
+            {uploading ? 'Uploading…' : 'Replace…'}
           </button>
-        ) : null}
-        <input
-          ref={fileInput}
-          type="file"
-          accept="*/*"
-          hidden
-          onChange={async (event) => {
-            const file = event.target.files?.[0]
-            if (!file) return
-            setUploading(true)
-            try {
-              const asset = await store.uploadAsset(file, { kind: 'file' })
-              if (asset) apply(asset)
-            } finally {
-              setUploading(false)
-              event.target.value = ''
-            }
-          }}
-        />
-      </Row>
+          {store.canListAssets ? (
+            <button
+              type="button"
+              className="vedit-btn"
+              style={{ flex: 1, background: 'var(--vedit-panel-2)' }}
+              onClick={() => setBrowsing(!browsing)}
+            >
+              {browsing ? 'Close library' : 'Library…'}
+            </button>
+          ) : null}
+          <input
+            ref={fileInput}
+            type="file"
+            accept={binding ? acceptFor(field) : '*/*'}
+            hidden
+            onChange={async (event) => {
+              const file = event.target.files?.[0]
+              if (!file) return
+              setUploading(true)
+              try {
+                const uploaded = await store.uploadAsset(file, { kind })
+                if (uploaded) apply(uploaded)
+              } finally {
+                setUploading(false)
+                event.target.value = ''
+              }
+            }}
+          />
+        </Row>
+      ) : null}
       {browsing ? (
-        <FileLibrary
-          onPick={(asset) => {
-            apply(asset)
+        <AssetLibrary
+          kind={kind}
+          onPick={(next) => {
+            apply(next)
             setBrowsing(false)
           }}
         />
       ) : null}
     </Section>
-  )
-}
-
-/** Files already stored, by name: a thumbnail of a PDF says nothing. */
-function FileLibrary({ onPick }: { onPick: (asset: VeditAsset) => void }) {
-  const store = useVeditStore()
-  const [assets, setAssets] = useState<VeditAsset[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    store
-      .listAssets({ kind: 'file' })
-      // An adapter from before there was a filter answers with its whole
-      // library, which by its old contract is images — so anything it did not
-      // label is sorted by what its url ends in.
-      .then((result) => !cancelled && setAssets(result.filter(isFileAsset)))
-      .catch((cause) => !cancelled && setError(cause instanceof Error ? cause.message : String(cause)))
-    return () => {
-      cancelled = true
-    }
-  }, [store])
-
-  if (error) return <div className="vedit-hint">Could not load the library: {error}</div>
-  if (!assets) return <div className="vedit-hint">Loading…</div>
-  if (!assets.length) return <div className="vedit-hint">No files stored yet.</div>
-
-  return (
-    <div className="vedit-files">
-      {assets.map((asset) => (
-        <button key={asset.url} type="button" title={asset.url} onClick={() => onPick(asset)}>
-          <span className="vedit-file-name">{asset.name ?? fileNameOf(asset.url)}</span>
-          {asset.size !== undefined ? <span className="vedit-hint">{formatBytes(asset.size)}</span> : null}
-        </button>
-      ))}
-    </div>
   )
 }
 

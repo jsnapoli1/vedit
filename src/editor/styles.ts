@@ -484,4 +484,47 @@ html.vedit-editing .vedit-inserted-button {
   background: transparent; text-align: left;
 }
 .vedit-files button:hover { border-color: var(--vedit-accent); background: var(--vedit-panel-2); }
+
+/* ---------------------------------------------------------- field editors */
+/* A label above a control that needs the whole width, with room for a reset. */
+.vedit-label-stacked {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  width: auto; margin-bottom: 4px;
+}
+.vedit-asset { margin-bottom: 6px; }
+.vedit-asset-thumb {
+  height: 64px; border-radius: 6px; margin-bottom: 6px;
+  background-color: #1a1a1a; background-size: cover; background-position: center;
+  border: 1px solid var(--vedit-border);
+}
+.vedit-select-multiple { height: auto; min-height: 68px; padding: 3px 0; width: 100%; margin-bottom: 6px; }
+.vedit-select-multiple option { padding: 3px 6px; border-radius: 4px; }
+.vedit-select-multiple option:checked { background: var(--vedit-accent); color: #fff; }
+.vedit-richtext { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; min-height: 96px; margin-bottom: 6px; }
+
+/* ---------------------------------------------------------------- sign in */
+/*
+ * The one piece of chrome that takes the pointer everywhere: the page behind it
+ * is not being edited yet, and a stray click on it would be a click on a page
+ * whose owner has not said this person may touch it.
+ */
+.vedit-signin-backdrop {
+  pointer-events: auto; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .45);
+}
+.vedit-signin { position: relative; width: 300px; font-size: 12px; }
+.vedit-signin-body { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 16px; }
+.vedit-signin-field { display: flex; flex-direction: column; gap: 4px; }
+.vedit-signin-field span { color: var(--vedit-muted); font-size: 11px; }
+.vedit-signin-input {
+  height: 30px; padding: 0 9px; border-radius: var(--vedit-radius);
+  background: var(--vedit-panel-2); border: 1px solid transparent; color: inherit;
+  font: inherit; outline: none;
+}
+.vedit-signin-input:focus { border-color: var(--vedit-accent); }
+.vedit-signin-input:disabled { opacity: .6; }
+.vedit-signin-error { color: #ffb4ac; line-height: 1.45; }
+.vedit-signin-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+.vedit-signin-actions .vedit-btn { height: 30px; padding: 0 14px; }
+.vedit-signin-actions .vedit-btn:not(.vedit-btn-primary) { border-color: var(--vedit-border); }
 `

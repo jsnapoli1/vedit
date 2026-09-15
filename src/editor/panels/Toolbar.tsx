@@ -50,8 +50,11 @@ export function Toolbar({
   const status = useVeditState((state) => state.status)
   const canUndo = useVeditState((state) => state.past.length > 0)
   const canRedo = useVeditState((state) => state.future.length > 0)
-  const dirty = useVeditState((state) => state.doc !== state.saved)
-  const unpublished = useVeditState((state) => state.doc !== state.published)
+  // The store's own answer, not a look at the document: pending record edits
+  // and a shared document with unsaved work count too.
+  const dirty = useVeditState(() => store.dirty)
+  const unpublished = useVeditState(() => store.unpublished)
+  const canPublish = useVeditState(() => store.can('publish'))
   const width = useViewportWidth()
 
   return (
@@ -165,7 +168,9 @@ export function Toolbar({
       >
         {status === 'saving' ? 'Saving…' : dirty ? (store.supportsPublishing ? 'Save draft' : 'Save changes') : 'Saved'}
       </button>
-      {store.supportsPublishing ? (
+      {/* Hidden rather than disabled for someone who may not publish: a greyed
+          button asks to be enabled, and nothing they do here would enable it. */}
+      {store.supportsPublishing && canPublish ? (
         <button
           type="button"
           className="vedit-btn vedit-btn-primary"
