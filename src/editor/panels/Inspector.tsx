@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useVeditNodes, useVeditState, useVeditStore } from '../../core/context'
 import {
   STYLE_STATES,
@@ -31,16 +31,19 @@ import {
 import { parseFilter, withFilter, type FilterParts } from '../../runtime/filter'
 import { sanitizeSvg } from '../../runtime/sanitize'
 import { assetUrl, isAsset } from '../../content/assets'
-import type { SourceField } from '../../content/types'
+import type { SourceField, VeditRecord } from '../../content/types'
+import type { VeditStore } from '../../core/store'
 import { SHAPE_PRESETS, parseShape } from '../../runtime/shape'
 import { TokenPicker } from './Tokens'
 import { AssetLibrary, PropField, fileNameOf, formatBytes } from './fields'
 import {
+  useBoundRepeat,
   useComputedStyle,
   useContentValue,
   useSelectedNode,
   useSelectionTargets,
   useStyleValue,
+  type BoundRepeat,
 } from '../hooks'
 import {
   IconAlignCenter,
@@ -174,6 +177,7 @@ export function Inspector() {
           <>
             <Breadcrumb id={id} />
             <RepeatScope id={id} />
+            <RowsSection id={id} />
             <StateSwitch id={id} />
             <PropsSection id={id} />
             <ContentSection id={id} kind={kind} />
@@ -293,6 +297,137 @@ function RepeatScope({ id }: { id: string }) {
   )
 }
 
+/**
+ * The row behind a card: add one, copy it, take it away, move it.
+ *
+ * Only for a repeat whose items are rows of a content source. The buttons write
+ * record operations, not document ones — a row added here is a row on the
+ * server once saved, and the page grows a card because the host renders the rows
+ * through `useVeditRecords`. Order is a record operation too, so it is recorded
+ * even for a source without an order field; the server keeps it wherever it
+ * keeps such things.
+ */
+function RowsSection({ id }: { id: string }) {
+  const store = useVeditStore()
+  const repeat = useBoundRepeat(id)
+  const source = repeat?.source ?? ''
+  const fetched = useVeditState((state) => state.records[source])
+  const data = useVeditState((state) => state.data)
+  const schema = useVeditState((state) => state.schema)
+  // `recordsFor` builds a new array each call, which a snapshot may not do; it
+  // reads `data` and `schema`, so they are dependencies even though the call
+  // does not take them.
+  const rows = useMemo(
+    () => (repeat ? store.recordsFor(source, fetched ?? []) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [store, repeat, source, fetched, data, schema],
+  )
+  const label = schema?.find((entry) => entry.name === source)?.label ?? source
+  const canWrite = useVeditState(() => store.can('data:write'))
+  const canDelete = useVeditState(() => store.can('data:delete'))
+  if (!repeat) return null
+
+  const order = rows.map((row) => row.id)
+  const index = order.indexOf(repeat.rowId)
+  const known = index !== -1
+  const moveHint = known ? undefined : 'The rows have not loaded yet, so there is no order to move this one in'
+
+  const move = (by: -1 | 1) => {
+    const to = index + by
+    if (!known || to < 0 || to >= order.length) return
+    const next = [...order]
+    next[index] = order[to]
+    next[to] = order[index]
+    store.reorderRecords(source, next)
+  }
+
+  const duplicate = () => {
+    store.createRecord(source, rowFields(rows[index], repeat, store))
+  }
+
+  return (
+    <Section title="Rows">
+      <div className="vedit-hint" style={{ marginBottom: 6 }}>
+        {known ? `Row ${index + 1} of ${order.length} in ${label}.` : `A row of ${label}.`}
+        {canWrite ? '' : ' You can look, but this site has not let you change its rows.'}
+      </div>
+      <div className="vedit-rows">
+        <button
+          type="button"
+          className="vedit-btn"
+          aria-label={`Add a ${label} row`}
+          disabled={!canWrite}
+          onClick={() => store.createRecord(source, {})}
+        >
+          Add row
+        </button>
+        <button
+          type="button"
+          className="vedit-btn"
+          aria-label={`Duplicate this ${label} row`}
+          disabled={!canWrite}
+          onClick={duplicate}
+        >
+          Duplicate
+        </button>
+        <button
+          type="button"
+          className="vedit-btn"
+          aria-label={`Remove this ${label} row`}
+          disabled={!canWrite || !canDelete}
+          title={canWrite && !canDelete ? 'Removing rows is not something this site lets you do' : undefined}
+          onClick={() => store.deleteRecord(source, repeat.rowId)}
+        >
+          Remove
+        </button>
+      </div>
+      <div className="vedit-rows">
+        <button
+          type="button"
+          className="vedit-btn"
+          aria-label="Move this row up"
+          disabled={!canWrite || !known || index === 0}
+          title={moveHint}
+          onClick={() => move(-1)}
+        >
+          Move up
+        </button>
+        <button
+          type="button"
+          className="vedit-btn"
+          aria-label="Move this row down"
+          disabled={!canWrite || !known || index === order.length - 1}
+          title={moveHint}
+          onClick={() => move(1)}
+        >
+          Move down
+        </button>
+      </div>
+    </Section>
+  )
+}
+
+/**
+ * What a copy of a row starts with: the row's own fields, less the id and the
+ * server's bookkeeping. When the rows have not been fetched the page is the
+ * only copy there is, so the bound nodes' values stand in.
+ */
+function rowFields(row: VeditRecord | undefined, repeat: BoundRepeat, store: VeditStore): Record<string, unknown> {
+  const fields: Record<string, unknown> = {}
+  if (row) {
+    for (const [name, value] of Object.entries(row)) {
+      if (name !== 'id' && name !== '_status' && name !== '_updatedAt') fields[name] = value
+    }
+    return fields
+  }
+  for (const node of repeat.fields) {
+    if (!node.binding) continue
+    const value = store.recordValue(node.binding)
+    if (value !== undefined) fields[node.binding.field] = value
+  }
+  return fields
+}
+
 /** The path down to the selection — click a step to select that ancestor (or Esc). */
 function Breadcrumb({ id }: { id: string }) {
   const store = useVeditStore()
@@ -354,34 +489,64 @@ function PropsSection({ id }: { id: string }) {
   )
 }
 
+/**
+ * A bound node shows its record, so this is where the record's value is read
+ * from — the pending edit, else the fetched row — and the page's own copy of
+ * that key is ignored, as it is when the node renders. Writes go through the
+ * same setters every node uses: the store sees the binding and puts the content
+ * on the record. A bound value can be an asset object, which reads as its URL.
+ */
 function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
   const store = useVeditStore()
   const node = store.getNode(id)
+  const binding = node?.binding
   const [text, setText] = useContentValue(id, 'text')
   const [href, setHref] = useContentValue(id, 'href')
   const [target, setTarget] = useContentValue(id, 'target')
   const [src, setSrc] = useContentValue(id, 'src')
   const [alt, setAlt] = useContentValue(id, 'alt')
+  const bound = useVeditState(() => (binding ? store.recordValue(binding) : undefined))
+  const richtext = useVeditState((state) =>
+    binding
+      ? state.schema?.find((source) => source.name === binding.source)?.fields.find((entry) => entry.name === binding.field)
+          ?.type === 'richtext'
+      : false,
+  )
+  const canWriteData = useVeditState(() => store.can('data:write'))
   const fileInput = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [browsing, setBrowsing] = useState(false)
   const canUpload = useVeditState(() => store.can('upload'))
 
+  // A bound node's content is the record's; the document's copy is skipped.
+  const locked = !!binding && !canWriteData
+  const boundHint = binding ? (
+    <div className="vedit-hint" style={{ marginBottom: 6 }}>
+      {locked
+        ? `Comes from the ${binding.source} record, which this site has not let you change.`
+        : `Stored on the ${binding.source} record, so every page showing it changes too.`}
+    </div>
+  ) : null
+
   if (kind === 'image') {
     // Falls back to whatever the page is rendering, so the preview works before
     // anything has been overridden.
-    const current = src ?? node?.element.getAttribute('src') ?? null
+    const boundSrc = binding ? assetUrl(bound) || undefined : undefined
+    const current = (binding ? boundSrc : src) ?? node?.element.getAttribute('src') ?? null
+    const currentAlt = binding ? assetAlt(bound) : alt
     return (
       <Section title="Image">
         <ImagePreview id={id} src={current} />
+        {boundHint}
         <Row label="Source">
           <TextField
-            value={src ?? ''}
+            value={(binding ? boundSrc : src) ?? ''}
             placeholder={current ? 'Using the image from your code' : 'https://…'}
+            disabled={locked}
             onChange={(next) => setSrc(next || undefined)}
           />
         </Row>
-        {canUpload ? (
+        {canUpload && !locked ? (
           <Row>
             <button
               type="button"
@@ -423,7 +588,12 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
         ) : null}
         {browsing ? <AssetLibrary kind="image" onPick={(asset) => { setSrc(asset.url); setBrowsing(false) }} /> : null}
         <Row label="Alt">
-          <TextField value={alt ?? ''} placeholder="Describe the image" onChange={(next) => setAlt(next || undefined)} />
+          <TextField
+            value={currentAlt ?? ''}
+            placeholder="Describe the image"
+            disabled={locked}
+            onChange={(next) => setAlt(next || undefined)}
+          />
         </Row>
         <SelectRow
           id={id}
@@ -439,17 +609,29 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
   const isLinkish = kind === 'link' || kind === 'button' || kind === 'file'
   if (kind !== 'text' && !isLinkish) return null
 
+  // A bound link keeps its destination on the record and its copy in the code;
+  // a bound text node keeps its copy on the record. The store sends any content
+  // written to a bound node to the record, so the copy of a bound link is not
+  // offered for editing here — it would land on the destination.
+  const bindsCopy = !!binding && !isLinkish
+  const boundText = bound !== undefined ? textOf(bound) : node?.element.textContent ?? ''
+  const copy = bindsCopy ? boundText : text ?? node?.sourceText ?? ''
+  const copyLocked = locked || (!!binding && isLinkish)
+
   return (
     <Section title="Content">
+      {boundHint}
       <textarea
-        className="vedit-textarea"
+        className={richtext ? 'vedit-textarea vedit-richtext' : 'vedit-textarea'}
         aria-label="Copy for this element"
-        value={text ?? node?.sourceText ?? ''}
+        value={copy}
         placeholder="Type the copy for this element"
+        disabled={copyLocked}
+        title={binding && isLinkish ? 'The copy of a bound link is set in the code' : undefined}
         onChange={(event) => setText(event.target.value)}
       />
-      <VariableHints node={node} value={text ?? node?.sourceText ?? ''} />
-      {text !== undefined ? (
+      {bindsCopy ? null : <VariableHints node={node} value={copy} />}
+      {text !== undefined && !binding ? (
         <Row>
           <button type="button" className="vedit-btn" style={{ flex: 1 }} onClick={() => setText(undefined)}>
             Restore original copy
@@ -459,7 +641,12 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
       {isLinkish ? (
         <>
           <Row label="Link">
-            <TextField value={href ?? ''} placeholder="https://…" onChange={(next) => setHref(next || undefined)} />
+            <TextField
+              value={(binding ? assetUrl(bound) : href) ?? ''}
+              placeholder="https://…"
+              disabled={locked}
+              onChange={(next) => setHref(next || undefined)}
+            />
           </Row>
           <Row label="Opens">
             <Segmented
@@ -609,6 +796,20 @@ function CropRow({ id }: { id: string }) {
 }
 
 /* --------------------------------------------------------------------- file */
+
+/** A field's value as copy; an asset or a relation has no copy to show. */
+function textOf(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return ''
+}
+
+/** The description an asset carries, when the editor gave it one. */
+function assetAlt(value: unknown): string | undefined {
+  if (!isAsset(value)) return undefined
+  const alt = (value as { alt?: unknown }).alt
+  return typeof alt === 'string' ? alt : undefined
+}
 
 /** What the file dialog offers for a bound field, which says its type but not its mimes. */
 function acceptFor(field: SourceField | undefined): string {

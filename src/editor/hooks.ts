@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useVeditState, useVeditStore } from '../core/context'
+import { useVeditNodes, useVeditState, useVeditStore } from '../core/context'
 import { readStyleValue } from '../core/layers'
+import type { VeditStore } from '../core/store'
 import type { NodeOverride, RegisteredNode, StyleMap } from '../core/types'
+import { parseItemId } from '../runtime/repeat'
 
 /**
  * The node the inspector points at. With several selected this is the most
@@ -132,6 +134,78 @@ export function useContentValue<K extends keyof NodeOverride>(
     [store, targetsKey, key],
   )
   return [value, setValue]
+}
+
+/** The row of a content source that the selection is a rendering of. */
+export interface BoundRepeat {
+  source: string
+  /** The record id — the item key, which is what `bind` resolves against. */
+  rowId: string
+  /** Every bound node of this item, by field, for reading the row back off the page. */
+  fields: RegisteredNode[]
+}
+
+/**
+ * The bound repeat the selection sits in, if any.
+ *
+ * A repeat registers nothing of its own — only its items' nodes exist, each with
+ * an item id — so "inside a bound repeat" is read off those: the selection (or
+ * an ancestor) carries an item key, and some node of that same item is bound to
+ * a row with that key. The source is taken from that binding, which is where
+ * `useEditable` put it.
+ *
+ * Two repeats can share keys (`0`, `1`, …) when their rows have no id, so the
+ * bound nodes are only trusted when they hang off the same parent as the
+ * selection's item does — every item of one repeat has the same parent, and a
+ * neighbouring repeat's items have another.
+ */
+export function boundRepeatOf(store: VeditStore, nodes: RegisteredNode[], id: string | null): BoundRepeat | null {
+  let key: string | null = null
+  let root: RegisteredNode | undefined
+  let current: string | null = id
+  const seen = new Set<string>()
+  while (current && !seen.has(current)) {
+    seen.add(current)
+    const node = store.getNode(current)
+    if (!node) break
+    const parsed = parseItemId(node.id)
+    if (parsed && key === null) key = parsed.key
+    if (key !== null) {
+      if (parsed?.key !== key) break
+      root = node
+    }
+    current = node.parentId
+  }
+  if (key === null || !root) return null
+
+  const parent = root.parentId
+  const fields = nodes.filter((node) => {
+    const binding = node.binding
+    if (!binding || binding.id !== key || parseItemId(node.id)?.key !== key) return false
+    return itemRootOf(store, node, key)?.parentId === parent
+  })
+  const source = fields[0]?.binding?.source
+  return source ? { source, rowId: key, fields } : null
+}
+
+/** The topmost node of an item: the last one up the chain still carrying its key. */
+function itemRootOf(store: VeditStore, node: RegisteredNode, key: string): RegisteredNode | undefined {
+  let root = node
+  const seen = new Set<string>([node.id])
+  while (root.parentId && !seen.has(root.parentId)) {
+    seen.add(root.parentId)
+    const parent = store.getNode(root.parentId)
+    if (!parent || parseItemId(parent.id)?.key !== key) break
+    root = parent
+  }
+  return root
+}
+
+/** `boundRepeatOf` for the current selection, following the registry as items mount. */
+export function useBoundRepeat(id: string | null): BoundRepeat | null {
+  const store = useVeditStore()
+  const nodes = useVeditNodes()
+  return useMemo(() => boundRepeatOf(store, nodes, id), [store, nodes, id])
 }
 
 /** Write several declarations at once, e.g. a whole shadow preset. */

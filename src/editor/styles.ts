@@ -527,4 +527,9 @@ html.vedit-editing .vedit-inserted-button {
 .vedit-signin-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
 .vedit-signin-actions .vedit-btn { height: 30px; padding: 0 14px; }
 .vedit-signin-actions .vedit-btn:not(.vedit-btn-primary) { border-color: var(--vedit-border); }
+
+/* ------------------------------------------------------------------- rows */
+.vedit-rows { display: flex; gap: 4px; margin-bottom: 6px; }
+.vedit-rows .vedit-btn { flex: 1; padding: 0 6px; background: var(--vedit-panel-2); }
+.vedit-rows .vedit-btn:hover:not(:disabled) { border-color: var(--vedit-accent); }
 `

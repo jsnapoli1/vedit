@@ -86,6 +86,7 @@ export function TextField({
   prefix,
   overridden,
   type = 'text',
+  disabled,
 }: {
   value: string
   placeholder?: string
@@ -93,6 +94,7 @@ export function TextField({
   prefix?: ReactNode
   overridden?: boolean
   type?: string
+  disabled?: boolean
 }) {
   const [draft, setDraft] = useState(value)
   const focused = useRef(false)
@@ -110,6 +112,7 @@ export function TextField({
         type={type}
         value={draft}
         placeholder={placeholder}
+        disabled={disabled}
         onFocus={() => (focused.current = true)}
         onBlur={() => {
           focused.current = false
