@@ -22,6 +22,35 @@ export async function openEditor(page: Page, options: { as?: string; path?: stri
   await page.waitForTimeout(800)
 }
 
+/**
+ * The catalog demo, signed in. Its provider is gated on the content server, so
+ * opening the editor shows the sign-in form first; the bootstrap account from
+ * `example/content-server.mjs` gets past it. Storage is cleared as for
+ * `openEditor`, but the session lives in a cookie, so that is cleared too.
+ */
+export async function openCatalog(page: Page, options: { as?: string; path?: string } = {}) {
+  const query = new URLSearchParams({ as: options.as ?? 'Sam' })
+  const url = `${options.path ?? '/catalog'}?${query}`
+
+  await page.context().clearCookies()
+  await page.goto(url, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(() => localStorage.clear())
+  await page.reload({ waitUntil: 'domcontentloaded' })
+
+  await page.getByRole('button', { name: 'Edit page' }).click()
+  const form = page.getByRole('form', { name: 'Sign in' })
+  await form.getByLabel('Email').fill('sam@example.com')
+  await form.getByLabel('Password').fill('vedit-demo')
+  await form.getByRole('button', { name: 'Sign in' }).click()
+
+  await page.waitForSelector('.vedit-toolbar', { timeout: 15_000 })
+  await expect(page.locator('.vedit-artboard iframe').first()).toBeVisible()
+  await expect
+    .poll(() => page.locator('.vedit-artboard[data-active="true"]').count(), { timeout: 10_000 })
+    .toBe(1)
+  await page.waitForTimeout(800)
+}
+
 /** The artboard for a route, once its page has loaded inside the canvas. */
 export function artboard(page: Page, path = '/'): Frame {
   const frames = page.frames().filter((frame) => frame.url().includes('vedit-canvas'))

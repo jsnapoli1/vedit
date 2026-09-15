@@ -4,6 +4,8 @@
  *
  *   vedit-mcp --dir ./content
  *   vedit-mcp --endpoint https://example.com/api/vedit --token $VEDIT_TOKEN
+ *   vedit-mcp --dir ./content --content-endpoint https://example.com/vedit --token $VEDIT_TOKEN
+ *   vedit-mcp --dir ./content --content-db ./content.sqlite --schema ./schema.mjs
  *
  * Add it to Claude Code with:
  *
@@ -15,6 +17,8 @@ import { createRequire } from 'node:module'
 import { createVeditMcpServer, serveStdio, notifyEditors } from '../dist/mcp.js'
 import { fileStore } from '../dist/server.js'
 import { remoteStore } from '../dist/api.js'
+import { httpContentClient } from '../dist/content.js'
+import { contentClientFromStore, nodeSqliteDriver, sqlContentStore } from '../dist/content-server.js'
 
 const argv = process.argv.slice(2)
 const flag = (name, fallback) => {
@@ -36,6 +40,12 @@ if (flag('help', false) || argv.includes('-h')) {
   --read-only           expose only the tools that read
   --realtime <url>      relay to notify, so open editors update live
   --room <room>         realtime room (default: the document key)
+
+  Records, when the site keeps its content in vedit (adds the record tools):
+  --content-endpoint <url>   a vedit content API, e.g. https://example.com/vedit
+                             (sent --token as a bearer)
+  --content-db <file>        or: a SQLite file, read with Node's built-in sqlite
+  --schema <module>          with --content-db: a module exporting { collections, globals }
 `)
   process.exit(0)
 }
@@ -61,11 +71,14 @@ if (typeof manifestPath === 'string') {
   }
 }
 
+const content = await contentClient()
+
 const realtime = flag('realtime', null)
 const room = flag('room', null)
 
 const server = createVeditMcpServer({
   store,
+  content,
   stage: flag('stage', 'draft') === 'published' ? 'published' : 'draft',
   defaultKey: typeof flag('key', null) === 'string' ? flag('key', null) : undefined,
   writable: !flag('read-only', false),
@@ -79,6 +92,43 @@ const server = createVeditMcpServer({
 
 const composable = components?.length ?? (typeof endpoint === 'string' ? '?' : 0)
 process.stderr.write(`vedit-mcp ready — ${server.tools.length} tools, ${composable} components\n`)
+
+/**
+ * Where records come from, when the flags name a source; undefined otherwise,
+ * so a site without content sees exactly the tools it always did. Node's
+ * sqlite module is loaded only for `--content-db`: it is still marked
+ * experimental and prints a warning on import.
+ */
+async function contentClient() {
+  const contentEndpoint = flag('content-endpoint', null)
+  const contentDb = flag('content-db', null)
+  if (typeof contentEndpoint === 'string') {
+    return httpContentClient({
+      endpoint: contentEndpoint,
+      headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    })
+  }
+  if (typeof contentDb !== 'string') return undefined
+
+  const schemaPath = flag('schema', null)
+  if (typeof schemaPath !== 'string') {
+    process.stderr.write('vedit-mcp: --content-db needs --schema <module exporting { collections, globals }>\n')
+    process.exit(1)
+  }
+  const { pathToFileURL } = await import('node:url')
+  const { resolve } = await import('node:path')
+  const schema = await import(pathToFileURL(resolve(schemaPath)).href)
+  if (!schema.collections || typeof schema.collections !== 'object') {
+    process.stderr.write(`vedit-mcp: ${schemaPath} does not export { collections }\n`)
+    process.exit(1)
+  }
+  const spec = { collections: schema.collections, globals: schema.globals ?? {} }
+
+  const { DatabaseSync } = await import('node:sqlite')
+  const contentStore = sqlContentStore(nodeSqliteDriver(new DatabaseSync(contentDb)), { dialect: 'sqlite', ...spec })
+  await contentStore.init()
+  return contentClientFromStore(contentStore, { spec })
+}
 
 process.stdin.setEncoding('utf8')
 await serveStdio(server, { input: process.stdin, output: { write: (chunk) => process.stdout.write(chunk) } })
