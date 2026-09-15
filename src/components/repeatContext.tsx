@@ -8,6 +8,11 @@ export interface RepeatItem {
   key: string
   /** Position in the array, for `nth`-style copy and for keyless data. */
   index: number
+  /**
+   * The content source the items are rows of, when the repeat named one. This
+   * is what lets a child say `bind="title"` and mean this row's title.
+   */
+  source?: string
 }
 
 /**

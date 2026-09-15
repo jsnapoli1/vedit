@@ -4,10 +4,13 @@ import { useVeditContext, useVeditState } from '../core/context'
 import { findComponent, type AnyComponentDefinition } from '../core/registry'
 import { interpolate } from '../runtime/interpolate'
 import { itemKey } from '../runtime/repeat'
-import { RepeatItemContext } from './repeatContext'
+import { RepeatItemContext, useRepeatItem } from './repeatContext'
+import { ScopeContext, useScope } from './scopeContext'
 import { safeUrl, sanitizeHtml } from '../runtime/sanitize'
 import { isFileHref } from '../runtime/fileHref'
+import { assetUrl } from '../content/assets'
 import { ShapeView } from './Shape'
+import type { RecordBinding } from '../content/types'
 import type { EditableField, InsertedNode, NodeKind } from '../core/types'
 
 export interface EditableProps {
@@ -62,6 +65,34 @@ export interface EditableProps {
   /** Where an item's stable key lives, when it isn't `id`/`key`/`slug`/`uuid`. */
   repeatKey?: (item: unknown, index: number) => string
   /**
+   * Which content source the repeated items are rows of. Only meaningful with
+   * `repeat`. Naming it is what lets the children bind to fields by name and the
+   * editor add, remove and reorder rows.
+   *
+   * ```jsx
+   * <Editable id="products" repeat={rows} source="products">
+   *   <EditableText id="products.title" bind="title">Untitled</EditableText>
+   * </Editable>
+   * ```
+   */
+  source?: string
+  /**
+   * Show a record field instead of the children. A field name resolves against
+   * the enclosing repeat's `source` and this item's key; a `{ source, id, field }`
+   * object names the record outright, for a global or a row rendered on its own.
+   *
+   * What is bound is the content — the text, the image, the file — and edits to
+   * it go to the record, not to the document. Styling stays with the document
+   * as usual. Until the row is known the children render as they would unbound.
+   */
+  bind?: string | RecordBinding
+  /**
+   * Which shared document this node's overrides live in — `"site"` for a nav
+   * that every page renders, so an edit made on one page shows on all of them.
+   * Pass the same key to `VeditProvider`'s `sharedKeys`.
+   */
+  scope?: string
+  /**
    * Props the editor may change. Only props named here are editable, and the
    * schema decides which control the inspector shows for each one.
    */
@@ -75,6 +106,9 @@ export interface EditableProps {
 
 /** What `forwardRef` hands the render function: `EditableProps` minus `ref`. */
 type RenderProps = Omit<EditableProps, 'ref'>
+
+/** Stable, so a shared document that has not loaded yet does not re-render on every read. */
+const NO_INSERTED: InsertedNode[] = []
 
 function mergeRefs<T>(...refs: Array<Ref<T> | undefined>) {
   return (value: T) => {
@@ -99,13 +133,13 @@ export const Editable = forwardRef<HTMLElement, EditableProps>(function Editable
   return <EditableNode {...props} forwardedRef={forwardedRef} />
 })
 
-function Repeat({ repeat, repeatKey, children }: RenderProps) {
+function Repeat({ repeat, repeatKey, source, children }: RenderProps) {
   return (
     <>
       {((repeat ?? []) as readonly unknown[]).map((item: unknown, index: number) => {
         const key = itemKey(item, index, repeatKey)
         return (
-          <RepeatItemContext.Provider key={key} value={{ item, key, index }}>
+          <RepeatItemContext.Provider key={key} value={{ item, key, index, source }}>
             {children}
           </RepeatItemContext.Provider>
         )
@@ -127,6 +161,9 @@ const EditableNode = function EditableNode({
   forwardedRef,
   repeat: _repeat,
   repeatKey: _repeatKey,
+  source: _source,
+  bind,
+  scope,
   ...rest
 }: RenderProps & { forwardedRef?: Ref<HTMLElement> }) {
   const resolvedKind: NodeKind = kind ?? inferKind(as, children, rest.href)
@@ -136,7 +173,7 @@ const EditableNode = function EditableNode({
   const declared = schema
     ? Object.fromEntries(schema.map((field) => [field.name, rest[field.name]]))
     : undefined
-  const { ref, veditProps, override, props: edited } = useEditable({
+  const { ref, veditProps, override, props: edited, binding } = useEditable({
     id,
     kind: resolvedKind,
     label,
@@ -145,41 +182,116 @@ const EditableNode = function EditableNode({
     vars,
     fields: schema,
     props: declared,
+    bind,
+    scope,
   })
+  const { bound, richtext } = useBoundValue(binding, bind)
+  const inherited = useScope()
 
   const Component = (as ?? defaultTagFor(resolvedKind)) as ElementType
   const props: Record<string, unknown> = { ...rest, ...(schema ? edited : {}), ...veditProps }
 
+  // A bound node shows its record, and which part of it depends on what the
+  // node is: an image's source, a link's destination, everything else's text.
+  // The document's own copy of that key is skipped — edits went to the record —
+  // while a class, visibility and styling still apply as they do to any node.
+  const bindsUrl = resolvedKind === 'image' || resolvedKind === 'link' || resolvedKind === 'file' || resolvedKind === 'button'
+  const boundUrl = bindsUrl ? bound : undefined
+  const boundText = bindsUrl ? undefined : bound
+
   props.ref = mergeRefs(ref, forwardedRef)
   props.className = [className, override.className].filter(Boolean).join(' ') || undefined
   // URLs come out of the stored document, so they get the same treatment as its
-  // HTML: anything that would execute rather than navigate is dropped.
-  if (override.src !== undefined) props.src = safeUrl(override.src, { allowDataImage: true }) ?? ''
-  if (override.alt !== undefined) props.alt = override.alt
-  if (override.href !== undefined) props.href = safeUrl(override.href) ?? '#'
+  // HTML: anything that would execute rather than navigate is dropped. A record
+  // is no more trusted than the document: it went through the same editor.
+  if (boundUrl !== undefined) {
+    if (resolvedKind === 'image') {
+      props.src = safeUrl(assetUrl(boundUrl), { allowDataImage: true }) ?? ''
+      const alt = assetAlt(boundUrl)
+      if (alt !== undefined) props.alt = alt
+    } else {
+      props.href = safeUrl(assetUrl(boundUrl)) ?? '#'
+    }
+  } else {
+    if (override.src !== undefined) props.src = safeUrl(override.src, { allowDataImage: true }) ?? ''
+    if (override.alt !== undefined) props.alt = override.alt
+    if (override.href !== undefined) props.href = safeUrl(override.href) ?? '#'
+  }
   if (override.target !== undefined) props.target = override.target
   if (props.target === '_blank' && props.rel === undefined) props.rel = 'noopener noreferrer'
 
   // Templates are resolved on the way out, never on the way in: what is stored
   // stays `Pay {amount} deposit`, and only what renders carries the number. The
   // source text goes through it too, so a component can be written as a template
-  // and read correctly before anyone has edited it.
+  // and read correctly before anyone has edited it. A record value is data, not
+  // a template, so it is shown as it is.
   let content: ReactNode = vars && sourceText !== undefined ? interpolate(sourceText, vars) : children
-  if (override.html !== undefined) {
+  if (boundText !== undefined) {
+    if (richtext) {
+      props.dangerouslySetInnerHTML = { __html: sanitizeHtml(textOf(boundText), { profile: 'block' }) }
+      content = undefined
+    } else {
+      content = textOf(boundText)
+    }
+  } else if (override.html !== undefined) {
     props.dangerouslySetInnerHTML = { __html: sanitizeHtml(interpolate(override.html, vars)) }
     content = undefined
   } else if (override.text !== undefined) {
     content = interpolate(override.text, vars)
   }
 
-  if (isVoidElement(Component) || props.dangerouslySetInnerHTML) return createElement(Component, props)
+  const element =
+    isVoidElement(Component) || props.dangerouslySetInnerHTML
+      ? createElement(Component, props)
+      : createElement(
+          Component,
+          props,
+          content,
+          isContainer ? <InsertedChildren key="vedit-inserted" parentId={id} scope={scope ?? inherited ?? undefined} /> : null,
+        )
+  // Only a node that names a scope provides one; everything below it then reads
+  // and writes the same shared document it does.
+  return scope ? <ScopeContext.Provider value={scope}>{element}</ScopeContext.Provider> : element
+}
 
-  return createElement(
-    Component,
-    props,
-    content,
-    isContainer ? <InsertedChildren key="vedit-inserted" parentId={id} /> : null,
+/**
+ * What a bound node shows. A pending edit or a fetched row comes first; failing
+ * that, the row the repeat is rendering — the host's own copy, which on a server
+ * render is the only one there is. `undefined` means no row is known yet, and
+ * the node renders as if it were unbound.
+ */
+function useBoundValue(binding: RecordBinding | undefined, bind: string | RecordBinding | undefined) {
+  const { store } = useVeditContext()
+  const repeat = useRepeatItem()
+  const stored = useVeditState(() => (binding ? store.recordValue(binding) : undefined))
+  const richtext = useVeditState((state) =>
+    binding
+      ? state.schema
+          ?.find((source) => source.name === binding.source)
+          ?.fields.find((field) => field.name === binding.field)?.type === 'richtext'
+      : false,
   )
+  if (!binding) return { bound: undefined, richtext: false }
+  if (stored !== undefined) return { bound: stored, richtext }
+  const item = typeof bind === 'string' && repeat?.source && isRecord(repeat.item) ? repeat.item[bind] : undefined
+  return { bound: item, richtext }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/** A field's value as text. A number or a boolean reads fine; an object would read as `[object Object]`. */
+function textOf(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return ''
+}
+
+/** The description an asset carries, when the editor gave it one. */
+function assetAlt(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined
+  return typeof value.alt === 'string' ? value.alt : undefined
 }
 
 function inferKind(as: ElementType | undefined, children: ReactNode, href?: unknown): NodeKind {
@@ -215,9 +327,13 @@ function isVoidElement(component: ElementType): boolean {
   return typeof component === 'string' && (component === 'img' || component === 'br' || component === 'hr' || component === 'input')
 }
 
-/** Renders the elements someone added through the editor inside a container. */
-export function InsertedChildren({ parentId }: { parentId: string }) {
-  const inserted = useVeditState((state) => state.doc.inserted)
+/**
+ * Renders the elements someone added through the editor inside a container.
+ * `scope` names the shared document a scoped container's children were placed
+ * in; without it they come from the page's own.
+ */
+export function InsertedChildren({ parentId, scope }: { parentId: string; scope?: string }) {
+  const inserted = useVeditState((state) => (scope ? (state.shared[scope]?.inserted ?? NO_INSERTED) : state.doc.inserted))
   const children = useMemo(
     () => inserted.filter((node) => node.parentId === parentId).sort((a, b) => a.index - b.index),
     [inserted, parentId],

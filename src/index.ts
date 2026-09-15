@@ -36,6 +36,8 @@ export { EditableText, EditableImage, EditableBox, EditableLink, EditableFile } 
 export { useEditable, labelFromId } from './components/useEditable'
 export { useRepeatItem } from './components/repeatContext'
 export type { RepeatItem } from './components/repeatContext'
+export { useVeditRecords } from './components/useVeditRecords'
+export type { UseVeditRecordsOptions } from './components/useVeditRecords'
 export type { UseEditableOptions, UseEditableResult } from './components/useEditable'
 
 export { VeditErrorBoundary } from './core/ErrorBoundary'
