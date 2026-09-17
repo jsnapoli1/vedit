@@ -9,7 +9,10 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
-## Unreleased
+## 0.10.1 — 2026-09-17
+
+The document format is unchanged at version 1. One fix; a site that already
+uses vedit has nothing to do.
 
 ### Fixed
 
