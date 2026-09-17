@@ -34,12 +34,12 @@ export function layoutConstraints(element: HTMLElement): LayoutConstraint[] {
 
   if (parent && style.position !== 'absolute' && style.position !== 'fixed') {
     const parentStyle = view.getComputedStyle(parent)
-    const grows = parseFloat(style.flexGrow) > 0
+    const grows = parseFloat(style.flexGrow) > 0 || parseFloat(style.flexShrink) > 0
     if (parentStyle.display.includes('flex') && grows) {
       const row = parentStyle.flexDirection.startsWith('column') ? 'column' : 'row'
       found.push({
         kind: 'flex-child',
-        message: `Its ${row === 'row' ? 'width' : 'height'} is decided by the ${row} it sits in (flex-grow). A width or height set here pins it to that size.`,
+        message: `Its ${row === 'row' ? 'width' : 'height'} is decided by the ${row} it sits in (it grows or shrinks with the row). A width or height set here pins it to that size.`,
         fix: { label: 'Pin size', styles: { flex: '0 0 auto' } },
       })
     }

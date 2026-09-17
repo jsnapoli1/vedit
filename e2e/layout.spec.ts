@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { artboard, openEditor } from './fixtures'
+import { artboard, inspectorField, openEditor } from './fixtures'
 
 /**
  * The Pricing page ends in markup built the way sites usually are: a wrapper
@@ -61,6 +61,16 @@ test.describe('layout the editor has to explain', () => {
     await page.mouse.move(x - 40 * zoom, y, { steps: 8 })
     await page.mouse.up()
     await expect.poll(() => card.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(before - 40)
+  })
+
+  test('a width typed for a flex-grown card holds', async ({ page }) => {
+    await openTraps(page)
+    const card = traps(page).locator('.flex-grown')
+    await card.click({ force: true, position: { x: 4, y: 4 } })
+    const width = inspectorField(page, 'Layout', 'W')
+    await width.fill('120')
+    await width.press('Enter')
+    await expect.poll(() => card.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(120)
   })
 
   test('an absolute box says it floats', async ({ page }) => {
