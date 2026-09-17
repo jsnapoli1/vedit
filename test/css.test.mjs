@@ -6,7 +6,11 @@ import { REDUCED_MOTION_RULE } from '../dist/internal.js'
 test('base overrides become a doubled-specificity rule', () => {
   const doc = { ...emptyDocument('home'), nodes: { 'hero.title': { style: { fontSize: '32px' } } } }
   const css = documentToCss(doc)
-  assert.equal(css, '[data-vedit-id="hero.title"][data-vedit-id="hero.title"]{font-size:32px}')
+  // The rule also names the `~key` copies a repeat would render of this node.
+  assert.equal(
+    css,
+    '[data-vedit-id="hero.title"][data-vedit-id="hero.title"],[data-vedit-id^="hero.title~"][data-vedit-id^="hero.title~"]{font-size:32px}',
+  )
 })
 
 test('numbers get px, unitless properties do not', () => {
@@ -96,16 +100,19 @@ test('a document with no animation emits exactly the CSS it did before motion ex
       ghost: { hidden: true },
     },
   }
-  // Captured from the emitter before keyframes were added. Byte-identical, not merely
-  // equivalent: a page with no motion must not gain a single character of CSS.
+  // Byte-identical, not merely equivalent: a page with no motion must not gain
+  // a single character of CSS beyond what its nodes and their `~key` copies need.
+  const own = (id, weight) => `[data-vedit-id="${id}"]`.repeat(weight)
+  const copies = (id, weight) => `[data-vedit-id^="${id}~"]`.repeat(weight)
+  const both = (id, weight) => `${own(id, weight)},${copies(id, weight)}`
   const expected =
     ':root{--vedit-brand:#4f46e5}\n' +
-    '[data-vedit-id="hero.title"][data-vedit-id="hero.title"]{font-size:32px;color:var(--vedit-brand)}\n' +
-    '[data-vedit-id="cta"][data-vedit-id="cta"]{color:red}\n' +
-    '[data-vedit-id="cta"][data-vedit-id="cta"][data-vedit-id="cta"]:hover,[data-vedit-id="cta"][data-vedit-id="cta"][data-vedit-id="cta"][data-vedit-force="hover"]{color:blue}\n' +
-    'html:not(.vedit-editing) [data-vedit-id="ghost"][data-vedit-id="ghost"][data-vedit-id="ghost"]{display:none !important}\n' +
-    'html.vedit-editing [data-vedit-id="ghost"][data-vedit-id="ghost"][data-vedit-id="ghost"]{opacity:.35;outline:1px dashed var(--vedit-accent,#0d99ff)}\n' +
-    '@media (min-width:768px){[data-vedit-id="hero.title"][data-vedit-id="hero.title"][data-vedit-id="hero.title"]{font-size:48px}}'
+    `${both('hero.title', 2)}{font-size:32px;color:var(--vedit-brand)}\n` +
+    `${both('cta', 2)}{color:red}\n` +
+    `${own('cta', 3)}:hover,${own('cta', 3)}[data-vedit-force="hover"],${copies('cta', 3)}:hover,${copies('cta', 3)}[data-vedit-force="hover"]{color:blue}\n` +
+    `html:not(.vedit-editing) ${both('ghost', 3)}{display:none !important}\n` +
+    `html.vedit-editing ${both('ghost', 3)}{opacity:.35;outline:1px dashed var(--vedit-accent,#0d99ff)}\n` +
+    `@media (min-width:768px){${both('hero.title', 3)}{font-size:48px}}`
   assert.equal(documentToCss(doc), expected)
 })
 
@@ -181,4 +188,19 @@ test('a style value naming a preset cannot smuggle CSS through the keyframes blo
 test('an animation iteration count given as a number is not turned into pixels', () => {
   const doc = { ...emptyDocument('home'), nodes: { a: { style: { animationIterationCount: 3 } } } }
   assert.match(documentToCss(doc), /animation-iteration-count:3\}/)
+})
+
+test('a template style reaches every item of its repeat, and an item style outranks it', () => {
+  const doc = {
+    ...emptyDocument('pricing'),
+    nodes: {
+      'plan.name': { style: { color: 'red' } },
+      'plan.name~team': { style: { color: 'blue' } },
+    },
+  }
+  const css = documentToCss(doc)
+  // The template rule matches the template's own element and every `~key` copy.
+  assert.ok(css.includes('[data-vedit-id="plan.name"][data-vedit-id="plan.name"],[data-vedit-id^="plan.name~"][data-vedit-id^="plan.name~"]{color:red}'), css)
+  // The item rule sits one specificity step above, so it wins whatever the order.
+  assert.ok(css.includes('[data-vedit-id="plan.name~team"][data-vedit-id="plan.name~team"][data-vedit-id="plan.name~team"]{color:blue}'), css)
 })

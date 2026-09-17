@@ -196,7 +196,7 @@ function applyOrder(store: VeditStore, siblings: HTMLElement[], dragged: HTMLEle
     const id = element.getAttribute('data-vedit-id')
     if (id) entries.push([id, { order: position + 1 }])
   })
-  store.setStyleMany(entries, { history: false })
+  store.setStyleMany(entries, { history: false, redirect: false })
 }
 
 export interface InteractionOptions {

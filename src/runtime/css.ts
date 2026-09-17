@@ -1,3 +1,4 @@
+import { ITEM_SEPARATOR } from './repeat'
 import { readLayer } from '../core/layers'
 import { keyframesFor, presetsIn, REDUCED_MOTION_RULE, type AnimationPreset } from './animation'
 import {
@@ -80,11 +81,17 @@ function escapeId(id: string): string {
  * and state rules repeat it once more so they win over the element's base styles.
  */
 function selector(id: string, weight: number, state: StyleState): string {
-  const base = `[data-vedit-id="${escapeId(id)}"]`.repeat(weight)
-  if (state === 'default') return base
+  // A template's rule has to reach the `~key` copies a repeat renders, or a
+  // colour set on "every card" shows on none; a copy's own rule sits one step
+  // above so the item's edit wins over the template's whatever the order.
+  const item = id.includes(ITEM_SEPARATOR)
+  const own = `[data-vedit-id="${escapeId(id)}"]`.repeat(item ? weight + 1 : weight)
+  const copies = item ? null : `[data-vedit-id^="${escapeId(id + ITEM_SEPARATOR)}"]`.repeat(weight)
+  const bases = copies ? [own, copies] : [own]
+  if (state === 'default') return bases.join(',')
   // The second selector lets the editor force a state on so you can style a hover
   // without having to keep the pointer still on the element.
-  return `${base}:${state},${base}[data-vedit-force="${state}"]`
+  return bases.flatMap((base) => [`${base}:${state}`, `${base}[data-vedit-force="${state}"]`]).join(',')
 }
 
 const TOKEN_ID = /^[a-zA-Z0-9_-]+$/

@@ -466,13 +466,34 @@ export class VeditStore {
     this.writeNode(id, (override) => mergeStyles(override, state, breakpoint, styles), opts)
   }
 
-  /** Write declarations on several nodes as one change, e.g. re-ordering siblings. */
-  setStyleMany(entries: Array<[string, StyleMap]>, opts: { history?: boolean } = {}) {
+  /**
+   * Write declarations on several nodes as one change. Follows the repeat
+   * scope like a single write, once per template: the inspector fans a field
+   * out over a multi-selection, and two selected cards of one repeat mean one
+   * edit to what they share. `redirect: false` is for writes that name each
+   * item itself — re-ordering siblings sets each one's own `order`.
+   */
+  setStyleMany(entries: Array<[string, StyleMap]>, opts: { history?: boolean; redirect?: boolean } = {}) {
     const { state, breakpoint } = this.cell
     this.editNodes(
-      entries.map(([id, styles]) => [id, (override) => mergeStyles(override, state, breakpoint, styles)]),
-      { ...opts, redirect: false },
+      this.oncePerTarget(entries, opts.redirect).map(([id, styles]) => [
+        id,
+        (override) => mergeStyles(override, state, breakpoint, styles),
+      ]),
+      opts,
     )
+  }
+
+  /** The entries whose write targets are distinct, in order, so a template is written once. */
+  private oncePerTarget<T>(entries: Array<[string, T]>, redirect: boolean | undefined): Array<[string, T]> {
+    if (redirect === false) return entries
+    const seen = new Set<string>()
+    return entries.filter(([id]) => {
+      const target = this.writeTarget(id)
+      if (seen.has(target)) return false
+      seen.add(target)
+      return true
+    })
   }
 
   setDropIndicator(rect: VeditState['dropIndicator']) {
@@ -587,12 +608,15 @@ export class VeditStore {
     this.clearStylesMany([id], properties)
   }
 
-  /** Remove declarations from several nodes at once, for a multi-selection edit. */
-  clearStylesMany(ids: string[], properties: string[]) {
+  /** Remove declarations from several nodes at once, for a multi-selection edit; follows the scope. */
+  clearStylesMany(ids: string[], properties: string[], opts: { redirect?: boolean } = {}) {
     const { state, breakpoint } = this.cell
     this.editNodes(
-      ids.map((id) => [id, (override) => deleteStyles(override, state, breakpoint, properties)]),
-      { redirect: false },
+      this.oncePerTarget(
+        ids.map((id): [string, null] => [id, null]),
+        opts.redirect,
+      ).map(([id]) => [id, (override) => deleteStyles(override, state, breakpoint, properties)]),
+      opts,
     )
   }
 

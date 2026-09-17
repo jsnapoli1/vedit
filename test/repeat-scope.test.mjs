@@ -91,3 +91,34 @@ test('the scope is editor state and never reaches the document', () => {
   store.setRepeatScope('item')
   assert.ok(!JSON.stringify(store.getState().doc).includes('repeatScope'))
 })
+
+test('a style written from the inspector to one or several items follows the scope', () => {
+  // The inspector fans a field out over the selection with the `Many` variants;
+  // they have to redirect like a single write, or a colour set on "every card"
+  // lands on the one that was clicked.
+  const store = makeStore()
+  store.setStyleMany([
+    ['cards.title~a', { color: 'red' }],
+    ['cards.title~b', { color: 'red' }],
+  ])
+  assert.equal(store.getOverride('cards.title').style.color, 'red')
+  assert.deepEqual(store.getOverride('cards.title~a'), {})
+  assert.deepEqual(store.getOverride('cards.title~b'), {})
+
+  store.clearStylesMany(['cards.title~a'], ['color'])
+  assert.deepEqual(store.getOverride('cards.title'), {})
+
+  store.setRepeatScope('item')
+  store.setStyleMany([['cards.title~a', { color: 'blue' }]])
+  assert.equal(store.getOverride('cards.title~a').style.color, 'blue')
+  assert.deepEqual(store.getOverride('cards.title'), {})
+})
+
+test('a per-item write can still opt out of the redirect', () => {
+  // Re-ordering siblings writes each item's own `order`; that is a write to
+  // the item and never to the template.
+  const store = makeStore()
+  store.setStyleMany([['cards.title~a', { order: '2' }]], { redirect: false })
+  assert.equal(store.getOverride('cards.title~a').style.order, '2')
+  assert.deepEqual(store.getOverride('cards.title'), {})
+})

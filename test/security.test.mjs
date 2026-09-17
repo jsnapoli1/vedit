@@ -47,7 +47,7 @@ test('property names that are not property names are dropped', () => {
     ...emptyDocument('home'),
     nodes: { a: { style: { 'color:red;background': 'url(x)', color: 'blue' } } },
   }
-  assert.equal(documentToCss(doc), '[data-vedit-id="a"][data-vedit-id="a"]{color:blue}')
+  assert.equal(documentToCss(doc), '[data-vedit-id="a"][data-vedit-id="a"],[data-vedit-id^="a~"][data-vedit-id^="a~"]{color:blue}')
 })
 
 test('legitimate values survive intact', () => {

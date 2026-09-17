@@ -42,6 +42,21 @@ test.describe('repeating over data', () => {
     await expect(planName(page, 'agency')).toHaveText('Agency plan')
   })
 
+  test('a style on the template shows on every card', async ({ page }) => {
+    await openPricing(page)
+    await select(page, 'pricing.plan.name~team', '/pricing')
+    // Colour is a style, not content: it travels through the stylesheet, which
+    // has to reach the `~key` copies and not only the template's own id.
+    const color = page
+      .locator('.vedit-right .vedit-section:has-text("Typography") .vedit-row:has(.vedit-label:text-is("Color")) input[type="text"]')
+      .first()
+    await color.fill('#c80000')
+    await color.press('Enter')
+    for (const key of ['starter', 'team', 'agency']) {
+      await expect(planName(page, key)).toHaveCSS('color', 'rgb(200, 0, 0)')
+    }
+  })
+
   test('scoping an edit to one card leaves the others alone', async ({ page }) => {
     await openPricing(page)
     await select(page, 'pricing.plan.name~team', '/pricing')
