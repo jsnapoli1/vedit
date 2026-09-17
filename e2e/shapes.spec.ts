@@ -93,6 +93,34 @@ test.describe('placing and styling a shape', () => {
     await expect.poll(() => boxOf(page)).toBe('240×80')
   })
 
+  test('the resize handles resize the shape, with the whole drag over the artboard', async ({ page }) => {
+    await openCampaign(page)
+    await place(page, 'Rectangle')
+    await shapes(page).click({ force: true })
+    const handles = page.locator('.vedit-handle')
+    await expect(handles).toHaveCount(8)
+
+    // A quick flick: the first move after the press already lands on the
+    // artboard, not the handle. Without pointer capture the browser gives the
+    // rest of the gesture to the frame underneath and the host window sees
+    // nothing — the box stays put and the Layout fields never move.
+    const zoom = await page.locator('.vedit-artboard[data-active="true"] iframe').evaluate(
+      (frame) => frame.getBoundingClientRect().width / (frame as HTMLIFrameElement).offsetWidth,
+    )
+    const from = await handles.nth(4).boundingBox()
+    const x = from!.x + from!.width / 2
+    const y = from!.y + from!.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 12, y + 8)
+    await page.mouse.move(x + 60 * zoom, y + 40 * zoom, { steps: 8 })
+    // Live: the box and the Layout fields follow the pointer before it is released.
+    await expect.poll(() => boxOf(page)).toBe('220×200')
+    await expect(inspectorField(page, 'Layout', 'W')).toHaveValue('220px')
+    await page.mouse.up()
+    await expect.poll(() => boxOf(page)).toBe('220×200')
+  })
+
   test('editing a polygon\'s points redraws it', async ({ page }) => {
     await openCampaign(page)
     await place(page, 'Triangle')

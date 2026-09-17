@@ -423,6 +423,10 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
   const startFrameResize = (event: React.PointerEvent) => {
     event.preventDefault()
     event.stopPropagation()
+    // Captured for the same reason as the resize handles in Overlay.tsx: a
+    // drag to the left runs over the frame, which would otherwise take it.
+    const handle = event.currentTarget as HTMLElement
+    handle.setPointerCapture(event.pointerId)
     const startX = event.clientX
     const startWidth = frameWidth
     const move = (moveEvent: PointerEvent) => {
@@ -434,11 +438,13 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
       for (const bridge of bridgeList) bridge.store.setBreakpoint(next)
     }
     const up = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', up)
+      handle.removeEventListener('lostpointercapture', up)
     }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', up)
+    handle.addEventListener('lostpointercapture', up)
   }
 
   /* ------------------------------------------------------------------ render */

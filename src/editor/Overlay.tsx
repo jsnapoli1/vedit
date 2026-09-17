@@ -151,6 +151,11 @@ function startResize(
   if (!element) return
   event.preventDefault()
   event.stopPropagation()
+  // On the canvas the page is a frame under the handle. Without capture, the
+  // first move that lands past the 9px handle — a flick — hands the rest of the
+  // gesture to the frame, and nothing here hears it again.
+  const handleElement = event.currentTarget as HTMLElement
+  handleElement.setPointerCapture(event.pointerId)
 
   const rect = element.getBoundingClientRect()
   const startX = event.clientX
@@ -174,9 +179,11 @@ function startResize(
     if (Object.keys(styles).length) store.setStyle(id, styles, { history: false })
   }
   const up = () => {
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', up)
+    handleElement.removeEventListener('pointermove', move)
+    handleElement.removeEventListener('pointerup', up)
+    handleElement.removeEventListener('lostpointercapture', up)
   }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', up)
+  handleElement.addEventListener('pointermove', move)
+  handleElement.addEventListener('pointerup', up)
+  handleElement.addEventListener('lostpointercapture', up)
 }

@@ -9,6 +9,16 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## Unreleased
+
+### Fixed
+
+- **Resize handles on the canvas.** Dragging a handle did nothing unless the
+  pointer crept off it: a quick first move landed on the artboard, and the
+  browser then gave the rest of the gesture to the frame underneath, so the
+  box never changed and the Layout fields never moved. The handle now captures
+  the pointer for the drag, as the artboard's width handle does too.
+
 ## 0.10.0 — 2026-09-17
 
 The document format is unchanged at version 1. Two additions; a site that
