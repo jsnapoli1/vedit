@@ -9,6 +9,19 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.11.3 — 2026-09-17
+
+The document format is unchanged at version 1. One fix; a site that already
+uses vedit has nothing to do.
+
+### Fixed
+
+- **An edit made while the page is still loading is kept.** The documents —
+  the page's own and the shared ones — were written into the store as they
+  arrived, replacing whatever was there; with a slow backend and a quick first
+  click, that edit vanished without a word. What arrives is now the base and
+  the edits made meanwhile sit on top of it, still unsaved.
+
 ## 0.11.2 — 2026-09-17
 
 The document format is unchanged at version 1. One fix; a site that already
