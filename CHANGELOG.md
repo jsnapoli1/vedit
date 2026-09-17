@@ -9,6 +9,33 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.11.0 — 2026-09-17
+
+The document format is unchanged at version 1. Three additions about the boxes
+a site is made of; a site that already uses vedit has nothing to do, though its
+Layers panel reads differently.
+
+### Added
+
+- **Containers named by what they do.** A scanner-found box was labelled by its
+  first class (`div.md:w-[500px]`), which told a person editing nothing. It is
+  now named by its role on the page — `Flex row`, `Flex column`, `Grid`,
+  `Absolute box`, `Fixed box`, `Section`, `Footer`, `List`, and `· clips` when
+  it cuts its content off — so the one deciding a card's width, or floating
+  over everything, is recognisable in the tree. A `<Editable label>` still wins.
+- **Wrappers that do nothing are not layers.** A `div` with one child, no
+  position, no overflow, no background or border, the same size as the thing
+  inside it — there for the code, not the page — is no longer a layer; its
+  children sit under the nearest box that does something. Every box that
+  shapes the page is still shown: the editor never hides a constraint.
+- **The Layout section says why an edit would not take.** Selecting a box whose
+  width its flex row decides, whose height the page's own styling caps, that
+  floats over the page, or that a box above it cuts off, shows a notice saying
+  so in plain words, with the one change that lifts it: *Pin size*, *Unpin
+  height*, *Grow with content*, *Place in flow*, *Select it*. Resizing a
+  flex-grown card from its handles pins it as part of the drag, so the drag
+  does what it looks like it does.
+
 ## 0.10.2 — 2026-09-17
 
 The document format is unchanged at version 1. One fix; a site that already
