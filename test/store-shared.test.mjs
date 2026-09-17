@@ -141,3 +141,31 @@ test('documents lists the main document and every shared one', async () => {
   )
   assert.deepEqual(fresh.getState().shared.footer.nodes, {})
 })
+
+test('an edit made while the documents are still loading survives the load', async () => {
+  // A slow backend and a quick first click: the write must land on top of what
+  // arrives, not be replaced by it.
+  const keyed = keyedAdapter({
+    home: { ...emptyDocument('home'), nodes: { 'hero.title': { text: 'Loaded title' } } },
+    site: { ...emptyDocument('site'), nodes: { 'nav.logo': { alt: 'Loaded alt' } } },
+  })
+  let release
+  const gate = new Promise((resolve) => (release = resolve))
+  const slow = { ...keyed.adapter, load: async (key, opts) => { await gate; return keyed.adapter.load(key, opts) } }
+  const store = new VeditStore({ key: 'home', adapter: slow, shared: ['site'] })
+  store.register({ id: 'site.nav.menu', kind: 'box', label: 'Menu', element: null, parentId: null, auto: false, container: true, scope: 'site' })
+
+  const loading = store.load()
+  store.setStyle('hero.cta', { color: 'red' })
+  store.setStyle('site.nav.menu', { width: '300px' })
+  release()
+  await loading
+
+  const home = store.getState().doc
+  assert.equal(home.nodes['hero.title'].text, 'Loaded title', 'what was loaded is there')
+  assert.equal(home.nodes['hero.cta'].style.color, 'red', 'the edit made during the load is there')
+  const site = store.getState().shared.site
+  assert.equal(site.nodes['nav.logo'].alt, 'Loaded alt')
+  assert.equal(site.nodes['site.nav.menu'].style.width, '300px')
+  assert.equal(store.dirty, true, 'and the edits still count as unsaved')
+})

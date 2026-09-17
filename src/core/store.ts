@@ -997,18 +997,20 @@ export class VeditStore {
 
   async load(stage: DocumentStage = 'published') {
     this.set({ status: 'loading', error: null })
+    const before = this.state.doc
+    const sharedBefore = this.state.shared
     try {
       const loaded = await this.adapter.load(this.state.doc.key, { stage })
       if (loaded == null) {
         this.set({ saved: this.state.doc, status: 'ready', past: [], future: [] })
       } else {
-        this.adopt(loaded)
+        this.adopt(loaded, before)
       }
     } catch (error) {
       this.set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
       return
     }
-    await this.loadSite(stage)
+    await this.loadSite(stage, sharedBefore)
   }
 
   /**
@@ -1016,15 +1018,19 @@ export class VeditStore {
    * and, with a content client, who this person is. Separate from `load` so a
    * page rendered with `initialDocument` can still fetch them.
    */
-  async loadSite(stage: DocumentStage = 'published') {
+  async loadSite(stage: DocumentStage = 'published', before: Record<string, VeditDocument> = this.state.shared) {
     if (this.sharedKeys.length) {
       try {
-        const shared = { ...this.state.shared }
+        const loaded: Record<string, VeditDocument> = {}
         for (const key of this.sharedKeys) {
-          const loaded = await this.adapter.load(key, { stage })
-          shared[key] = loaded == null ? emptyDocument(key) : this.inspect(loaded, key)
+          const doc = await this.adapter.load(key, { stage })
+          loaded[key] = doc == null ? emptyDocument(key) : this.inspect(doc, key)
         }
-        this.set({ shared, sharedSaved: shared })
+        // A slow backend and a quick first click: whatever was edited while
+        // the documents were on their way sits on top of what arrived.
+        const shared = { ...this.state.shared }
+        for (const key of this.sharedKeys) shared[key] = rebase(loaded[key], before[key], this.state.shared[key])
+        this.set({ shared, sharedSaved: { ...this.state.sharedSaved, ...loaded } })
       } catch (error) {
         this.set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
         return
@@ -1062,9 +1068,10 @@ export class VeditStore {
    * document from a newer build is something the editor has to say out loud rather
    * than quietly overwrite.
    */
-  private adopt(incoming: unknown) {
-    const doc = this.inspect(incoming, this.state.doc.key)
-    this.set({ doc, saved: doc, status: 'ready', past: [], future: [] })
+  private adopt(incoming: unknown, before: VeditDocument = this.state.doc) {
+    const loaded = this.inspect(incoming, this.state.doc.key)
+    const doc = rebase(loaded, before, this.state.doc)
+    this.set({ doc, saved: loaded, status: 'ready', past: [], future: [] })
   }
 
   private inspect(incoming: unknown, key: string): VeditDocument {
@@ -1361,6 +1368,28 @@ function mergeContent(current: NodeOverride, patch: NodeOverride): NodeOverride 
     if (value === undefined) delete (merged as Record<string, unknown>)[key]
   }
   return merged
+}
+
+/**
+ * `loaded` with the edits made between `before` and `edited` laid on top: a
+ * node written meanwhile keeps its written form, everything else is what the
+ * backend holds. Nothing was edited → exactly what was loaded.
+ */
+function rebase(loaded: VeditDocument, before: VeditDocument | undefined, edited: VeditDocument | undefined): VeditDocument {
+  if (!edited || !before || edited === before) return loaded
+  const nodes = { ...loaded.nodes }
+  const ids = new Set([...Object.keys(before.nodes), ...Object.keys(edited.nodes)])
+  let touched = false
+  for (const id of ids) {
+    if (edited.nodes[id] === before.nodes[id]) continue
+    touched = true
+    if (edited.nodes[id] === undefined) delete nodes[id]
+    else nodes[id] = edited.nodes[id]
+  }
+  const inserted = edited.inserted !== before.inserted ? edited.inserted : loaded.inserted
+  const tokens = edited.tokens !== before.tokens ? edited.tokens : loaded.tokens
+  if (!touched && inserted === loaded.inserted && tokens === loaded.tokens) return loaded
+  return { ...loaded, nodes, inserted, tokens }
 }
 
 function differs(a: VeditDocument | undefined, b: VeditDocument | undefined): boolean {
