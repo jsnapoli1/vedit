@@ -363,7 +363,11 @@ export const EDITOR_CSS = `
 }
 .vedit-canvas[data-panning="true"] { cursor: grab; }
 .vedit-canvas[data-panning="true"]:active { cursor: grabbing; }
-.vedit-artboards { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+/* will-change keeps zooming on the compositor: without it every step of a
+   pinch re-rasterises each page-tall artboard (10fps and 400ms stalls on a six
+   page site); with it the frames scale as textures and re-raster once the zoom
+   settles. */
+.vedit-artboards { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 .vedit-artboard { position: absolute; top: 0; }
 /*
  * A page that isn't in focus is hidden, not unmounted — its frame keeps its
