@@ -9,6 +9,18 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.10.2 — 2026-09-17
+
+The document format is unchanged at version 1. One fix; a site that already
+uses vedit has nothing to do.
+
+### Fixed
+
+- **Zooming the canvas.** Every step of a pinch or `⌘`-wheel re-rasterised each
+  artboard at the new scale — six page-tall frames at once, so zooming ran at
+  ten frames a second with stalls of nearly half a second. The artboards now
+  scale on the compositor and re-rasterise once the zoom settles.
+
 ## 0.10.1 — 2026-09-17
 
 The document format is unchanged at version 1. One fix; a site that already
