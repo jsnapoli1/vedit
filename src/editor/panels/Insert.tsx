@@ -28,6 +28,7 @@ const PRIMITIVES: Array<{ kind: Exclude<NodeKind, 'component' | 'shape'>; label:
   { kind: 'box', label: 'Box', icon: <IconSquare width={12} height={12} /> },
   { kind: 'button', label: 'Button', icon: <IconSquare width={12} height={12} /> },
   { kind: 'link', label: 'Link', icon: <IconType width={12} height={12} /> },
+  { kind: 'file', label: 'File', icon: <IconType width={12} height={12} /> },
 ]
 
 const SHAPES: Array<{ preset: ShapePreset; label: string; icon: JSX.Element }> = [

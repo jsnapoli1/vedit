@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { VeditContext, useVeditStore, type VeditConfig } from '../../core/context'
 import { canvasUrl, readCanvasBridge, type CanvasBridge } from '../../core/canvas'
+import { referenceViewportHeight } from '../../core/viewportUnits'
 import type { VeditStore } from '../../core/store'
 import { BREAKPOINT_ORDER, type Breakpoint, type VeditState } from '../../core/types'
 import { EditorRoot } from '../EditorRoot'
@@ -17,6 +18,7 @@ const MAX_ZOOM = 4
 /** Space kept clear for the floating panels when fitting the artboards. */
 const INSETS = { top: 96, right: 296, bottom: 24, left: 292 }
 /** Gap between artboards, in page pixels. */
+const EAGER_ARTBOARDS = 6
 const GAP = 64
 
 interface View {
@@ -62,9 +64,21 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
   // Which single page fills the canvas, or null for all of them side by side.
   // View state, like zoom and pan: it starts fresh every time the editor opens.
   const [focusPath, setFocusPath] = useState<string | null>(null)
+  // Every page is an artboard, but not every artboard is loaded at once: a site
+  // with twenty long, image-heavy pages would paint all twenty before the first
+  // could be clicked. The first few and the page the editor was opened from
+  // load now; the rest wait until they are focused or asked for, and once
+  // loaded stay loaded.
+  const [mountedPaths, setMountedPaths] = useState<Set<string>>(
+    () => new Set([...pages.slice(0, EAGER_ARTBOARDS).map((page) => page.path), activePath]),
+  )
+  const mount = useCallback((path: string) => {
+    setMountedPaths((current) => (current.has(path) ? current : new Set(current).add(path)))
+  }, [])
   const [heights, setHeights] = useState<Record<string, number>>({})
   const [view, setView] = useState<View>({ zoom: 1, panX: 0, panY: 0 })
   const [frameWidth, setFrameWidth] = useState(() => defaultFrameWidth(config))
+  const [viewportHeight] = useState(() => referenceViewportHeight(window.innerHeight))
   const [spacePanning, setSpacePanning] = useState(false)
 
   const viewRef = useRef(view)
@@ -83,6 +97,10 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
     () => (focusPath ? pages.filter((page) => page.path === focusPath) : pages),
     [pages, focusPath],
   )
+  useEffect(() => {
+    if (focusPath) mount(focusPath)
+  }, [focusPath, mount])
+  const mountedPages = useMemo(() => pages.filter((page) => mountedPaths.has(page.path)), [pages, mountedPaths])
   const columnOf = useMemo(() => {
     const columns = new Map<string, number>()
     visiblePages.forEach((page, index) => columns.set(page.path, index))
@@ -193,7 +211,7 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
     const observers: ResizeObserver[] = []
     const timers: Array<ReturnType<typeof setInterval>> = []
 
-    for (const page of pages) {
+    for (const page of mountedPages) {
       const doc = frames.current.get(page.path)?.contentDocument
       if (!bridges[page.path] || !doc) continue
 
@@ -217,7 +235,7 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
       observers.forEach((observer) => observer.disconnect())
       timers.forEach((timer) => clearInterval(timer))
     }
-  }, [pages, bridges, frameWidth])
+  }, [mountedPages, bridges, frameWidth])
 
   /* -------------------------------------------------------------- viewport */
 
@@ -522,19 +540,31 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
               >
                 {page.label ?? page.path} — {frameWidth} × {heights[page.path] ?? '…'}
               </div>
-              <iframe
-                ref={(element) => {
-                  if (element) frames.current.set(page.path, element)
-                  else frames.current.delete(page.path)
-                }}
-                title={page.label ?? page.path}
-                src={canvasUrl(page.path)}
-                style={{
-                  width: frameWidth,
-                  height: heights[page.path] ?? 900,
-                  pointerEvents: panning ? 'none' : 'auto',
-                }}
-              />
+              {mountedPaths.has(page.path) ? (
+                <iframe
+                  ref={(element) => {
+                    if (element) frames.current.set(page.path, element)
+                    else frames.current.delete(page.path)
+                  }}
+                  title={page.label ?? page.path}
+                  src={canvasUrl(page.path, viewportHeight)}
+                  style={{
+                    width: frameWidth,
+                    height: heights[page.path] ?? 900,
+                    pointerEvents: panning ? 'none' : 'auto',
+                  }}
+                />
+              ) : (
+                <div
+                  className="vedit-artboard-placeholder"
+                  style={{ width: frameWidth, height: 900 }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <button type="button" className="vedit-btn" onClick={() => mount(page.path)}>
+                    Load {page.label ?? page.path}
+                  </button>
+                </div>
+              )}
               {column === visiblePages.length - 1 ? (
                 <div
                   className="vedit-frame-handle"

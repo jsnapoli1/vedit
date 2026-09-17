@@ -157,3 +157,11 @@ test('the store applies a batch as one undo step', () => {
   store.undo()
   assert.deepEqual(store.getState().doc.nodes, {})
 })
+
+test('a file link can be inserted, ready for an upload', () => {
+  const { doc } = applyOperations(blank(), [{ op: 'insert-node', parentId: 'hero', kind: 'file', id: 'hero::sheet' }])
+  const node = doc.inserted.find((item) => item.id === 'hero::sheet')
+  assert.equal(node.kind, 'file')
+  assert.equal(doc.nodes['hero::sheet'].text, 'Download')
+  assert.equal(doc.nodes['hero::sheet'].href, '#')
+})

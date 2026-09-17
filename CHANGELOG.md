@@ -9,6 +9,55 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.9.1 — 2026-09-17
+
+The document format is unchanged at version 1. Two small additions and four
+fixes; a site that already uses vedit has nothing to do. One thing to know: a
+page with a **File** placed from the Insert panel is saved with an inserted
+node of `kind: 'file'`, which 0.9.0 drops on load — so if a site is pinned
+to 0.9.0, don't save one from a newer build.
+
+### Added
+
+- **File in the Insert panel.** A download can now be added to a page from the
+  editor, not only replaced: place a **File** link and the inspector's
+  Replace… and Library… give it something to point at. `insert-node` accepts
+  `kind: 'file'` accordingly.
+
+- **`default: 'now'` on a date field** stamps the moment a record is created,
+  so a `createdAt` declared that way is never empty and `orderBy: '-createdAt'`
+  keeps rows added in the editor in order.
+
+### Fixed
+
+- **`where` on a number or a boolean.** A query travels as `where[live]=true`,
+  every value a string, and the store compared it strictly to the record's
+  `true` — so `useVeditRecords('posts', { where: { live: true } })` returned
+  nothing. A number or a boolean now matches its own string form; nothing else
+  is coerced.
+- **Two queries on one source.** Rows were kept per source, so a page with
+  `useVeditRecords('people')` beside `useVeditRecords('people', { where: … })`
+  handed each hook whichever response came back last. Rows are now kept per
+  source *and* query (`recordSets`, `store.recordSet(source, query)`); the
+  source as a whole still knows every row any query has seen, so a bound node
+  can look a record up by id wherever it was fetched.
+- **Viewport height units on the canvas.** An artboard is as tall as the page
+  it shows, so a `90vh` hero or a `min-height: 100vh` main resolved against the
+  whole page rather than a screen, grew it, and grew again until the frame hit
+  the browser's size limit (a Tailwind site's home page came out at 1.15 million
+  pixels, its product pages at the cap). Inside a canvas frame, `vh`, `svh`,
+  `lvh` and `dvh` now mean the editor's own screen height: the frame's URL
+  carries it as `vedit-vh`, and the framed page rewrites its accessible
+  stylesheets and inline styles to the equivalent pixels as they arrive.
+  Visitors are untouched; nothing runs outside the canvas.
+- **Artboards load a few at a time.** The canvas opened every page in `pages`
+  at once; on a site with nineteen long, image-heavy pages the browser spent
+  its first half minute painting and decoding, and never got to the first
+  click. The first six pages and the one the editor was opened from load
+  immediately; the rest stand in as placeholders that load when focused from
+  the page dropdown or when their **Load** button is pressed, and stay loaded
+  after that, unsaved work included.
+
 ## 0.9.0 — 2026-09-15
 
 The document format is unchanged at version 1. Everything here is additive and

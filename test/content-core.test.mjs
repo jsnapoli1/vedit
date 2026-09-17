@@ -343,7 +343,12 @@ test('matchWhere and sortRows handle equality, arrays and descending order', () 
     { id: 'c', n: 3, name: 'Gamma' },
   ]
   assert.equal(matchWhere(rows[0], { n: 2 }), true)
-  assert.equal(matchWhere(rows[0], { n: '2' }), false)
+  // Over HTTP every value arrives as a string, so a scalar matches its string form.
+  assert.equal(matchWhere(rows[0], { n: '2' }), true)
+  assert.equal(matchWhere({ id: 'x', live: true }, { live: 'true' }), true)
+  assert.equal(matchWhere({ id: 'x', live: false }, { live: 'true' }), false)
+  assert.equal(matchWhere({ id: 'x', n: 2 }, { n: [1, '2'] }), true)
+  assert.equal(matchWhere({ id: 'x', tags: ['a'] }, { tags: 'a' }), false)
   assert.equal(matchWhere(rows[0], { status: ['live', 'draft'] }), true)
   assert.equal(matchWhere(rows[2], { status: ['live', 'draft'] }), false)
   assert.equal(matchWhere(rows[0], {}), true)

@@ -24,6 +24,7 @@ import {
 import { documentToCss } from '../runtime/css'
 import { AutoScanner } from '../auto/scanner'
 import { isCanvasChild, publishCanvasBridge } from './canvas'
+import { pinViewportHeight, viewportHeightFromUrl } from './viewportUnits'
 import { warnOnce } from './env'
 import { VeditErrorBoundary, type VeditErrorBoundaryProps } from './ErrorBoundary'
 import { componentManifest, type ComponentRegistry, type ComponentSummary } from './registry'
@@ -311,6 +312,11 @@ export function VeditProvider({
   useEffect(() => {
     if (defaultEditing && isEnabled) store.setEditing(true)
   }, [store, defaultEditing, isEnabled])
+
+  useEffect(() => {
+    if (!framedByEditor) return
+    return pinViewportHeight(document, viewportHeightFromUrl(window.location.search) ?? 900)
+  }, [framedByEditor])
 
   useEffect(() => {
     if (framedByEditor) {

@@ -1,5 +1,6 @@
 import type { ComponentSummary } from './registry'
 import type { VeditStore } from './store'
+import { CANVAS_VH_PARAM } from './viewportUnits'
 
 export const CANVAS_PARAM = 'vedit-canvas'
 
@@ -56,14 +57,15 @@ export function readCanvasBridge(frame: HTMLIFrameElement): CanvasBridge | null 
  * host page's own query survives, so whatever it carries — a preview token, the
  * signed-in user, a feature flag — is still there inside the frame.
  */
-export function canvasUrl(pathOrHref: string): string {
+export function canvasUrl(pathOrHref: string, viewportHeight?: number): string {
   const here = typeof window === 'undefined' ? 'http://localhost' : window.location.href
   const url = new URL(pathOrHref, here)
   for (const [name, value] of new URL(here).searchParams) {
-    if (name === 'vedit' || name === CANVAS_PARAM) continue
+    if (name === 'vedit' || name === CANVAS_PARAM || name === CANVAS_VH_PARAM) continue
     if (!url.searchParams.has(name)) url.searchParams.set(name, value)
   }
   url.searchParams.set(CANVAS_PARAM, '1')
+  if (viewportHeight) url.searchParams.set(CANVAS_VH_PARAM, String(viewportHeight))
   url.searchParams.delete('vedit')
   return url.toString()
 }

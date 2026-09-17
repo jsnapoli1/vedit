@@ -419,6 +419,8 @@ export interface VeditState {
   data: RecordChanges
   /** Rows fetched through the content client, by source, before local changes. */
   records: Record<string, VeditRecord[]>
+  /** Rows per source *and* query, keyed by `recordSetKey`, so two hooks on one source with different queries each keep their own. */
+  recordSets: Record<string, VeditRecord[]>
   /** What the content client described, once `loadSchema` has run. */
   schema: SourceSchema[] | null
   /** Record ids committed as drafts and waiting for Publish, by source. */

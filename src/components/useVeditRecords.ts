@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { isCanvasChild } from '../core/canvas'
 import { useVeditContext, useVeditState } from '../core/context'
+import { recordSetKey } from '../core/store'
 import { warnOnce } from '../core/env'
 import type { RecordQuery, VeditRecord } from '../content/types'
 
@@ -38,7 +39,6 @@ export function useVeditRecords(source: string, options: UseVeditRecordsOptions 
   const { rows, fallback, where, orderBy, populate } = options
   const { store } = useVeditContext()
   const editing = useVeditState((state) => state.editing)
-  const fetched = useVeditState((state) => state.records[source])
   const data = useVeditState((state) => state.data)
 
   // Editing in place sets `editing`; on the canvas the page is framed and the
@@ -46,6 +46,10 @@ export function useVeditRecords(source: string, options: UseVeditRecordsOptions 
   const editor = editing || isCanvasChild()
   // Objects are rebuilt on every render; what matters is whether they changed.
   const queryKey = JSON.stringify({ where, orderBy, populate })
+  // This query's own rows: two hooks on one source with different queries
+  // must not hand each other their results.
+  const setKey = recordSetKey(source, { where, orderBy, populate })
+  const fetched = useVeditState((state) => state.recordSets[setKey])
 
   useEffect(() => {
     if (!store.supportsContent) return

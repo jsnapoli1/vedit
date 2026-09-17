@@ -5,9 +5,19 @@ export function matchWhere(row: VeditRecord, where: Record<string, unknown> | un
   if (!where) return true
   for (const [field, expected] of Object.entries(where)) {
     const value = row[field]
-    if (Array.isArray(expected) ? !expected.includes(value) : value !== expected) return false
+    if (Array.isArray(expected) ? !expected.some((one) => sameScalar(value, one)) : !sameScalar(value, expected)) return false
   }
   return true
+}
+
+/**
+ * A query arrives over HTTP with every value as a string, so a number or a
+ * boolean in a record matches its own string form; nothing else is coerced.
+ */
+function sameScalar(value: unknown, expected: unknown): boolean {
+  if (value === expected) return true
+  const scalar = (v: unknown) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+  return scalar(value) && scalar(expected) && String(value) === String(expected)
 }
 
 /** A new list sorted by `'field'` ascending or `'-field'` descending. */

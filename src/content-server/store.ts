@@ -186,7 +186,7 @@ export function contentStore(rows: RowStore, spec: ContentSpec): VeditContentSto
       for (const record of entry.create ?? []) {
         const id = !record.id || isTempId(record.id) ? serverId() : record.id
         if (record.id && id !== record.id) idMap[record.id] = id
-        pending.set(id, { ...fieldDefaults(info.fields), ...record, id })
+        pending.set(id, { ...fieldDefaults(info.fields, updatedAt), ...record, id })
       }
 
       for (const [key, patch] of Object.entries(entry.update ?? {})) {
@@ -319,10 +319,12 @@ function describeGlobal(name: string, spec: GlobalSpec): SourceInfo {
   return { name, kind: 'global', fields: normalizeFields(spec.fields), drafts: true, versions: DEFAULT_VERSIONS }
 }
 
-function fieldDefaults(fields: Record<string, FieldSpec>): Record<string, unknown> {
+/** A field's declared default; a date field with `default: 'now'` takes the moment of the commit. */
+function fieldDefaults(fields: Record<string, FieldSpec>, now?: string): Record<string, unknown> {
   const defaults: Record<string, unknown> = {}
   for (const [name, field] of Object.entries(fields)) {
-    if (field.default !== undefined) defaults[name] = field.default
+    if (field.default === undefined) continue
+    defaults[name] = field.type === 'date' && field.default === 'now' ? (now ?? new Date().toISOString()) : field.default
   }
   return defaults
 }

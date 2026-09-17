@@ -357,7 +357,16 @@ export const EDITOR_CSS = `
  * what lets the canvas fit it correctly the moment it comes back.
  */
 .vedit-artboard[data-hidden="true"] { visibility: hidden; pointer-events: none; }
-.vedit-artboard[data-active="true"] .vedit-artboard-label { color: var(--vedit-text); }
+.vedit-artboard[data-active="true"] .vedit-artboard-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vedit-panel);
+  border: 2px dashed var(--vedit-muted);
+  box-sizing: border-box;
+}
+.vedit-artboard-placeholder .vedit-btn { font-size: 48px; padding: 24px 40px; }
+.vedit-artboard-label { color: var(--vedit-text); }
 .vedit-artboard[data-active="true"] iframe { box-shadow: 0 0 0 1.5px var(--vedit-accent), 0 30px 80px rgba(0,0,0,.55); }
 .vedit-artboard iframe {
   display: block; border: 0; background: #fff;

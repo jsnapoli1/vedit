@@ -139,6 +139,7 @@ export class VeditStore {
       future: [],
       data: {},
       records: {},
+      recordSets: {},
       schema: null,
       pendingPublish: {},
       capabilities: null,
@@ -842,8 +843,22 @@ export class VeditStore {
     if (!this.content) return this.recordsFor(source)
     const stage: DocumentStage = this.can('write') ? 'draft' : 'published'
     const rows = await this.content.list(source, { ...query, stage })
-    this.set({ records: { ...this.state.records, [source]: rows } })
+    // The query keeps its own rows; the source as a whole learns every row any
+    // query has seen, the fresher copy winning, so a bound node can still look
+    // a record up by id whatever page it was fetched for.
+    const known = new Map((this.state.records[source] ?? []).map((row) => [row.id, row]))
+    for (const row of rows) known.set(row.id, row)
+    this.set({
+      records: { ...this.state.records, [source]: [...known.values()] },
+      recordSets: { ...this.state.recordSets, [recordSetKey(source, query)]: rows },
+    })
     return this.recordsFor(source, rows)
+  }
+
+  /** The rows one query fetched, with the pending changes applied; undefined until it has. */
+  recordSet(source: string, query: RecordQuery = {}): VeditRecord[] | undefined {
+    const rows = this.state.recordSets[recordSetKey(source, query)]
+    return rows && this.recordsFor(source, rows)
   }
 
   /**
@@ -1104,16 +1119,21 @@ export class VeditStore {
     // for the whole source. The rows keep what the server told us on read —
     // `_status` and the like are its to say, not guessed here.
     const records = { ...this.state.records }
+    const recordSets = { ...this.state.recordSets }
     for (const source of Object.keys(changes)) {
       const rows = records[source]
       if (!rows) continue
       const schema = this.state.schema?.find((candidate) => candidate.name === source)
       records[source] = overlayChanges(source, rows, changes, schema)
+      for (const key of Object.keys(recordSets)) {
+        if (recordSetSource(key) === source) recordSets[key] = overlayChanges(source, recordSets[key], changes, schema)
+      }
     }
 
     this.set({
       data: {},
       records,
+      recordSets,
       pendingPublish,
       doc: remapIds(this.state.doc, idMap),
       saved: remapIds(this.state.saved, idMap),
@@ -1324,4 +1344,21 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error('Could not read file'))
     reader.readAsDataURL(file)
   })
+}
+
+/** `source` plus the query that fetched it, stable across renders that rebuild the objects. */
+export function recordSetKey(source: string, query: RecordQuery = {}): string {
+  const { where, orderBy, populate } = query
+  const parts: string[] = []
+  if (where && Object.keys(where).length) {
+    parts.push(`where=${JSON.stringify(Object.fromEntries(Object.entries(where).sort(([a], [b]) => a.localeCompare(b))))}`)
+  }
+  if (orderBy) parts.push(`orderBy=${orderBy}`)
+  if (populate?.length) parts.push(`populate=${[...populate].sort().join(',')}`)
+  return parts.length ? `${source}?${parts.join('&')}` : source
+}
+
+function recordSetSource(key: string): string {
+  const at = key.indexOf('?')
+  return at === -1 ? key : key.slice(0, at)
 }

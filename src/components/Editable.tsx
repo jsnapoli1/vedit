@@ -380,6 +380,12 @@ function InsertedView({ node }: { node: InsertedNode }) {
           {''}
         </Editable>
       )
+    case 'file':
+      return (
+        <Editable id={node.id} as="a" kind="file" label="File">
+          {''}
+        </Editable>
+      )
     case 'shape':
       return <ShapeView node={node} />
     default:

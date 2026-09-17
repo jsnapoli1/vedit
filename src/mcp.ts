@@ -307,7 +307,7 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
         {
           key: KEY,
           parentId: { type: 'string', description: 'Id of the container to add it to' },
-          kind: { type: 'string', enum: ['text', 'image', 'box', 'button', 'link'] },
+          kind: { type: 'string', enum: ['text', 'image', 'box', 'button', 'link', 'file'] },
           index: { type: 'number', description: 'Position among its siblings; appended by default' },
         },
         ['parentId', 'kind'],

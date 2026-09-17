@@ -52,6 +52,7 @@ src/
     store.ts       an observable document with undo/redo and persistence
     context.tsx    VeditProvider: store, config, guards, lazy editor mount
     canvas.ts      the parent ↔ artboard handshake
+    viewportUnits.ts  vh inside an artboard pinned to the editor's screen height
     session.ts     presence, comments, per-node merge
     realtime.ts    the wire protocol (no transport, no editor)
     ErrorBoundary.tsx
@@ -435,7 +436,7 @@ site. Breaking one is a bug even if the tests pass.
 
 ## Testing
 
-**`npm test`** — 475 unit tests, run against `dist/` rather than `src/`, so they
+**`npm test`** — 487 unit tests, run against `dist/` rather than `src/`, so they
 check what actually ships. Pure logic lives here: the CSS emitter, the layer
 matrix, the store, migration, the operations vocabulary, the open API, the MCP
 server, diffing, contrast maths, the relay, the escaping rules, and the content

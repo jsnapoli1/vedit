@@ -564,3 +564,45 @@ test('remote patches merge into every history entry', () => {
   assert.equal(store.getOverride('a').text, 'one')
   assert.deepEqual(store.getState().data, {})
 })
+
+test('two queries on one source each keep their own rows', async () => {
+  const all = [
+    { id: 'a', title: 'A', live: true },
+    { id: 'b', title: 'B', live: false },
+  ]
+  const { client, calls } = fakeClient()
+  client.list = async (source, query) => {
+    calls.push(['list', source, query])
+    return query.where?.live === undefined ? all : all.filter((row) => row.live === query.where.live)
+  }
+  const store = new VeditStore({ key: 'home', adapter: memoryAdapter(), content: client })
+  await store.refreshCapabilities()
+
+  const [everything, live] = await Promise.all([
+    store.loadRecords('cards'),
+    store.loadRecords('cards', { where: { live: true } }),
+  ])
+  assert.deepEqual(everything.map((row) => row.id), ['a', 'b'])
+  assert.deepEqual(live.map((row) => row.id), ['a'])
+
+  const sets = store.getState().recordSets
+  assert.deepEqual(store.recordSet('cards', {}).map((row) => row.id), ['a', 'b'])
+  assert.deepEqual(store.recordSet('cards', { where: { live: true } }).map((row) => row.id), ['a'])
+  assert.equal(Object.keys(sets).length, 2)
+  // The source as a whole knows every row either query saw.
+  assert.deepEqual(store.getState().records.cards.map((row) => row.id), ['a', 'b'])
+})
+
+test('a saved edit lands in every query set of the source', async () => {
+  const all = [{ id: 'a', title: 'A', live: true }]
+  const { client } = fakeClient()
+  client.list = async () => all
+  const store = new VeditStore({ key: 'home', adapter: memoryAdapter(), content: client })
+  await store.refreshCapabilities()
+  await store.loadRecords('cards')
+  await store.loadRecords('cards', { where: { live: true } })
+  store.setRecord('cards', 'a', { title: 'AA' })
+  await store.save()
+  assert.equal(store.recordSet('cards', { where: { live: true } })[0].title, 'AA')
+  assert.equal(store.recordSet('cards', {})[0].title, 'AA')
+})

@@ -563,3 +563,31 @@ test('contentClientFromStore exposes the store with capabilities for the given u
   await asServer.restoreVersion('posts', idMap['new-1'], version.id)
   assert.equal((await asServer.versions('posts', idMap['new-1'])).length, 2)
 })
+
+test("a date field with default 'now' is stamped when a record is created without one", async () => {
+  const store = memoryContentStore({
+    collections: {
+      posts: { fields: { title: 'text', createdAt: { type: 'date', default: 'now' } } },
+    },
+  })
+  await store.init()
+  const before = Date.now()
+  await store.commit(
+    {
+      posts: {
+        create: [
+          { id: 'fresh', title: 'Fresh' },
+          { id: 'old', title: 'Old', createdAt: '2020-01-01T00:00:00.000Z' },
+        ],
+      },
+    },
+    { stage: 'published' },
+  )
+  const fresh = await store.get('posts', 'fresh', 'published')
+  assert.ok(Date.parse(fresh.createdAt) >= before - 1000, `stamped: ${fresh.createdAt}`)
+  const old = await store.get('posts', 'old', 'published')
+  assert.equal(old.createdAt, '2020-01-01T00:00:00.000Z')
+  // An update never rewrites it.
+  await store.commit({ posts: { update: { fresh: { title: 'Fresher' } } } }, { stage: 'published' })
+  assert.equal((await store.get('posts', 'fresh', 'published')).createdAt, fresh.createdAt)
+})

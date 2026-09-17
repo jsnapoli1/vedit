@@ -112,3 +112,17 @@ test('a document stored under another key adopts the key being edited', async ()
   store.hydrate({ ...v1, key: 'home' })
   assert.equal(store.getState().doc.key, 'pricing')
 })
+
+test('an inserted file link survives normalisation', () => {
+  const { doc, warnings } = inspectDocument({
+    version: DOCUMENT_VERSION,
+    key: '/support',
+    updatedAt: '2026-09-16T00:00:00.000Z',
+    nodes: { 'contact::added-1': { text: 'Download', href: '/vedit/v1/media/a.pdf' } },
+    inserted: [{ id: 'contact::added-1', parentId: 'contact', kind: 'file', index: 0 }],
+    tokens: [],
+  })
+  assert.equal(doc.inserted.length, 1)
+  assert.equal(doc.inserted[0].kind, 'file')
+  assert.deepEqual(warnings, [])
+})

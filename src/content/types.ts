@@ -33,6 +33,7 @@ export interface FieldSpec {
   required?: boolean
   /** Shown under the control. */
   help?: string
+  /** Value a new record starts with; `'now'` on a `date` field means the moment it is created. */
   default?: unknown
   /** For `select`. Strings, or `{ value, label }` when the label differs. */
   options?: Array<string | { value: string; label: string }>
