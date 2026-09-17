@@ -20,7 +20,7 @@ import {
 
 const TOOLS: Array<{ tool: EditorTool; icon: JSX.Element; title: string }> = [
   { tool: 'select', icon: <IconCursor />, title: 'Select — V' },
-  { tool: 'hand', icon: <IconHand />, title: 'Pan — H, or hold Space' },
+  { tool: 'hand', icon: <IconHand />, title: "Hand — H: pan, or work the page's own controls" },
   { tool: 'comment', icon: <IconComment />, title: 'Comment — C' },
   { tool: 'text', icon: <IconType />, title: 'Add text — T' },
   { tool: 'image', icon: <IconImage />, title: 'Add image — I' },

@@ -78,6 +78,9 @@ export function Overlay() {
   const hovered = useVeditState((state) => state.hovered)
   const selection = useVeditState((state) => state.selection)
   const inlineEditing = useVeditState((state) => state.inlineEditing)
+  // The hand tool can't resize, and its handles would sit over the very
+  // controls a hand click is meant to reach.
+  const handles = useVeditState((state) => state.tool !== 'hand')
 
   const hoverIds = hovered && !selection.includes(hovered) ? [hovered] : []
   const hoverRects = useMeasured(hoverIds, store, target)
@@ -101,7 +104,7 @@ export function Overlay() {
       {selectedRects.map((measured) => (
         <div key={measured.id}>
           <div className="vedit-rect vedit-rect-selected" style={measured.rect} />
-          {selection.length === 1 && inlineEditing !== measured.id ? (
+          {handles && selection.length === 1 && inlineEditing !== measured.id ? (
             <>
               <div
                 className="vedit-size"

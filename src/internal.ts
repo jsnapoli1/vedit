@@ -48,6 +48,7 @@ export { warnOnce, resetWarnings, isProductionLike } from './core/env'
 export { scanDom } from './auto/scanner'
 export { computeAutoId } from './auto/ids'
 export { auditPage, contrastRatio, effectiveBackground, parseColor, luminance } from './editor/a11y'
+export { bindEditorInteractions } from './editor/interactions'
 export type { A11yIssue } from './editor/a11y'
 
 export { canvasUrl, CANVAS_PARAM } from './core/canvas'

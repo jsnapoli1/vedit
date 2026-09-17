@@ -378,6 +378,13 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
 
   const tool = useStoreValue(active?.store, (state) => state.tool, 'select' as const)
   const panning = spacePanning || tool === 'hand'
+  // With the hand tool the active artboard keeps its pointer events, so a click
+  // works the page's own controls and a drag pans from inside the frame; the
+  // other frames stay pass-through and pan from here, as they do for Space.
+  const passThrough = (path: string) => spacePanning || (tool === 'hand' && path !== activePath)
+  const panBy = useCallback((dx: number, dy: number) => {
+    setView((current) => ({ ...current, panX: current.panX + dx, panY: current.panY + dy }))
+  }, [])
 
   const startPan = (event: React.PointerEvent) => {
     if (!panning && event.button !== 1) return
@@ -551,7 +558,7 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
                   style={{
                     width: frameWidth,
                     height: heights[page.path] ?? 900,
-                    pointerEvents: panning ? 'none' : 'auto',
+                    pointerEvents: passThrough(page.path) ? 'none' : 'auto',
                   }}
                 />
               ) : (
@@ -580,7 +587,7 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
 
       {/* Every artboard listens for its own edits, so a click anywhere is live. */}
       {Object.entries(bridges).map(([path, bridge]) => (
-        <ArtboardWiring key={path} store={bridge.store} target={targetFor(path)} />
+        <ArtboardWiring key={path} store={bridge.store} target={targetFor(path)} pan={panBy} />
       ))}
 
       {active ? (
@@ -601,8 +608,16 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
  * Installs editing gestures — and the editing styles — for one artboard, whether
  * or not it is the one the panels are pointed at, so a click anywhere is live.
  */
-function ArtboardWiring({ store, target }: { store: VeditStore; target: EditorTarget }) {
-  useEditorInteractions(store, target)
+function ArtboardWiring({
+  store,
+  target,
+  pan,
+}: {
+  store: VeditStore
+  target: EditorTarget
+  pan: (dx: number, dy: number) => void
+}) {
+  useEditorInteractions(store, target, { pan })
   const doc = target.getDocument()
 
   useEffect(() => {

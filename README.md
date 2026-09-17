@@ -188,6 +188,10 @@ on top of them.
 - **Zoom** — `⌘`/`Ctrl` + scroll, trackpad pinch, or the toolbar's `−` `100%` `+`.
   `⇧1` fits everything to the screen.
 - **Pan** — scroll, or hold `Space` and drag (or pick the hand tool, `H`).
+- **Work the page** — with the hand tool, a click goes through to the site's own
+  tabs, carousels and pickers, so a state the page didn't load in (slide three,
+  the yearly prices) is reachable; switch back to `V` and edit what's on screen.
+  Links and forms stay inert.
 - **Each page is one artboard**, not a scrolling window, so zooming out shows the
   footer and the hero at the same time.
 - **Breakpoints are real.** Every frame has its own viewport, so picking `sm`
@@ -469,9 +473,10 @@ Click an issue to select the element that caused it.
 | | |
 | --- | --- |
 | `⌘E` | Open / close the editor |
-| `V` `H` `C` `T` `I` `R` | Select, pan, comment, add text, add image, add box |
+| `V` `H` `C` `T` `I` `R` | Select, hand, comment, add text, add image, add box |
 | `⌘`/`Ctrl` + scroll, `⇧1` | Zoom, fit to screen |
 | `Space` + drag | Pan the canvas |
+| `H`, then click | Work the page's own controls — tabs, carousels, pickers — to reach the state you want to edit; `V` to select it |
 | `Enter` / double-click | Edit text in place |
 | `Esc` | Cancel inline edit, then select the parent, then clear the selection |
 | `⌫` | Hide the selected element (delete, if you added it) |
@@ -868,10 +873,12 @@ content of your own.
 - **Structural editing is limited to what the editor created.** Inside a slot you
   can place, re-order, nest and delete freely; elements that came from your JSX
   can be re-ordered and hidden, but not duplicated, wrapped or unwrapped.
-- **Links are inert while editing**, so you navigate between routes by putting
-  them on the canvas as artboards rather than by clicking through.
+- **Links and forms are inert while editing**, so you navigate between routes by
+  putting them on the canvas as artboards rather than by clicking through.
 - **The frames reload the page.** Client state (an open modal, a filled form, a
-  scrolled carousel) resets when the editor opens, like any preview tool.
+  scrolled carousel) resets when the editor opens, like any preview tool. Use
+  the hand tool (`H`) to operate the page's own controls and get that state
+  back; it works on the artboard the panels are pointed at.
 - **Forms collect, and stop there.** No file uploads, no conditional fields, no
   multi-step. Uploads need storage, size limits and content scanning that only
   your backend can own; conditional fields are the expression language this

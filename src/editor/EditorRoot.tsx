@@ -76,11 +76,13 @@ export function EditorRoot({ toolbarExtras, interactive = true }: EditorRootProp
     return () => root.classList.remove('vedit-editing')
   }, [pageDocument, interactive])
 
-  // The comment tool changes the cursor over the whole page.
+  // The comment tool changes the cursor over the whole page; the hand tool gives
+  // the page its own cursors back, since its controls are live.
   useEffect(() => {
     const root = pageDocument.documentElement
     root.classList.toggle('vedit-commenting', tool === 'comment')
-    return () => root.classList.remove('vedit-commenting')
+    root.classList.toggle('vedit-interacting', tool === 'hand')
+    return () => root.classList.remove('vedit-commenting', 'vedit-interacting')
   }, [pageDocument, tool])
 
   // `\` hides the panels so you can reach whatever they're covering.

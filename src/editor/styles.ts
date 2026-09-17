@@ -473,7 +473,7 @@ html.vedit-editing.vedit-commenting [data-vedit-id] { cursor: crosshair !importa
 .vedit-toast[data-tone="warn"] { border-color: #8a6d2b; color: #f0c674; }
 
 /* ------------------------------------------------- host page, while editing */
-html.vedit-editing [data-vedit-id] { cursor: default !important; }
+html.vedit-editing:not(.vedit-interacting) [data-vedit-id] { cursor: default !important; }
 html.vedit-editing [data-vedit-id]:not([data-vedit-inline]) { user-select: none !important; }
 html.vedit-editing [data-vedit-inline="true"] { outline: 1.5px solid var(--vedit-accent, #0d99ff); cursor: text !important; }
 html.vedit-editing .vedit-inserted-button {

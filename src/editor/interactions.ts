@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { VeditStore } from '../core/store'
 import type { EditorTool, StyleMap } from '../core/types'
 import { parseTransform, withTransform } from '../runtime/transform'
@@ -199,272 +199,334 @@ function applyOrder(store: VeditStore, siblings: HTMLElement[], dragged: HTMLEle
   store.setStyleMany(entries, { history: false })
 }
 
+export interface InteractionOptions {
+  enabled?: boolean
+  /**
+   * Called with screen-pixel deltas while the hand tool drags across the page.
+   * The canvas moves its artboards by this; without it a hand drag does nothing.
+   */
+  pan?: (dx: number, dy: number) => void
+}
+
 /**
  * All page-level editing gestures: selection, dragging, inline text and keyboard
  * shortcuts. Everything runs in the capture phase so the host site's own click
  * handlers and links stay inert while the editor is open.
+ *
+ * The hand tool is the one exception: with it, clicks reach the page so its own
+ * tabs, carousels and pickers can be put into whichever state you want to edit.
+ * Links and forms stay inert whichever tool is active.
  */
-export function useEditorInteractions(
-  store: VeditStore,
-  target: EditorTarget,
-  options: { enabled?: boolean } = {},
-) {
+export function useEditorInteractions(store: VeditStore, target: EditorTarget, options: InteractionOptions = {}) {
   const enabled = options.enabled !== false
+  // Read at event time, so the canvas can hand over a fresh closure each render
+  // without the listeners being torn down and re-bound.
+  const panRef = useRef(options.pan)
+  panRef.current = options.pan
   useEffect(() => {
     if (!enabled) return
-    const doc = target.getDocument()
-    const view = target.getWindow()
+    return bindEditorInteractions(store, target, { pan: (dx, dy) => panRef.current?.(dx, dy) })
+  }, [store, target, enabled])
+}
 
-    const onPointerDown = (event: PointerEvent) => {
-      if (isEditorSurface(event.target)) return
-      const state = store.getState()
-      const id = nodeIdFrom(event.target)
+/** The listeners behind `useEditorInteractions`, for wiring up without React. */
+export function bindEditorInteractions(
+  store: VeditStore,
+  target: EditorTarget,
+  options: Pick<InteractionOptions, 'pan'> = {},
+): () => void {
+  const doc = target.getDocument()
+  const view = target.getWindow()
 
-      if (state.inlineEditing && id === state.inlineEditing) return
-      if (state.tool === 'hand') return
+  // Whether the hand tool's last press turned into a drag: the click that ends
+  // a pan is not one the page should act on.
+  let handDragged = false
 
-      event.preventDefault()
-      event.stopPropagation()
+  const onPointerDown = (event: PointerEvent) => {
+    if (isEditorSurface(event.target)) return
+    const state = store.getState()
+    const id = nodeIdFrom(event.target)
 
-      if (state.tool === 'comment') {
-        // Pin to the element when there is one, as a fraction of its box, so the
-        // note follows it when the element moves or resizes.
-        const element = id ? store.getNode(id)?.element : null
-        const rect = element?.getBoundingClientRect()
-        store.setPendingComment(
-          rect && rect.width && rect.height
-            ? {
-                nodeId: id ?? undefined,
-                x: (event.clientX - rect.left) / rect.width,
-                y: (event.clientY - rect.top) / rect.height,
-              }
-            : { x: event.clientX + view.scrollX, y: event.clientY + view.scrollY },
-        )
-        store.setTool('select')
-        return
-      }
+    if (state.inlineEditing && id === state.inlineEditing) return
 
-      if (!id) {
-        store.select(null)
-        return
-      }
-
-      if (state.tool !== 'select') {
-        const parent = containerFor(store, id)
-        if (parent) {
-          store.insert(parent, state.tool as Exclude<EditorTool, 'select' | 'hand' | 'comment'>)
-          store.setTool('select')
-        } else {
-          store.notify('Nothing here can hold a new element — drop it inside an <Editable container>')
-        }
-        return
-      }
-
-      const alreadySelected = state.selection.includes(id)
-      store.select(id, { additive: event.shiftKey })
-      if (event.shiftKey) return
-
-      const element = store.getNode(id)?.element
-      if (!element) return
-
-      const startX = event.clientX
-      const startY = event.clientY
-      const mode = dragModeFor(store, id, element)
-      const siblings = mode === 'reorder' ? reorderableSiblings(element) : null
-      const baseTransform = store.styleValue(id, 'transform')
-      const base = parseTransform(baseTransform)
-      const startLeft = element.offsetLeft
-      const startTop = element.offsetTop
-      let dragging = false
-      let dropIndex: number | null = null
-
+    if (state.tool === 'hand') {
+      // Interact mode: nothing is prevented, so the page's own handlers run. A
+      // drag still pans the canvas — measured in screen pixels, because the
+      // frame moves under the pointer and its client coordinates stand still.
+      handDragged = false
+      const startX = event.screenX
+      const startY = event.screenY
+      let lastX = startX
+      let lastY = startY
       const move = (moveEvent: PointerEvent) => {
-        const dx = moveEvent.clientX - startX
-        const dy = moveEvent.clientY - startY
-        if (!dragging && Math.hypot(dx, dy) < 4) return
-        if (!dragging) {
-          dragging = true
-          store.beginHistory()
-        }
-
-        if (mode === 'reorder' && siblings) {
-          const { index, indicator } = dropIndexAt(siblings, element, moveEvent.clientX, moveEvent.clientY)
-          dropIndex = index
-          store.setDropIndicator(indicator)
-          return
-        }
-        if (mode === 'absolute') {
-          store.setStyle(
-            id,
-            { left: `${Math.round(startLeft + dx)}px`, top: `${Math.round(startTop + dy)}px` },
-            { history: false },
-          )
-          return
-        }
-        // Keep any rotation or scale the element already has.
-        const transform = withTransform(baseTransform, {
-          translateX: Math.round(base.translateX + dx),
-          translateY: Math.round(base.translateY + dy),
-        })
-        store.setStyle(id, { transform: transform ?? 'none' }, { history: false })
+        if (!handDragged && Math.hypot(moveEvent.screenX - startX, moveEvent.screenY - startY) < 4) return
+        handDragged = true
+        options.pan?.(moveEvent.screenX - lastX, moveEvent.screenY - lastY)
+        lastX = moveEvent.screenX
+        lastY = moveEvent.screenY
       }
-
       const up = () => {
         view.removeEventListener('pointermove', move)
         view.removeEventListener('pointerup', up)
-        store.setDropIndicator(null)
-        if (dragging && mode === 'reorder' && siblings && dropIndex !== null) {
-          applyOrder(store, siblings, element, dropIndex)
-        }
-        if (!dragging && alreadySelected && TEXTUAL.has(store.kindOf(id))) {
-          startInlineEdit(store, target, id)
-        }
       }
       view.addEventListener('pointermove', move)
       view.addEventListener('pointerup', up)
+      return
     }
 
-    // Stop the host site reacting to clicks it should not see while editing.
-    const swallow = (event: Event) => {
-      if (isEditorSurface(event.target)) return
-      if (store.getState().inlineEditing && nodeIdFrom(event.target) === store.getState().inlineEditing) return
-      event.preventDefault()
-      event.stopPropagation()
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (state.tool === 'comment') {
+      // Pin to the element when there is one, as a fraction of its box, so the
+      // note follows it when the element moves or resizes.
+      const element = id ? store.getNode(id)?.element : null
+      const rect = element?.getBoundingClientRect()
+      store.setPendingComment(
+        rect && rect.width && rect.height
+          ? {
+              nodeId: id ?? undefined,
+              x: (event.clientX - rect.left) / rect.width,
+              y: (event.clientY - rect.top) / rect.height,
+            }
+          : { x: event.clientX + view.scrollX, y: event.clientY + view.scrollY },
+      )
+      store.setTool('select')
+      return
     }
 
-    const onDoubleClick = (event: MouseEvent) => {
-      if (isEditorSurface(event.target)) return
-      const id = nodeIdFrom(event.target)
-      if (!id) return
+    if (!id) {
+      store.select(null)
+      return
+    }
+
+    if (state.tool !== 'select') {
+      const parent = containerFor(store, id)
+      if (parent) {
+        store.insert(parent, state.tool as Exclude<EditorTool, 'select' | 'hand' | 'comment'>)
+        store.setTool('select')
+      } else {
+        store.notify('Nothing here can hold a new element — drop it inside an <Editable container>')
+      }
+      return
+    }
+
+    const alreadySelected = state.selection.includes(id)
+    store.select(id, { additive: event.shiftKey })
+    if (event.shiftKey) return
+
+    const element = store.getNode(id)?.element
+    if (!element) return
+
+    const startX = event.clientX
+    const startY = event.clientY
+    const mode = dragModeFor(store, id, element)
+    const siblings = mode === 'reorder' ? reorderableSiblings(element) : null
+    const baseTransform = store.styleValue(id, 'transform')
+    const base = parseTransform(baseTransform)
+    const startLeft = element.offsetLeft
+    const startTop = element.offsetTop
+    let dragging = false
+    let dropIndex: number | null = null
+
+    const move = (moveEvent: PointerEvent) => {
+      const dx = moveEvent.clientX - startX
+      const dy = moveEvent.clientY - startY
+      if (!dragging && Math.hypot(dx, dy) < 4) return
+      if (!dragging) {
+        dragging = true
+        store.beginHistory()
+      }
+
+      if (mode === 'reorder' && siblings) {
+        const { index, indicator } = dropIndexAt(siblings, element, moveEvent.clientX, moveEvent.clientY)
+        dropIndex = index
+        store.setDropIndicator(indicator)
+        return
+      }
+      if (mode === 'absolute') {
+        store.setStyle(
+          id,
+          { left: `${Math.round(startLeft + dx)}px`, top: `${Math.round(startTop + dy)}px` },
+          { history: false },
+        )
+        return
+      }
+      // Keep any rotation or scale the element already has.
+      const transform = withTransform(baseTransform, {
+        translateX: Math.round(base.translateX + dx),
+        translateY: Math.round(base.translateY + dy),
+      })
+      store.setStyle(id, { transform: transform ?? 'none' }, { history: false })
+    }
+
+    const up = () => {
+      view.removeEventListener('pointermove', move)
+      view.removeEventListener('pointerup', up)
+      store.setDropIndicator(null)
+      if (dragging && mode === 'reorder' && siblings && dropIndex !== null) {
+        applyOrder(store, siblings, element, dropIndex)
+      }
+      if (!dragging && alreadySelected && TEXTUAL.has(store.kindOf(id))) {
+        startInlineEdit(store, target, id)
+      }
+    }
+    view.addEventListener('pointermove', move)
+    view.addEventListener('pointerup', up)
+  }
+
+  // Stop the host site reacting to clicks it should not see while editing.
+  const swallow = (event: Event) => {
+    if (isEditorSurface(event.target)) return
+    if (store.getState().inlineEditing && nodeIdFrom(event.target) === store.getState().inlineEditing) return
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  // With the hand tool a click goes through to the page, so its own controls
+  // work; only navigation is held back. Forms are still swallowed on submit.
+  const onClick = (event: MouseEvent) => {
+    if (isEditorSurface(event.target)) return
+    if (store.getState().tool !== 'hand' || handDragged) {
+      swallow(event)
+      return
+    }
+    if (asElement(event.target)?.closest('a[href]')) event.preventDefault()
+  }
+
+  const onDoubleClick = (event: MouseEvent) => {
+    if (isEditorSurface(event.target)) return
+    if (store.getState().tool === 'hand') return
+    const id = nodeIdFrom(event.target)
+    if (!id) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (TEXTUAL.has(store.kindOf(id))) startInlineEdit(store, target, id)
+  }
+
+  const onMouseOver = (event: MouseEvent) => {
+    // Moving into a panel drops the page highlight, so no outline is left behind
+    // while you work in the inspector. Layer rows re-assert it themselves.
+    store.hover(isEditorSurface(event.target) ? null : nodeIdFrom(event.target))
+  }
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    const state = store.getState()
+    const element = event.target as HTMLElement | null
+    const typing =
+      !!element &&
+      (element.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName))
+
+    if (event.key === 'Escape' && !state.inlineEditing) {
+      // Step out one level at a time, the way a canvas tool should.
+      if (state.pendingComment) store.setPendingComment(null)
+      else if (state.openComment) store.setOpenComment(null)
+      else if (state.tool !== 'select') store.setTool('select')
+      else if (state.selection.length === 1) {
+        store.select(store.getNode(state.selection[0])?.parentId ?? null)
+      } else store.select(null)
+      return
+    }
+    if (typing) return
+
+    // Focus is on a control in the editor's own chrome. Enter, Space, the arrow
+    // keys and the single-letter tool shortcuts all belong to that control while
+    // it has focus — stealing them is what makes an editor mouse-only. The
+    // shortcuts below with a modifier still work everywhere.
+    if (!event.metaKey && !event.ctrlKey && isChromeControl(event.target)) return
+
+    const meta = event.metaKey || event.ctrlKey
+    if (meta && event.key.toLowerCase() === 'e') {
       event.preventDefault()
-      event.stopPropagation()
+      store.setEditing(false)
+      return
+    }
+    if (meta && event.key.toLowerCase() === 'z') {
+      event.preventDefault()
+      if (event.shiftKey) store.redo()
+      else store.undo()
+      return
+    }
+    if (meta && event.key.toLowerCase() === 's') {
+      event.preventDefault()
+      void store.save().catch(() => undefined)
+      return
+    }
+    if (meta) return
+
+    const id = state.selection.length === 1 ? state.selection[0] : null
+
+    const tools: Record<string, EditorTool> = {
+      v: 'select',
+      h: 'hand',
+      c: 'comment',
+      t: 'text',
+      i: 'image',
+      r: 'box',
+    }
+    const tool = tools[event.key.toLowerCase()]
+    if (tool) {
+      store.setTool(tool)
+      return
+    }
+
+    if (!id) return
+
+    if (event.key === 'Enter') {
+      event.preventDefault()
       if (TEXTUAL.has(store.kindOf(id))) startInlineEdit(store, target, id)
+      return
     }
-
-    const onMouseOver = (event: MouseEvent) => {
-      // Moving into a panel drops the page highlight, so no outline is left behind
-      // while you work in the inspector. Layer rows re-assert it themselves.
-      store.hover(isEditorSurface(event.target) ? null : nodeIdFrom(event.target))
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault()
+      const inserted = state.doc.inserted.some((node) => node.id === id)
+      if (inserted) store.removeInserted(id)
+      else store.update(id, { hidden: !state.doc.nodes[id]?.hidden })
+      return
     }
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      const state = store.getState()
-      const element = event.target as HTMLElement | null
-      const typing =
-        !!element &&
-        (element.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName))
-
-      if (event.key === 'Escape' && !state.inlineEditing) {
-        // Step out one level at a time, the way a canvas tool should.
-        if (state.pendingComment) store.setPendingComment(null)
-        else if (state.openComment) store.setOpenComment(null)
-        else if (state.tool !== 'select') store.setTool('select')
-        else if (state.selection.length === 1) {
-          store.select(store.getNode(state.selection[0])?.parentId ?? null)
-        } else store.select(null)
+    if (event.key.startsWith('Arrow')) {
+      event.preventDefault()
+      const step = event.shiftKey ? 10 : 1
+      const dx = event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0
+      const dy = event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0
+      const node = store.getNode(id)
+      if (node && dragModeFor(store, id, node.element) === 'absolute') {
+        const style = store.getOverride(id).style ?? {}
+        const left = Number.parseFloat(String(style.left ?? node.element.offsetLeft))
+        const top = Number.parseFloat(String(style.top ?? node.element.offsetTop))
+        store.setStyle(id, { left: `${left + dx}px`, top: `${top + dy}px` })
         return
       }
-      if (typing) return
-
-      // Focus is on a control in the editor's own chrome. Enter, Space, the arrow
-      // keys and the single-letter tool shortcuts all belong to that control while
-      // it has focus — stealing them is what makes an editor mouse-only. The
-      // shortcuts below with a modifier still work everywhere.
-      if (!event.metaKey && !event.ctrlKey && isChromeControl(event.target)) return
-
-      const meta = event.metaKey || event.ctrlKey
-      if (meta && event.key.toLowerCase() === 'e') {
-        event.preventDefault()
-        store.setEditing(false)
-        return
-      }
-      if (meta && event.key.toLowerCase() === 'z') {
-        event.preventDefault()
-        if (event.shiftKey) store.redo()
-        else store.undo()
-        return
-      }
-      if (meta && event.key.toLowerCase() === 's') {
-        event.preventDefault()
-        void store.save().catch(() => undefined)
-        return
-      }
-      if (meta) return
-
-      const id = state.selection.length === 1 ? state.selection[0] : null
-
-      const tools: Record<string, EditorTool> = {
-        v: 'select',
-        h: 'hand',
-        c: 'comment',
-        t: 'text',
-        i: 'image',
-        r: 'box',
-      }
-      const tool = tools[event.key.toLowerCase()]
-      if (tool) {
-        store.setTool(tool)
-        return
-      }
-
-      if (!id) return
-
-      if (event.key === 'Enter') {
-        event.preventDefault()
-        if (TEXTUAL.has(store.kindOf(id))) startInlineEdit(store, target, id)
-        return
-      }
-      if (event.key === 'Delete' || event.key === 'Backspace') {
-        event.preventDefault()
-        const inserted = state.doc.inserted.some((node) => node.id === id)
-        if (inserted) store.removeInserted(id)
-        else store.update(id, { hidden: !state.doc.nodes[id]?.hidden })
-        return
-      }
-      if (event.key.startsWith('Arrow')) {
-        event.preventDefault()
-        const step = event.shiftKey ? 10 : 1
-        const dx = event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0
-        const dy = event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0
-        const node = store.getNode(id)
-        if (node && dragModeFor(store, id, node.element) === 'absolute') {
-          const style = store.getOverride(id).style ?? {}
-          const left = Number.parseFloat(String(style.left ?? node.element.offsetLeft))
-          const top = Number.parseFloat(String(style.top ?? node.element.offsetTop))
-          store.setStyle(id, { left: `${left + dx}px`, top: `${top + dy}px` })
-          return
-        }
-        const current = store.styleValue(id, 'transform')
-        const parts = parseTransform(current)
-        const transform = withTransform(current, {
-          translateX: parts.translateX + dx,
-          translateY: parts.translateY + dy,
-        })
-        if (transform) store.setStyle(id, { transform })
-        else store.clearStyles(id, ['transform'])
-      }
+      const current = store.styleValue(id, 'transform')
+      const parts = parseTransform(current)
+      const transform = withTransform(current, {
+        translateX: parts.translateX + dx,
+        translateY: parts.translateY + dy,
+      })
+      if (transform) store.setStyle(id, { transform })
+      else store.clearStyles(id, ['transform'])
     }
+  }
 
-    doc.addEventListener('pointerdown', onPointerDown, true)
-    doc.addEventListener('click', swallow, true)
-    doc.addEventListener('submit', swallow, true)
-    doc.addEventListener('dblclick', onDoubleClick, true)
-    doc.addEventListener('mouseover', onMouseOver, true)
-    doc.addEventListener('keydown', onKeyDown, true)
+  doc.addEventListener('pointerdown', onPointerDown, true)
+  doc.addEventListener('click', onClick, true)
+  doc.addEventListener('submit', swallow, true)
+  doc.addEventListener('dblclick', onDoubleClick, true)
+  doc.addEventListener('mouseover', onMouseOver, true)
+  doc.addEventListener('keydown', onKeyDown, true)
 
-    // Shortcuts have to work while focus sits in the panels, which are in the
-    // editor's own document rather than the page's.
-    const chromeDoc = typeof document !== 'undefined' ? document : null
-    if (chromeDoc && chromeDoc !== doc) chromeDoc.addEventListener('keydown', onKeyDown, true)
+  // Shortcuts have to work while focus sits in the panels, which are in the
+  // editor's own document rather than the page's.
+  const chromeDoc = typeof document !== 'undefined' ? document : null
+  if (chromeDoc && chromeDoc !== doc) chromeDoc.addEventListener('keydown', onKeyDown, true)
 
-    return () => {
-      doc.removeEventListener('pointerdown', onPointerDown, true)
-      doc.removeEventListener('click', swallow, true)
-      doc.removeEventListener('submit', swallow, true)
-      doc.removeEventListener('dblclick', onDoubleClick, true)
-      doc.removeEventListener('mouseover', onMouseOver, true)
-      doc.removeEventListener('keydown', onKeyDown, true)
-      if (chromeDoc && chromeDoc !== doc) chromeDoc.removeEventListener('keydown', onKeyDown, true)
-    }
-  }, [store, target, enabled])
+  return () => {
+    doc.removeEventListener('pointerdown', onPointerDown, true)
+    doc.removeEventListener('click', onClick, true)
+    doc.removeEventListener('submit', swallow, true)
+    doc.removeEventListener('dblclick', onDoubleClick, true)
+    doc.removeEventListener('mouseover', onMouseOver, true)
+    doc.removeEventListener('keydown', onKeyDown, true)
+    if (chromeDoc && chromeDoc !== doc) chromeDoc.removeEventListener('keydown', onKeyDown, true)
+  }
 }

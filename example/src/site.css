@@ -44,6 +44,13 @@ body {
   .nav-links { gap: 18px; }
 }
 
+.billing { display: inline-flex; border: 1px solid #e2e8f0; border-radius: 10px; padding: 3px; }
+.billing button {
+  font: inherit; font-weight: 600; font-size: 14px; padding: 8px 16px; border: 0; border-radius: 8px;
+  background: transparent; color: #475569; cursor: pointer;
+}
+.billing button[aria-pressed='true'] { background: #0f172a; color: #fff; }
+.billing-note { margin: 14px 0 0; color: #6366f1; font-weight: 600; }
 .price { font-size: 32px; font-weight: 700; margin: 0 0 6px; letter-spacing: -.02em; }
 .card .btn { margin-top: 14px; }
 

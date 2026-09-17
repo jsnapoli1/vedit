@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Editable,
   EditableBox,
@@ -299,6 +299,9 @@ function PlanCard() {
 }
 
 function Pricing() {
+  // The site's own state, not vedit's: the note only exists once the toggle has
+  // been clicked, which in the editor takes the hand tool.
+  const [yearly, setYearly] = useState(false)
   return (
     <>
       <Nav />
@@ -310,6 +313,21 @@ function Pricing() {
           <EditableText id="pricing.title" as="h1">
             Pay for the sites, not the seats.
           </EditableText>
+        </div>
+        <div>
+          <div className="billing" role="group" aria-label="Billing period">
+            <button type="button" aria-pressed={!yearly} onClick={() => setYearly(false)}>
+              Monthly
+            </button>
+            <button type="button" aria-pressed={yearly} onClick={() => setYearly(true)}>
+              Yearly
+            </button>
+          </div>
+          {yearly ? (
+            <EditableText id="pricing.yearly-note" className="billing-note">
+              Two months free on every plan.
+            </EditableText>
+          ) : null}
         </div>
       </EditableBox>
       {/*
