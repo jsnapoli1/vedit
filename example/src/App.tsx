@@ -356,6 +356,29 @@ function Pricing() {
           <PlanCard />
         </Editable>
       </section>
+      {/*
+        * Markup the way sites are actually built, for the editor to explain:
+        * a wrapper div that does nothing, a card whose width its flex row
+        * decides, a badge floated over the row, and a card an animation library
+        * capped with an inline max-height. Scanner-found on purpose.
+        */}
+      <section className="features layout-traps" style={{ position: 'relative' }}>
+        <div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <div className="plan flex-grown" style={{ flex: 1 }}>
+              <h3>Flex-grown card</h3>
+              <p>Its width is whatever the row leaves it.</p>
+            </div>
+            <div className="plan capped" style={{ maxHeight: 96, overflow: 'hidden', flex: '0 0 260px' }}>
+              <h3>Capped card</h3>
+              <p>An animation left this card with an inline max-height, so the text below the fold is cut off and no edit can grow it.</p>
+            </div>
+          </div>
+        </div>
+        <div className="badge" style={{ position: 'absolute', top: 8, right: 8, padding: '4px 8px', background: '#fde68a' }}>
+          <span>New</span>
+        </div>
+      </section>
       <footer className="footer">
         <p>© Northwind. Prices shown in USD.</p>
       </footer>

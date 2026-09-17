@@ -218,6 +218,9 @@ export const EDITOR_CSS = `
 .vedit-issue-summary { display: flex; gap: 12px; }
 .vedit-issue-summary span[data-tone="error"] { color: #ff8f84; }
 .vedit-issue-summary span[data-tone="warning"] { color: #f0c674; }
+.vedit-layout-notice { display: grid; gap: 8px; padding: 8px 10px; margin-bottom: 8px; border-radius: var(--vedit-radius); background: var(--vedit-panel-2); border-left: 3px solid var(--vedit-accent); font-size: 11px; color: var(--vedit-text); }
+.vedit-layout-constraint { display: grid; gap: 6px; }
+.vedit-layout-constraint .vedit-btn { justify-self: start; }
 .vedit-issue {
   display: flex; gap: 8px; width: 100%; text-align: left; padding: 8px 12px;
   border: 0; border-bottom: 1px solid var(--vedit-border); background: transparent; cursor: pointer;

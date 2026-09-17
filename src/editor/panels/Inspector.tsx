@@ -56,6 +56,7 @@ import {
   IconUndo,
 } from '../icons'
 import { BoxSides, ColorRow, LengthRow, SegmentRow, SelectRow } from './rows'
+import { layoutConstraints, type LayoutConstraint } from '../layoutConstraints'
 import { SVG_REFUSED } from './Insert'
 import { dragModeFor, reorderBlocker } from '../interactions'
 
@@ -1221,6 +1222,53 @@ function DashRow({ id }: { id: string }) {
 
 /* ------------------------------------------------------------------- layout */
 
+/**
+ * What the page's own layout does to this box that an edit here would run into:
+ * a row deciding its width, a cap cutting its content off, a float over the
+ * page. Said plainly, with the one change that lifts it, because a resize that
+ * silently does nothing teaches people the editor is broken.
+ */
+function LayoutNotice({ id }: { id: string }) {
+  const store = useVeditStore()
+  const doc = useVeditState((state) => state.doc)
+  const [constraints, setConstraints] = useState<LayoutConstraint[]>([])
+  useEffect(() => {
+    // Measured after paint, so an override just written is already in effect.
+    const frame = requestAnimationFrame(() => {
+      const element = store.getNode(id)?.element
+      setConstraints(element ? layoutConstraints(element) : [])
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [id, doc, store])
+  if (!constraints.length) return null
+  return (
+    <div className="vedit-layout-notice" role="status">
+      {constraints.map((constraint) => (
+        <div key={constraint.kind} className="vedit-layout-constraint">
+          <span>{constraint.message}</span>
+          {constraint.fix ? (
+            <button type="button" className="vedit-btn" onClick={() => store.setStyle(id, constraint.fix!.styles)}>
+              {constraint.fix.label}
+            </button>
+          ) : null}
+          {constraint.by ? (
+            <button
+              type="button"
+              className="vedit-btn"
+              onClick={() => {
+                const byId = constraint.by?.getAttribute('data-vedit-id')
+                if (byId) store.select(byId)
+              }}
+            >
+              Select it
+            </button>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function LayoutSection({ id }: { id: string }) {
   const display = useStyleValue(id, 'display')
   const computed = useComputedStyle(id)
@@ -1230,6 +1278,7 @@ function LayoutSection({ id }: { id: string }) {
 
   return (
     <Section title="Layout">
+      <LayoutNotice id={id} />
       <PositionControl id={id} />
       <SelectRow
         id={id}

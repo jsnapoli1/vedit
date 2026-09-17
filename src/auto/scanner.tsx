@@ -45,8 +45,49 @@ function labelFor(element: HTMLElement, kind: NodeKind): string {
     const alt = element.getAttribute('alt')
     if (alt) return alt
   }
+  if (kind === 'box') return boxLabel(element)
   const className = typeof element.className === 'string' ? element.className.split(/\s+/)[0] : ''
   return className ? `${tag}.${className}` : tag
+}
+
+/**
+ * A container is named by what it does to the page, not by its class list: the
+ * person editing needs to know that this is the row deciding the card's width,
+ * or the box floating over everything, or the one cutting its content off.
+ */
+export function boxLabel(element: HTMLElement): string {
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
+  if (!style) return element.tagName.toLowerCase()
+  const tag = element.tagName.toLowerCase()
+  const structural: Record<string, string> = { section: 'Section', header: 'Header', footer: 'Footer', nav: 'Nav', article: 'Article', aside: 'Aside', form: 'Form', ul: 'List', ol: 'List', li: 'List item', table: 'Table', main: 'Main' }
+  let label: string
+  if (style.position === 'absolute') label = 'Absolute box'
+  else if (style.position === 'fixed') label = 'Fixed box'
+  else if (style.position === 'sticky') label = 'Sticky box'
+  else if (style.display.includes('flex')) label = style.flexDirection.startsWith('column') ? 'Flex column' : 'Flex row'
+  else if (style.display.includes('grid')) label = 'Grid'
+  else label = structural[tag] ?? 'Box'
+  const clips = /hidden|clip/.test(style.overflowX) || /hidden|clip/.test(style.overflowY)
+  return clips ? `${label} · clips` : label
+}
+
+/**
+ * A `div` that only exists for the code — static, unstyled, the same size as
+ * the one thing inside it — is not a layer anyone wants to see or select. Its
+ * children still register, under the nearest box that does something.
+ */
+export function isNullWrapper(element: HTMLElement): boolean {
+  if (element.tagName !== 'DIV' && element.tagName !== 'SPAN') return false
+  if (element.children.length !== 1) return false
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
+  if (!style) return false
+  if (style.position !== 'static' || !/^(block|flex|grid|contents)$/.test(style.display)) return false
+  if (/hidden|clip|auto|scroll/.test(style.overflowX + style.overflowY)) return false
+  if (style.backgroundImage !== 'none' || (style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.backgroundColor !== 'transparent')) return false
+  if (parseFloat(style.borderTopWidth) || parseFloat(style.borderBottomWidth) || parseFloat(style.borderLeftWidth) || parseFloat(style.borderRightWidth)) return false
+  const own = element.getBoundingClientRect()
+  const child = element.children[0].getBoundingClientRect()
+  return Math.abs(own.width - child.width) <= 1 && Math.abs(own.height - child.height) <= 1 && Math.abs(own.top - child.top) <= 1 && Math.abs(own.left - child.left) <= 1
 }
 
 export interface ScanOptions {
@@ -106,6 +147,15 @@ export function scanDom({ root, selector, minBoxSize = 8 }: ScanOptions): Regist
     if (kind === 'box') {
       const rect = element.getBoundingClientRect()
       if (rect.width < minBoxSize || rect.height < minBoxSize) continue
+      if (isNullWrapper(element)) {
+        // A wrapper tagged by an earlier scan must not keep standing in as a parent.
+        if (element.dataset.veditAuto === 'true') {
+          delete element.dataset.veditId
+          delete element.dataset.veditAuto
+          delete element.dataset.veditKind
+        }
+        continue
+      }
     }
 
     const id = element.dataset.veditId && element.dataset.veditAuto === 'true'
