@@ -117,7 +117,7 @@ export function Inspector() {
             color: 'var(--vedit-text)',
           }}
         >
-          {multiple ? `${count} elements` : node?.label ?? 'Element'}
+          {multiple ? `${count} elements` : node ? store.labelOf(node.id) : 'Element'}
         </span>
         <span style={{ display: 'flex', gap: 2 }}>
           <button
@@ -431,12 +431,14 @@ function rowFields(row: VeditRecord | undefined, repeat: BoundRepeat, store: Ved
 /** The path down to the selection — click a step to select that ancestor (or Esc). */
 function Breadcrumb({ id }: { id: string }) {
   const store = useVeditStore()
+  // Re-read when any node is edited: an ancestor can be renamed while this is up.
+  useVeditState((state) => state.doc.nodes)
   const chain: Array<{ id: string; label: string }> = []
   let current: string | null = id
   while (current) {
     const node = store.getNode(current)
     if (!node) break
-    chain.unshift({ id: node.id, label: node.label })
+    chain.unshift({ id: node.id, label: store.labelOf(node.id) })
     current = node.parentId
   }
   if (chain.length < 2) return null

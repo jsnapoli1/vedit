@@ -38,6 +38,9 @@ export function LeftPanel() {
   )
 
   const strip = useRef<HTMLDivElement>(null)
+  // Lives here rather than in the tree so switching tabs and back keeps the
+  // rows folded the way they were left.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
 
   return (
     <aside className="vedit-panel vedit-left" data-vedit-ui="" aria-label="Layers, tokens and notes">
@@ -65,7 +68,7 @@ export function LeftPanel() {
         ))}
       </div>
       <div id="vedit-tabpanel" role="tabpanel" aria-labelledby={`vedit-tab-${tab}`} style={{ display: 'contents' }}>
-      {tab === 'layers' ? <LayersTree /> : null}
+      {tab === 'layers' ? <LayersTree collapsed={collapsed} onCollapsedChange={setCollapsed} /> : null}
       {tab === 'insert' ? <InsertPanel /> : null}
       {tab === 'tokens' ? <TokensPanel /> : null}
       {tab === 'data' ? <DataPanel /> : null}

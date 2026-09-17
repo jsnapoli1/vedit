@@ -48,7 +48,7 @@ export function IssuesPanel() {
             <span>
               <strong>{issue.message}</strong>
               {issue.detail ? <em>{issue.detail}</em> : null}
-              <code>{store.getNode(issue.nodeId)?.label ?? issue.nodeId}</code>
+              <code>{store.labelOf(issue.nodeId)}</code>
             </span>
           </button>
         ))

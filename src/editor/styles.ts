@@ -126,6 +126,21 @@ export const EDITOR_CSS = `
 .vedit-layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vedit-layer-kind { color: var(--vedit-muted); flex: none; }
 .vedit-layer[data-selected="true"] .vedit-layer-kind { color: rgba(255,255,255,.75); }
+/* The chevron and the gap that stands in for it on a leaf are the same width, so
+   names line up whether or not a row has anything to fold. */
+.vedit-layer-toggle, .vedit-layer-gap { flex: none; width: 12px; height: 12px; }
+.vedit-layer-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--vedit-muted); border-radius: 3px; transition: transform .12s ease;
+}
+.vedit-layer-toggle[data-expanded="false"] { transform: rotate(-90deg); }
+.vedit-layer:hover .vedit-layer-toggle { color: inherit; }
+.vedit-layer-toggle:hover { background: rgba(255,255,255,.12); }
+.vedit-layer-rename {
+  flex: 1; min-width: 0; height: 18px; padding: 0 4px; margin: -2px 0;
+  font: inherit; color: var(--vedit-text); background: var(--vedit-bg);
+  border: 1px solid var(--vedit-accent); border-radius: 3px; outline: none;
+}
 .vedit-layer-eye { opacity: 0; flex: none; }
 .vedit-layer:hover .vedit-layer-eye, .vedit-layer[data-hidden="true"] .vedit-layer-eye { opacity: .8; }
 

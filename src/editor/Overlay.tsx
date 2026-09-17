@@ -52,9 +52,9 @@ function useMeasured(ids: string[], store: VeditStore, target: EditorTarget): Me
             node.element,
           )
         }
-        next.push({ id, label: node.label, rect: toScreen(box, viewport) })
+        next.push({ id, label: store.labelOf(id), rect: toScreen(box, viewport) })
       }
-      const signature = next.map((m) => `${m.id}:${round(m.rect)}`).join('|')
+      const signature = next.map((m) => `${m.id}:${m.label}:${round(m.rect)}`).join('|')
       if (signature !== previous) {
         previous = signature
         setMeasured(next)
