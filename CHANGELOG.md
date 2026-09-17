@@ -9,6 +9,21 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## Unreleased
+
+The document format is unchanged at version 1. One addition; a site that
+already uses vedit has nothing to do.
+
+### Added
+
+- **Naming and collapsing layers.** Double-click a row in the Layers panel (or
+  press F2 on it) to give the element a name of your own; it shows in the tree,
+  the inspector and the hover tag in place of the one the source gave it, and
+  a blank name goes back to the source's. Rows with children get a chevron,
+  and Left/Right on a focused row collapse and expand it. A name is stored on
+  the node as `label`, so it lands in undo, saves with the document, travels to
+  other editors, and can be set from the API and MCP through `set-content`.
+
 ## 0.9.1 — 2026-09-17
 
 The document format is unchanged at version 1. Two small additions and four

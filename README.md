@@ -779,6 +779,7 @@ so an agent proposes and a person publishes. Full detail in [API.md](./API.md).
     },
     "home.hero.cta": { "props": { "variant": "outline", "size": "lg" } },
     "campaign.sections::added-b41": {
+      "label": "Brand dot",
       "shape": { "type": "circle" },
       "style": { "display": "block", "width": "160px", "height": "160px", "fill": "var(--vedit-brand)" }
     }

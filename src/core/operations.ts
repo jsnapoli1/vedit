@@ -77,6 +77,7 @@ export interface ContentPatch {
   target?: string | null
   className?: string | null
   hidden?: boolean | null
+  label?: string | null
 }
 
 export interface OperationResult {
@@ -405,7 +406,7 @@ export function describeDocument(doc: VeditDocument): DocumentSummary {
 
 /* ------------------------------------------------------------------ util */
 
-const CONTENT_FIELDS = new Set(['text', 'html', 'src', 'alt', 'href', 'target', 'className', 'hidden'])
+const CONTENT_FIELDS = new Set(['text', 'html', 'src', 'alt', 'href', 'target', 'className', 'hidden', 'label'])
 const INSERTED_KINDS = new Set<string>(['text', 'image', 'box', 'button', 'link', 'file', 'component', 'shape'])
 const TOKEN_KINDS = new Set<string>(['color', 'length', 'font', 'shadow'])
 

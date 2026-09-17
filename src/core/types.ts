@@ -200,6 +200,12 @@ export interface NodeOverride extends StyleLayer {
   hidden?: boolean
   /** Extra class names appended to the node. */
   className?: string
+  /**
+   * The name the editor shows for the node — in the layers tree, the inspector,
+   * the hover tag — in place of the one the source code gave it. Never rendered
+   * on the page: it is for the people editing it.
+   */
+  label?: string
   /** Styles that apply only while the element is hovered, focused or pressed. */
   states?: Partial<Record<Exclude<StyleState, 'default'>, StyleLayer>>
   /** Values for the props a component declared as editable. */

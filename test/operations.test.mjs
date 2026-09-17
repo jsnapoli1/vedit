@@ -46,6 +46,20 @@ test('content fields are set with strings and removed with null', () => {
   assert.equal(doc.nodes.a.text, 'Hello')
 })
 
+test('a layer name is content: set with a string, dropped with null, and described', () => {
+  const named = applyOperations(blank(), [{ op: 'set-content', id: 'a', content: { label: 'Headline' } }]).doc
+  assert.equal(named.nodes.a.label, 'Headline')
+  assert.ok(describeDocument(named).nodes[0].overrides.includes('label'))
+
+  const { doc } = applyOperations(named, [{ op: 'set-content', id: 'a', content: { label: null } }])
+  assert.deepEqual(doc.nodes, {})
+
+  assert.throws(
+    () => applyOperations(blank(), [{ op: 'set-content', id: 'a', content: { label: 3 } }]),
+    /`label` must be a string or null/,
+  )
+})
+
 test('inserting returns the new id and places it among its siblings', () => {
   const first = applyOperations(blank(), [{ op: 'insert-node', parentId: 'hero', kind: 'text' }])
   const second = applyOperations(first.doc, [

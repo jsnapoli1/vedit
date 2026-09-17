@@ -273,7 +273,7 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
     {
       name: 'set_content',
       description:
-        'Change what an element says or points at: text, alt text, image source, link href, or whether it is hidden. Pass null to drop an override and go back to the source code.',
+        'Change what an element says or points at: text, alt text, image source, link href, whether it is hidden, or the name it goes by in the editor. Pass null to drop an override and go back to the source code.',
       write: true,
       inputSchema: object(
         {
@@ -287,12 +287,13 @@ export function createVeditMcpServer(options: VeditMcpOptions): VeditMcpServer {
           target: { type: ['string', 'null'] },
           className: { type: ['string', 'null'] },
           hidden: { type: ['boolean', 'null'] },
+          label: { type: ['string', 'null'], description: 'The name shown for it in the editor, in place of the one from the source' },
         },
         ['id'],
       ),
       async run(args) {
         const content: Record<string, unknown> = {}
-        for (const field of ['text', 'html', 'src', 'alt', 'href', 'target', 'className', 'hidden']) {
+        for (const field of ['text', 'html', 'src', 'alt', 'href', 'target', 'className', 'hidden', 'label']) {
           if (field in args) content[field] = args[field]
         }
         return write(keyOf(args), [{ op: 'set-content', id: String(args.id), content }])

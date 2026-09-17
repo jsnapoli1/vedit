@@ -38,7 +38,7 @@ const { doc, changed, created } = applyOperations(current, [
 | `set-styles` | `id`, `styles`, `state?`, `breakpoint?` — merges; leaves the rest alone |
 | `replace-styles` | `id`, `styles`, `state?`, `breakpoint?` — replaces the whole cell |
 | `clear-styles` | `id`, `properties`, `state?`, `breakpoint?` — back to the site's own styling |
-| `set-content` | `id`, `content` — `text`, `html`, `src`, `alt`, `href`, `target`, `className`, `hidden`. `null` removes one |
+| `set-content` | `id`, `content` — `text`, `html`, `src`, `alt`, `href`, `target`, `className`, `hidden`, `label` (the name shown in the editor). `null` removes one |
 | `set-props` | `id`, `props` — values for props a component declared editable |
 | `reset-node` | `id` — drop every override |
 | `insert-node` | `parentId`, `kind`, `component?`, `shape?`, `id?`, `index?`, `override?` — `kind: 'component'` requires `component`, the registered name; `kind: 'shape'` requires `shape` |

@@ -225,6 +225,19 @@ export class VeditStore {
     return id ? this.registry.get(id) : undefined
   }
 
+  /**
+   * What to call a node in the chrome. A name given in the editor wins over the
+   * one the source code gave; an item of a repeat inherits the template's, the
+   * way it inherits everything else, unless it was named on its own.
+   */
+  labelOf(id: string): string {
+    const own = this.docOf(id).nodes[id]?.label
+    if (own) return own
+    const templateId = parseItemId(id)?.templateId
+    const inherited = templateId ? this.docOf(templateId).nodes[templateId]?.label : undefined
+    return inherited || this.registry.get(id)?.label || id
+  }
+
   /* ------------------------------------------------------------- documents */
 
   /** The page's document and every shared one, in a fixed order. */

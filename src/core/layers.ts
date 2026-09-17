@@ -129,7 +129,7 @@ export function pruneOverride(override: NodeOverride): NodeOverride | undefined 
 
   if (next.props && Object.keys(next.props).length === 0) delete next.props
 
-  for (const key of ['text', 'html', 'src', 'alt', 'href', 'target', 'className'] as const) {
+  for (const key of ['text', 'html', 'src', 'alt', 'href', 'target', 'className', 'label'] as const) {
     if (next[key] === undefined || next[key] === '') delete next[key]
   }
   if (next.hidden === false) delete next.hidden

@@ -87,3 +87,47 @@ test('updateMany applies a content patch across nodes', () => {
   assert.equal(store.getOverride('a').hidden, true)
   assert.equal(store.getOverride('b').hidden, true)
 })
+
+test('renaming a node is an edit: it lands in the document and in undo', () => {
+  const store = makeStore()
+  store.update('home.hero.title', { label: 'Headline' })
+  assert.equal(store.getOverride('home.hero.title').label, 'Headline')
+  assert.equal(store.labelOf('home.hero.title'), 'Headline')
+
+  store.undo()
+  assert.deepEqual(store.getState().doc.nodes, {})
+})
+
+test('a blank name drops the rename, so the source label shows again', () => {
+  const store = makeStore()
+  store.update('a', { label: 'Custom' })
+  store.update('a', { label: '' })
+  assert.deepEqual(store.getState().doc.nodes, {})
+})
+
+test('labelOf falls back to the registered label, then the id', () => {
+  const store = makeStore()
+  assert.equal(store.labelOf('nowhere'), 'nowhere')
+  store.register({
+    id: 'a',
+    kind: 'text',
+    label: 'Title',
+    element: {},
+    parentId: null,
+    auto: false,
+    container: false,
+  })
+  assert.equal(store.labelOf('a'), 'Title')
+  store.update('a', { label: 'Headline' })
+  assert.equal(store.labelOf('a'), 'Headline')
+})
+
+test('an item of a repeat takes its name from the template unless it has its own', () => {
+  const store = makeStore()
+  store.update('cards.title', { label: 'Card title' })
+  assert.equal(store.labelOf('cards.title~b'), 'Card title')
+  store.setRepeatScope('item')
+  store.update('cards.title~b', { label: 'Second card' })
+  assert.equal(store.labelOf('cards.title~b'), 'Second card')
+  assert.equal(store.labelOf('cards.title~a'), 'Card title')
+})
