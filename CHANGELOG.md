@@ -9,13 +9,23 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
-## Unreleased
+## 0.10.0 — 2026-09-17
 
-The document format is unchanged at version 1. One addition; a site that
+The document format is unchanged at version 1. Two additions; a site that
 already uses vedit has nothing to do.
 
 ### Added
 
+- **The hand tool works the page.** With the hand tool (`H`) a click goes
+  through to the site's own controls, so a carousel can be moved to slide
+  three, a product rack switched to another product, or a pricing toggle set
+  to yearly — and what that reveals can then be selected and edited with `V`.
+  Until now the editor swallowed every click, so a component with internal
+  state was only editable in the state the page loaded in. Links still don't
+  navigate and forms still don't submit, whichever tool is active. On the
+  canvas this applies to the artboard the panels are pointed at; a hand drag
+  still pans. `bindEditorInteractions` is exported from `vedit/internal` for
+  wiring the gestures up without React.
 - **Naming and collapsing layers.** Double-click a row in the Layers panel (or
   press F2 on it) to give the element a name of your own; it shows in the tree,
   the inspector and the hover tag in place of the one the source gave it, and
