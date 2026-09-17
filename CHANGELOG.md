@@ -9,6 +9,25 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.11.1 — 2026-09-17
+
+The document format is unchanged at version 1. One fix in two halves; a site
+that already uses vedit has nothing to do, but a style set on a repeat's
+template now shows, which it never did.
+
+### Fixed
+
+- **Styles on "every card".** A text edit on one card of a repeat reached them
+  all, as documented; a *style* edit did not, for two reasons. The stylesheet
+  named the template's own id and not the `~key` copies the cards render as,
+  so a template style applied to nothing; and the inspector's fields wrote
+  through the multi-selection path, which skipped the repeat scope, so the
+  style landed on the one card that was clicked. Template rules now also match
+  the copies (an item's own rule sits one specificity step above, so a card
+  that differs still wins), and every style write from the inspector follows
+  the scope, once per template. Re-ordering siblings still writes each item's
+  own `order`.
+
 ## 0.11.0 — 2026-09-17
 
 The document format is unchanged at version 1. Three additions about the boxes
