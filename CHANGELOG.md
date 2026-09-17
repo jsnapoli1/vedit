@@ -9,6 +9,19 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.11.2 — 2026-09-17
+
+The document format is unchanged at version 1. One fix; a site that already
+uses vedit has nothing to do.
+
+### Fixed
+
+- **A size typed for a flex child holds.** The resize handles pinned a card its
+  flex row sizes (0.11.0), but a width or height typed into the Layout fields
+  did not, so the row went on growing or shrinking it and the number looked
+  ignored. Any width or height set from the inspector on such a child now pins
+  it too, and a child the row *shrinks* counts, not only one it grows.
+
 ## 0.11.1 — 2026-09-17
 
 The document format is unchanged at version 1. One fix in two halves; a site
