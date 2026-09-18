@@ -128,6 +128,9 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
   // the object is useless as a dependency — compare what it says instead.
   const varsKey = vars ? JSON.stringify(vars) : ''
   const bindingKey = binding ? JSON.stringify(binding) : ''
+  // A repeat's `newRow` follows the page's own state (the filter in force, the
+  // column shown), so it is compared by what it says, like `vars`.
+  const newRowKey = repeat?.newRow ? JSON.stringify(repeat.newRow) : ''
 
   useEffect(() => {
     if (!element || disabled) return
@@ -150,7 +153,7 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
     })
     return () => store.unregister(id, element)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, element, id, kind, label, container, sourceText, disabled, fieldsKey, propsKey, varsKey, bindingKey, scope])
+  }, [store, element, id, kind, label, container, sourceText, disabled, fieldsKey, propsKey, varsKey, bindingKey, newRowKey, scope])
 
   const ref = useCallback((next: HTMLElement | null) => setElement(next), [])
 
