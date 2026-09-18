@@ -9,6 +9,17 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.12.1 — 2026-09-18
+
+The document format is unchanged at version 1. One fix; a site that already
+uses vedit has nothing to do.
+
+### Fixed
+
+- **`newRow` follows the page.** A repeat whose `newRow` changes with the
+  page's own state — the category a filter is set to — kept handing *Add row*
+  the value it had when the page loaded. The registration now follows it.
+
 ## 0.12.0 — 2026-09-18
 
 The document format is unchanged at version 1. One addition and one fix about
