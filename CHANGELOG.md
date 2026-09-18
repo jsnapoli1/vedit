@@ -9,6 +9,28 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.12.0 — 2026-09-18
+
+The document format is unchanged at version 1. One addition and one fix about
+the row an editor adds; a site that already uses vedit has nothing to do.
+
+### Added
+
+- **`newRow` on a repeat.** A repeat that shows one column's links, or one
+  category's products, can say what a row added from it starts with:
+  `<Editable repeat={links} source="links" newRow={{ column: column.id }}>`.
+  *Add row* in the inspector and the Insert panel starts from it, so the row
+  appears where the editor added it instead of under nothing. A field's
+  `default` is now part of the schema the client sees.
+
+### Fixed
+
+- **A row added in the editor starts from the schema's defaults.** The server
+  applied them on save, but until then the row was a bare `{ id }`: hidden
+  behind every `status === true` filter, filed under no relation. The store
+  now seeds the declared defaults when the row is created (a date's `'now'`
+  stays the server's to stamp).
+
 ## 0.11.5 — 2026-09-17
 
 The document format is unchanged at version 1. One fix; a site that already
