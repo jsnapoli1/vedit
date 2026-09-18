@@ -51,7 +51,7 @@ export { auditPage, contrastRatio, effectiveBackground, parseColor, luminance } 
 export { bindEditorInteractions } from './editor/interactions'
 export type { A11yIssue } from './editor/a11y'
 
-export { canvasUrl, CANVAS_PARAM } from './core/canvas'
+export { canvasUrl, keepCanvasParams, CANVAS_PARAM } from './core/canvas'
 export {
   pinViewportHeight,
   pinViewportHeightUnits,

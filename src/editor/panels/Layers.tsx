@@ -13,10 +13,23 @@ function buildTree(nodes: RegisteredNode[]): TreeNode[] {
   const byId = new Map<string, TreeNode>()
   for (const node of nodes) byId.set(node.id, { node, children: [] })
 
+  // The parent is whatever registered box is nearest above the element on the
+  // page now, not the one recorded when the node registered: a wrapper found
+  // by the scanner later, or one folded away, would otherwise leave the tree
+  // disagreeing with the page.
+  const byElement = new Map<Element, TreeNode>()
+  for (const entry of byId.values()) byElement.set(entry.node.element, entry)
+  const parentOf = (entry: TreeNode): TreeNode | undefined => {
+    for (let node = entry.node.element.parentElement; node; node = node.parentElement) {
+      const found = byElement.get(node)
+      if (found) return found
+    }
+    return entry.node.parentId ? byId.get(entry.node.parentId) : undefined
+  }
   const roots: TreeNode[] = []
   for (const entry of byId.values()) {
-    const parent = entry.node.parentId ? byId.get(entry.node.parentId) : undefined
-    if (parent) parent.children.push(entry)
+    const parent = parentOf(entry)
+    if (parent && parent !== entry) parent.children.push(entry)
     else roots.push(entry)
   }
 

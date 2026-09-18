@@ -44,6 +44,37 @@ export function publishCanvasBridge(bridge: CanvasBridge): void {
   }
 }
 
+/**
+ * A page inside the canvas that navigates itself — a card's `navigate()`, a
+ * router push — would drop the query that marks it as the canvas child and
+ * carries the reference viewport height, and the artboard would then behave
+ * like a visitor tab: no pinned `vh`, no bridge on the next page. Keep the
+ * params on every history write for as long as the frame is a canvas child.
+ */
+export function keepCanvasParams(win: Window): () => void {
+  const params = new URLSearchParams(win.location.search)
+  const keep = [CANVAS_PARAM, CANVAS_VH_PARAM].filter((name) => params.has(name))
+  if (!keep.length) return () => undefined
+  const history = win.history
+  const original = { pushState: history.pushState, replaceState: history.replaceState }
+  const withParams = (url: string | URL | null | undefined) => {
+    if (url == null) return url
+    const next = new URL(String(url), win.location.href)
+    for (const name of keep) if (!next.searchParams.has(name)) next.searchParams.set(name, params.get(name) as string)
+    return next.pathname + next.search + next.hash
+  }
+  history.pushState = function (data, unused, url) {
+    return original.pushState.call(this, data, unused, withParams(url))
+  }
+  history.replaceState = function (data, unused, url) {
+    return original.replaceState.call(this, data, unused, withParams(url))
+  }
+  return () => {
+    history.pushState = original.pushState
+    history.replaceState = original.replaceState
+  }
+}
+
 export function readCanvasBridge(frame: HTMLIFrameElement): CanvasBridge | null {
   try {
     return (frame.contentWindow as unknown as CanvasGlobals | null)?.__veditCanvas ?? null

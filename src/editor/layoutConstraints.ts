@@ -4,7 +4,7 @@
  * what the container does and offers the one change that frees the box.
  */
 export interface LayoutConstraint {
-  kind: 'flex-child' | 'absolute' | 'capped' | 'fixed-height' | 'clipped-by'
+  kind: 'flex-child' | 'absolute' | 'capped' | 'fixed-height' | 'clamped' | 'clipped-by'
   message: string
   /** The style to write to lift the constraint, when there is one. */
   fix?: { label: string; styles: Record<string, string> }
@@ -32,7 +32,10 @@ export function layoutConstraints(element: HTMLElement): LayoutConstraint[] {
     })
   }
 
-  if (parent && style.position !== 'absolute' && style.position !== 'fixed') {
+  // Text sizes itself to its words; only a box has a size of its own to defend.
+  const kind = element.getAttribute('data-vedit-kind')
+  const box = !kind || kind === 'box' || kind === 'image' || kind === 'component' || kind === 'shape'
+  if (parent && box && style.position !== 'absolute' && style.position !== 'fixed') {
     const parentStyle = view.getComputedStyle(parent)
     const grows = parseFloat(style.flexGrow) > 0 || parseFloat(style.flexShrink) > 0
     if (parentStyle.display.includes('flex') && grows) {
@@ -47,7 +50,14 @@ export function layoutConstraints(element: HTMLElement): LayoutConstraint[] {
 
   const overflowing = element.scrollHeight > element.clientHeight + 2
   const clips = /hidden|clip/.test(style.overflowY)
-  if (style.maxHeight !== 'none' && overflowing) {
+  const lines = style.webkitLineClamp
+  if (lines && lines !== 'none' && overflowing) {
+    found.push({
+      kind: 'clamped',
+      message: `Cut to ${lines} line${lines === '1' ? '' : 's'} with an ellipsis by the site's styling.`,
+      fix: { label: 'Show every line', styles: { WebkitLineClamp: 'unset', display: 'block', overflow: 'visible' } },
+    })
+  } else if (style.maxHeight !== 'none' && overflowing) {
     const inline = element.style.maxHeight !== ''
     found.push({
       kind: 'capped',

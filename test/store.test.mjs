@@ -72,3 +72,23 @@ test('loading replaces the document and clears history', async () => {
   assert.equal(store.getState().past.length, 0)
   assert.equal(store.dirty, false)
 })
+
+test("a stale cleanup does not unregister the element that replaced it", () => {
+  // React runs the new element's registration before an old keyed sibling's
+  // cleanup in some orders; the cleanup names its own element and must leave
+  // the newer registration alone.
+  const store = new VeditStore({ key: 'home', adapter: memoryAdapter() })
+  const older = { isConnected: true }
+  const newer = { isConnected: true }
+  const node = (element) => ({ id: 'cards.title~a', kind: 'text', label: 'Title', element, parentId: null, auto: false, container: false })
+  store.register(node(older))
+  store.register(node(newer))
+  store.unregister('cards.title~a', older)
+  assert.equal(store.getNode('cards.title~a')?.element, newer)
+  store.unregister('cards.title~a', newer)
+  assert.equal(store.getNode('cards.title~a'), undefined)
+  // Without an element the call is the old unconditional one.
+  store.register(node(older))
+  store.unregister('cards.title~a')
+  assert.equal(store.getNode('cards.title~a'), undefined)
+})

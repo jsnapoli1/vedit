@@ -64,9 +64,17 @@ export function effectiveBackground(element: HTMLElement): [number, number, numb
   const layers: Array<[number, number, number, number]> = []
   let current: HTMLElement | null = element
 
+  const rect = element.getBoundingClientRect()
   while (current) {
     const style = view.getComputedStyle(current)
     if (style.backgroundImage && style.backgroundImage !== 'none') return null
+    // A photo laid under the text (a hero's <img> or <video>) is a background
+    // too, even though no style says so.
+    for (const media of current.querySelectorAll<HTMLElement>(':scope > img, :scope > picture, :scope > video, :scope > [data-vedit-kind="image"]')) {
+      if (media === element || media.contains(element)) continue
+      const box = media.getBoundingClientRect()
+      if (box.left <= rect.left + 1 && box.top <= rect.top + 1 && box.right >= rect.right - 1 && box.bottom >= rect.bottom - 1) return null
+    }
     const color = parseColor(style.backgroundColor)
     if (color && color[3] > 0) {
       layers.push(color)

@@ -151,7 +151,7 @@ export function documentToCss(
       // found and brought back; visitors never see them at all.
       base.push(`html:not(.vedit-editing) ${selector(id, 3, 'default')}{display:none !important}`)
       base.push(
-        `html.vedit-editing ${selector(id, 3, 'default')}{opacity:.35;outline:1px dashed var(--vedit-accent,#0d99ff)}`,
+        `html.vedit-editing ${selector(id, 3, 'default')}{opacity:.35 !important;outline:1px dashed var(--vedit-accent,#0d99ff)}`,
       )
     }
     for (const state of STYLE_STATES) emit(id, readLayer(override, state), state)

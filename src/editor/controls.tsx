@@ -172,12 +172,18 @@ export function LengthField({
 }) {
   const [draft, setDraft] = useState(value === undefined ? '' : String(value))
   const focused = useRef(false)
+  // What was last handed to `onChange`. A draft that has been committed is not
+  // being typed any more, so an undo or a new selection may replace it even
+  // while the field still has focus.
+  const committed = useRef<string | null>(null)
   const name = useFieldName(spoken ?? label)
   useEffect(() => {
-    if (!focused.current) setDraft(value === undefined ? '' : String(value))
+    if (!focused.current || committed.current === draft) setDraft(value === undefined ? '' : String(value))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
 
   const commit = (raw: string) => {
+    committed.current = raw
     const text = raw.trim()
     if (!text) return onChange(undefined)
     if (/^-?[\d.]+$/.test(text)) return onChange(`${text}${defaultUnit}`)

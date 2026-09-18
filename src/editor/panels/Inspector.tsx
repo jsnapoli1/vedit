@@ -1231,6 +1231,7 @@ function DashRow({ id }: { id: string }) {
 function LayoutNotice({ id }: { id: string }) {
   const store = useVeditStore()
   const doc = useVeditState((state) => state.doc)
+  const shared = useVeditState((state) => state.shared)
   const [constraints, setConstraints] = useState<LayoutConstraint[]>([])
   useEffect(() => {
     // Measured after paint, so an override just written is already in effect.
@@ -1239,7 +1240,7 @@ function LayoutNotice({ id }: { id: string }) {
       setConstraints(element ? layoutConstraints(element) : [])
     })
     return () => cancelAnimationFrame(frame)
-  }, [id, doc, store])
+  }, [id, doc, shared, store])
   if (!constraints.length) return null
   return (
     <div className="vedit-layout-notice" role="status">

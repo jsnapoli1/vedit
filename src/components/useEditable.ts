@@ -147,7 +147,7 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
       binding,
       scope,
     })
-    return () => store.unregister(id)
+    return () => store.unregister(id, element)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, element, id, kind, label, container, sourceText, disabled, fieldsKey, propsKey, varsKey, bindingKey, scope])
 

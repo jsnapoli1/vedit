@@ -111,7 +111,7 @@ test('a document with no animation emits exactly the CSS it did before motion ex
     `${both('cta', 2)}{color:red}\n` +
     `${own('cta', 3)}:hover,${own('cta', 3)}[data-vedit-force="hover"],${copies('cta', 3)}:hover,${copies('cta', 3)}[data-vedit-force="hover"]{color:blue}\n` +
     `html:not(.vedit-editing) ${both('ghost', 3)}{display:none !important}\n` +
-    `html.vedit-editing ${both('ghost', 3)}{opacity:.35;outline:1px dashed var(--vedit-accent,#0d99ff)}\n` +
+    `html.vedit-editing ${both('ghost', 3)}{opacity:.35 !important;outline:1px dashed var(--vedit-accent,#0d99ff)}\n` +
     `@media (min-width:768px){${both('hero.title', 3)}{font-size:48px}}`
   assert.equal(documentToCss(doc), expected)
 })

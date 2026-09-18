@@ -156,7 +156,9 @@ export function Toolbar({
         className="vedit-btn"
         disabled={!dirty}
         title="Throw away unsaved changes"
-        onClick={() => store.discard()}
+        onClick={() => {
+          if (window.confirm('Throw away your unsaved changes?')) store.discard()
+        }}
       >
         Discard
       </button>

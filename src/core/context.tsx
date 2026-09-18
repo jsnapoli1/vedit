@@ -23,7 +23,7 @@ import {
 } from './types'
 import { documentToCss } from '../runtime/css'
 import { AutoScanner } from '../auto/scanner'
-import { isCanvasChild, publishCanvasBridge } from './canvas'
+import { isCanvasChild, keepCanvasParams, publishCanvasBridge } from './canvas'
 import { pinViewportHeight, viewportHeightFromUrl } from './viewportUnits'
 import { warnOnce } from './env'
 import { VeditErrorBoundary, type VeditErrorBoundaryProps } from './ErrorBoundary'
@@ -315,7 +315,12 @@ export function VeditProvider({
 
   useEffect(() => {
     if (!framedByEditor) return
-    return pinViewportHeight(document, viewportHeightFromUrl(window.location.search) ?? 900)
+    const unpin = pinViewportHeight(document, viewportHeightFromUrl(window.location.search) ?? 900)
+    const release = keepCanvasParams(window)
+    return () => {
+      unpin()
+      release()
+    }
   }, [framedByEditor])
 
   useEffect(() => {

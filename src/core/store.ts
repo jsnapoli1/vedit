@@ -209,7 +209,13 @@ export class VeditStore {
     if (changed) this.emitNodes()
   }
 
-  unregister(id: string) {
+  /**
+   * Forget a node — but only if it is still the one that registered: a keyed
+   * remount registers the new element before the old one's cleanup runs, and
+   * that cleanup must not take the new registration with it.
+   */
+  unregister(id: string, element?: HTMLElement) {
+    if (element && this.registry.get(id)?.element !== element) return
     if (this.registry.delete(id)) {
       const patch: Partial<VeditState> = {}
       if (this.state.hovered === id) patch.hovered = null
