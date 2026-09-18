@@ -122,13 +122,14 @@ test.describe('editing content on the catalog', () => {
     })
     expect(login.status()).toBe(200)
     const { token } = (await login.json()) as { token: string }
-    const rowCount = async () => {
+    const draftRows = async () => {
       const response = await request.get(`${API}/v1/content/products?stage=draft`, {
         headers: { authorization: `Bearer ${token}` },
       })
       expect(response.status()).toBe(200)
-      return ((await response.json()) as { items: unknown[] }).items.length
+      return ((await response.json()) as { items: Array<Record<string, unknown>> }).items
     }
+    const rowCount = async () => (await draftRows()).length
     const onServer = await rowCount()
 
     await openCatalog(page)
@@ -148,6 +149,10 @@ test.describe('editing content on the catalog', () => {
     await copyField(page).fill(`Added row ${Date.now()}`)
     await saveDraft(page)
     expect(await rowCount()).toBe(onServer + 1)
+    // The repeat says what a row added from it starts with (`newRow`), so the
+    // card an editor adds lands in the category the page was showing.
+    const newest = (await draftRows()).find((row) => String(row.title).startsWith('Added row '))
+    expect(newest).toMatchObject({ category: 'cat-power', price: 0 })
 
     // Saving swaps the temporary id for the server's, so the card is found
     // again by what it is not: one of the cards that were there before.

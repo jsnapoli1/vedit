@@ -88,7 +88,7 @@ function CatalogPage() {
         </div>
       </section>
       <section className="features">
-        <Editable id="products" repeat={rows} source="products">
+        <Editable id="products" repeat={rows} source="products" newRow={{ category: 'cat-power', price: 0 }}>
           <div className="card">
             <Editable id="products.title" as="h3" bind="title">
               Untitled

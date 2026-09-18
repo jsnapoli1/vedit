@@ -163,6 +163,8 @@ export interface SourceField {
   options?: Array<string | { value: string; label: string }>
   to?: string
   many?: boolean
+  /** What a new record starts with; on a `date`, `'now'` means the moment the server saves it. */
+  default?: unknown
 }
 
 /** A source as described to one caller: its fields, and what that caller may do. */

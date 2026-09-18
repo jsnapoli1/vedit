@@ -358,7 +358,7 @@ function RowsSection({ id }: { id: string }) {
           className="vedit-btn"
           aria-label={`Add a ${label} row`}
           disabled={!canWrite}
-          onClick={() => store.createRecord(source, {})}
+          onClick={() => store.createRecord(source, repeat.newRow ?? {})}
         >
           Add row
         </button>

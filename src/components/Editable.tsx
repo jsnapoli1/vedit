@@ -77,6 +77,17 @@ export interface EditableProps {
    */
   source?: string
   /**
+   * What a row added from this repeat starts with, on top of the schema's
+   * defaults. A repeat that shows one column's links, or one category's
+   * products, names that relation here, so the row an editor adds appears
+   * where they added it instead of under nothing.
+   *
+   * ```jsx
+   * <Editable id="column.links" repeat={links} source="links" newRow={{ column: column.id }}>
+   * ```
+   */
+  newRow?: Record<string, unknown>
+  /**
    * Show a record field instead of the children. A field name resolves against
    * the enclosing repeat's `source` and this item's key; a `{ source, id, field }`
    * object names the record outright, for a global or a row rendered on its own.
@@ -133,13 +144,13 @@ export const Editable = forwardRef<HTMLElement, EditableProps>(function Editable
   return <EditableNode {...props} forwardedRef={forwardedRef} />
 })
 
-function Repeat({ repeat, repeatKey, source, children }: RenderProps) {
+function Repeat({ repeat, repeatKey, source, newRow, children }: RenderProps) {
   return (
     <>
       {((repeat ?? []) as readonly unknown[]).map((item: unknown, index: number) => {
         const key = itemKey(item, index, repeatKey)
         return (
-          <RepeatItemContext.Provider key={key} value={{ item, key, index, source }}>
+          <RepeatItemContext.Provider key={key} value={{ item, key, index, source, newRow }}>
             {children}
           </RepeatItemContext.Provider>
         )
@@ -162,6 +173,7 @@ const EditableNode = function EditableNode({
   repeat: _repeat,
   repeatKey: _repeatKey,
   source: _source,
+  newRow: _newRow,
   bind,
   scope,
   ...rest

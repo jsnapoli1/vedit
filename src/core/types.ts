@@ -365,6 +365,8 @@ export interface RegisteredNode {
   props?: Record<string, unknown>
   /** Which record field this node shows. Set by `useEditable` from `bind`. */
   binding?: RecordBinding
+  /** What a row added from this node's repeat starts with (`newRow` on the repeat). */
+  newRow?: Record<string, unknown>
   /** Which shared document this node's overrides live in. Set by `useEditable` from `scope`. */
   scope?: string
 }

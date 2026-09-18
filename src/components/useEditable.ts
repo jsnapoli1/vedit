@@ -145,6 +145,7 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
       fields,
       props: sourceProps,
       binding,
+      newRow: repeat?.newRow,
       scope,
     })
     return () => store.unregister(id, element)

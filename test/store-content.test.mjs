@@ -606,3 +606,28 @@ test('a saved edit lands in every query set of the source', async () => {
   assert.equal(store.recordSet('cards', { where: { live: true } })[0].title, 'AA')
   assert.equal(store.recordSet('cards', {})[0].title, 'AA')
 })
+
+test('a row created in the editor starts from the schema defaults', async () => {
+  // The server applies defaults on save; until then a bare `{ id }` row hides
+  // behind every `status === true` filter and shows under no relation. Seed
+  // what the schema declares, under whatever the caller passed.
+  const schema = [
+    {
+      name: 'cards',
+      fields: [
+        { name: 'title', type: 'text' },
+        { name: 'live', type: 'boolean', default: true },
+        { name: 'kind', type: 'select', default: 'basic' },
+        { name: 'createdAt', type: 'date', default: 'now' },
+      ],
+    },
+  ]
+  const { store } = makeStore({ schema })
+  await store.load()
+  const id = store.createRecord('cards', { kind: 'pro' })
+  const created = store.getState().data.cards.create.find((row) => row.id === id)
+  assert.equal(created.live, true)
+  assert.equal(created.kind, 'pro', 'what the caller passed wins')
+  assert.equal(created.createdAt, undefined, "'now' is the server's stamp, not a value")
+  assert.equal(created.title, undefined)
+})

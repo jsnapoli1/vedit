@@ -846,9 +846,20 @@ export class VeditStore {
   }
 
   /** Add a record; the id is temporary until Save, when the server picks a real one. */
+  /**
+   * Start a row. The server applies the schema's defaults when it saves, but
+   * until then a bare `{ id }` row hides behind every `status === true` filter
+   * and shows under no relation — so the defaults are seeded here too, under
+   * whatever the caller passed. A date's `'now'` is the server's stamp to make.
+   */
   createRecord(source: string, data: Record<string, unknown> = {}): string {
     const id = newRecordId()
-    this.applyRecords([{ op: 'create-record', source, id, data }])
+    const seeded: Record<string, unknown> = {}
+    for (const field of this.state.schema?.find((entry) => entry.name === source)?.fields ?? []) {
+      if (field.default === undefined || (field.type === 'date' && field.default === 'now')) continue
+      seeded[field.name] = field.default
+    }
+    this.applyRecords([{ op: 'create-record', source, id, data: { ...seeded, ...data } }])
     return id
   }
 

@@ -416,3 +416,18 @@ test('a temp id survives a repeat key', () => {
   assert.equal(isTempId('renewed'), false)
   assert.equal(isTempId(''), false)
 })
+
+test('a field default is described to the client', () => {
+  const described = defineCollections({
+    cards: { fields: { live: { type: 'boolean', default: true }, title: 'text', at: { type: 'date', default: 'now' } } },
+  })
+  const fields = schemaFor(described, {}, 'author').find((source) => source.name === 'cards').fields
+  assert.deepEqual(
+    fields.map((field) => [field.name, field.default]),
+    [
+      ['live', true],
+      ['title', undefined],
+      ['at', 'now'],
+    ],
+  )
+})

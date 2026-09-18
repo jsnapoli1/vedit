@@ -77,6 +77,7 @@ function describeFields(spec: FieldsSpec): SourceField[] {
     if (field.options !== undefined) described.options = field.options
     if (field.to !== undefined) described.to = field.to
     if (field.many !== undefined) described.many = field.many
+    if (field.default !== undefined && typeof field.default !== 'function') described.default = field.default
     return described
   })
 }

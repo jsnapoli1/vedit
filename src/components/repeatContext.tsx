@@ -13,6 +13,8 @@ export interface RepeatItem {
    * is what lets a child say `bind="title"` and mean this row's title.
    */
   source?: string
+  /** What a row added from this repeat starts with (`newRow` on the repeat). */
+  newRow?: Record<string, unknown>
 }
 
 /**

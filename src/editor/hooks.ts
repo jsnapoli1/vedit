@@ -156,6 +156,8 @@ export function useContentValue<K extends keyof NodeOverride>(
 /** The row of a content source that the selection is a rendering of. */
 export interface BoundRepeat {
   source: string
+  /** What a row added here starts with, from the repeat's `newRow`. */
+  newRow?: Record<string, unknown>
   /** The record id — the item key, which is what `bind` resolves against. */
   rowId: string
   /** Every bound node of this item, by field, for reading the row back off the page. */
@@ -202,7 +204,9 @@ export function boundRepeatOf(store: VeditStore, nodes: RegisteredNode[], id: st
     return itemRootOf(store, node, key)?.parentId === parent
   })
   const source = fields[0]?.binding?.source
-  return source ? { source, rowId: key, fields } : null
+  if (!source) return null
+  const newRow = fields.find((node) => node.newRow)?.newRow
+  return newRow ? { source, rowId: key, fields, newRow } : { source, rowId: key, fields }
 }
 
 /** The topmost node of an item: the last one up the chain still carrying its key. */

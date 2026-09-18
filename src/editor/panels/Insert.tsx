@@ -118,7 +118,7 @@ export function InsertPanel() {
                 ? `Add another ${rowLabel} row after the ones on the page`
                 : 'This site has not let you change its rows'
             }
-            onClick={() => store.createRecord(repeat.source, {})}
+            onClick={() => store.createRecord(repeat.source, repeat.newRow ?? {})}
           >
             <span className="vedit-insert-name">
               <IconPlus width={11} height={11} />
