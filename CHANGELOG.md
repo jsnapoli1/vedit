@@ -9,6 +9,47 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.11.4 — 2026-09-17
+
+The document format is unchanged at version 1. Fixes from a sweep of a live
+site with the editor open on every page; a site that already uses vedit has
+nothing to do.
+
+### Fixed
+
+- **A card that navigates itself stays a canvas child.** A page inside the
+  canvas that pushed its own history entry (a card's `navigate()`, a router
+  push) dropped the query that marks it as the artboard and pins `vh`, and the
+  frame then grew without bound. The params now ride along on every history
+  write while the frame is a canvas child.
+- **A keyed remount no longer loses its layers.** An element that React
+  replaced under the same id (a carousel re-keyed on the active slide) could
+  have its new registration removed by the old one's cleanup, leaving the
+  Layers panel empty and clicks selecting "Element". A cleanup now only removes
+  the element that registered.
+- **A committed size follows undo.** A width or height typed into the Layout
+  fields stayed in the field after `⌘Z` and after selecting something else, as
+  long as the field still had focus. A committed draft now follows the value.
+- **Hide shows.** Hiding an element whose page animation had written an inline
+  `opacity` looked like nothing happened in the editor, though visitors would
+  not have seen it. The editing preview now wins over the inline style.
+- **The Layout notice follows a shared document.** After *Place in flow* or
+  *Pin size* on a node in a shared document (a nav, a footer) the notice stayed
+  until the node was selected again.
+- **Line clamps are named as such.** A title cut to two lines by
+  `line-clamp` was reported as a fixed height, and *Grow with content* did
+  nothing to it. It now says *Cut to 2 lines with an ellipsis* and offers *Show
+  every line*. The flex notice no longer appears on text, links and buttons,
+  which size themselves to their words.
+- **The Layers tree follows the page.** A node's parent in the tree is the
+  nearest registered box above it on the page now, so a wrapper the scanner
+  found later — or folded away — no longer leaves the tree in another order
+  than the page.
+- **Discard asks first.**
+- **Contrast checks see photos.** A hero title over an `<img>` or `<video>` was
+  measured against white and flagged; an image laid under the text now counts
+  as an unknowable background, as a CSS background image already did.
+
 ## 0.11.3 — 2026-09-17
 
 The document format is unchanged at version 1. One fix; a site that already
