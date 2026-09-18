@@ -9,6 +9,18 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.11.5 — 2026-09-17
+
+The document format is unchanged at version 1. One fix; a site that already
+uses vedit has nothing to do.
+
+### Fixed
+
+- **Backspace deletes what the Insert panel just placed.** The click that
+  placed it left focus on the panel's button, where the editor's shortcuts stay
+  out of the way, so the new element looked undeletable until the canvas was
+  clicked. Focus now returns to the editor after a placement.
+
 ## 0.11.4 — 2026-09-17
 
 The document format is unchanged at version 1. Fixes from a sweep of a live
