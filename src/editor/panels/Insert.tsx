@@ -69,12 +69,18 @@ export function InsertPanel() {
 
   const fileInput = useRef<HTMLInputElement>(null)
 
+  // The click that placed it left focus on the panel's button, where the
+  // editor's shortcuts stay out of the way; hand focus back so Backspace,
+  // the arrow keys and the tool letters act on what was just placed.
+  const placed = () => (document.activeElement as HTMLElement | null)?.blur()
+
   const place = (kind: NodeKind, component?: string) => {
     if (!target) {
       store.notify('Nowhere to put it — select a container, or add a <VeditSlot> to the page')
       return
     }
     store.insert(target.id, kind, { component })
+    placed()
   }
 
   const placeShape = (shape: ShapeSpec) => {
@@ -83,6 +89,7 @@ export function InsertPanel() {
       return
     }
     store.insert(target.id, 'shape', { shape })
+    placed()
   }
 
   // Dragging aims for itself, so unlike clicking it does not need a selection —

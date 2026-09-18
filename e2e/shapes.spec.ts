@@ -121,6 +121,16 @@ test.describe('placing and styling a shape', () => {
     await expect.poll(() => boxOf(page)).toBe('220×200')
   })
 
+  test('a shape just placed can be deleted with Backspace straight away', async ({ page }) => {
+    await openCampaign(page)
+    await place(page, 'Rectangle')
+    await expect(shapes(page)).toHaveCount(1)
+    // Focus was on the panel's button a moment ago; the delete still reaches
+    // the new selection, or every insert would need a click on the canvas first.
+    await page.keyboard.press('Backspace')
+    await expect(shapes(page)).toHaveCount(0)
+  })
+
   test('editing a polygon\'s points redraws it', async ({ page }) => {
     await openCampaign(page)
     await place(page, 'Triangle')
