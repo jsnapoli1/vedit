@@ -396,28 +396,6 @@ test('a failed commit keeps the changes and the second save commits them once', 
   assert.equal(store.dirty, false)
 })
 
-test('save is a draft commit when the client can publish and a published one when it cannot', async () => {
-  const editor = makeStore()
-  await editor.store.load()
-  editor.store.setRecord('cards', 'r1', { title: 'Draft' })
-  await editor.store.save()
-  const commit = editor.calls.find((call) => call[0] === 'commit')
-  assert.equal(commit[2].stage, 'draft')
-  assert.deepEqual(editor.store.getState().pendingPublish, { cards: ['r1'] })
-  assert.equal(editor.store.unpublished, true)
-
-  const author = makeStore({
-    capabilities: { ...EDITOR, can: { ...EDITOR.can, publish: false } },
-  })
-  await author.store.load()
-  assert.equal(author.store.can('publish'), false)
-  author.store.setRecord('cards', 'r1', { title: 'Live' })
-  await author.store.save()
-  const live = author.calls.find((call) => call[0] === 'commit')
-  assert.equal(live[2].stage, 'published')
-  assert.deepEqual(author.store.getState().pendingPublish, {})
-})
-
 test('publish saves, publishes each dirty document, then publishes the pending records', async () => {
   const calls = []
   const { store } = makeStore({ calls, adapter: keyedAdapter(calls), shared: ['site'] })
@@ -630,4 +608,41 @@ test('a row created in the editor starts from the schema defaults', async () => 
   assert.equal(created.kind, 'pro', 'what the caller passed wins')
   assert.equal(created.createdAt, undefined, "'now' is the server's stamp, not a value")
   assert.equal(created.title, undefined)
+})
+
+test('an author saves records as a draft, and an unstaged site writes them live', async () => {
+  // The commit stage is about the site, not the person: with drafts an author
+  // saves a draft an editor can publish; without them there is only live.
+  const author = { ...EDITOR, can: { ...EDITOR.can, publish: false } }
+  const staged = makeStore({ capabilities: author, adapter: keyedAdapter() })
+  await staged.store.refreshCapabilities()
+  staged.calls.length = 0
+  staged.store.setRecord('cards', 'r1', { title: 'By an author' })
+  await staged.store.save()
+  assert.deepEqual(staged.calls[0], ['commit', { cards: { update: { r1: { title: 'By an author' } } } }, { stage: 'draft' }])
+
+  const { publish: _publish, ...unstaged } = keyedAdapter()
+  const live = makeStore({ adapter: unstaged })
+  await live.store.refreshCapabilities()
+  live.calls.length = 0
+  live.store.setRecord('cards', 'r1', { title: 'Straight to live' })
+  await live.store.save()
+  assert.deepEqual(live.calls[0], ['commit', { cards: { update: { r1: { title: 'Straight to live' } } } }, { stage: 'published' }])
+})
+
+test('the same query asked twice at once is fetched once', async () => {
+  // Every card on a page asks for its source; a page with thirty cards must
+  // not send thirty requests for the same rows.
+  const { store, calls } = makeStore({ rows: { cards: [{ id: 'a', title: 'A' }] } })
+  await store.refreshCapabilities()
+  calls.length = 0
+  const [first, second] = await Promise.all([
+    store.loadRecords('cards', { orderBy: 'title' }),
+    store.loadRecords('cards', { orderBy: 'title' }),
+  ])
+  assert.deepEqual(first, second)
+  assert.equal(calls.filter((call) => call[0] === 'list').length, 1)
+  // Asked again later, it is fetched again: a refresh is still a refresh.
+  await store.loadRecords('cards', { orderBy: 'title' })
+  assert.equal(calls.filter((call) => call[0] === 'list').length, 2)
 })

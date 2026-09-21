@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { VeditStore, memoryAdapter } from '../dist/index.js'
+import { VeditStore, emptyDocument, memoryAdapter } from '../dist/index.js'
 
 const makeStore = () => new VeditStore({ key: 'home', adapter: memoryAdapter() })
 
@@ -91,4 +91,27 @@ test("a stale cleanup does not unregister the element that replaced it", () => {
   store.register(node(older))
   store.unregister('cards.title~a')
   assert.equal(store.getNode('cards.title~a'), undefined)
+})
+
+test('Publish is only on offer when the draft differs from what visitors see', async () => {
+  const docs = {
+    'home:published': { ...emptyDocument('home'), nodes: { a: { text: 'live' } } },
+    'home:draft': { ...emptyDocument('home'), nodes: { a: { text: 'live' } } },
+  }
+  const adapter = {
+    async load(key, opts) { return docs[`${key}:${opts?.stage ?? 'published'}`] ?? null },
+    async save(doc) { docs[`${doc.key}:draft`] = doc },
+    async publish(doc) { docs[`${doc.key}:published`] = doc },
+  }
+  const store = new VeditStore({ key: 'home', adapter })
+  await store.load('draft')
+  assert.equal(store.unpublished, false, 'the draft is the published document, nothing to publish')
+
+  store.update('a', { text: 'edited' })
+  await store.save()
+  assert.equal(store.unpublished, true, 'a saved draft that differs is publishable')
+
+  await store.publish()
+  assert.equal(store.unpublished, false)
+  assert.equal(docs['home:published'].nodes.a.text, 'edited')
 })

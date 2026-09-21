@@ -62,19 +62,25 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
     return pages.some((page) => page.path === here) ? here : pages[0]?.path ?? '/'
   })
   // Which single page fills the canvas, or null for all of them side by side.
-  // View state, like zoom and pan: it starts fresh every time the editor opens.
-  const [focusPath, setFocusPath] = useState<string | null>(null)
+  // The editor opens on the page it was opened from, at a size you can read:
+  // "All pages" is one pick away, and is view state that starts fresh each time.
+  const [focusPath, setFocusPath] = useState<string | null>(activePath)
   // Every page is an artboard, but not every artboard is loaded at once: a site
   // with twenty long, image-heavy pages would paint all twenty before the first
-  // could be clicked. The first few and the page the editor was opened from
-  // load now; the rest wait until they are focused or asked for, and once
+  // could be clicked. The page the editor was opened from loads now; the rest
+  // wait until they are focused or "All pages" asks for the first few, and once
   // loaded stay loaded.
-  const [mountedPaths, setMountedPaths] = useState<Set<string>>(
-    () => new Set([...pages.slice(0, EAGER_ARTBOARDS).map((page) => page.path), activePath]),
-  )
+  const [mountedPaths, setMountedPaths] = useState<Set<string>>(() => new Set([activePath]))
   const mount = useCallback((path: string) => {
     setMountedPaths((current) => (current.has(path) ? current : new Set(current).add(path)))
   }, [])
+  const mountEager = useCallback(() => {
+    setMountedPaths((current) => {
+      const next = new Set(current)
+      for (const page of pages.slice(0, EAGER_ARTBOARDS)) next.add(page.path)
+      return next.size === current.size ? current : next
+    })
+  }, [pages])
   const [heights, setHeights] = useState<Record<string, number>>({})
   const [view, setView] = useState<View>({ zoom: 1, panX: 0, panY: 0 })
   const [frameWidth, setFrameWidth] = useState(() => defaultFrameWidth(config))
@@ -99,7 +105,8 @@ export function CanvasShell({ onClose, onUnavailable, config, pages }: CanvasShe
   )
   useEffect(() => {
     if (focusPath) mount(focusPath)
-  }, [focusPath, mount])
+    else mountEager()
+  }, [focusPath, mount, mountEager])
   const mountedPages = useMemo(() => pages.filter((page) => mountedPaths.has(page.path)), [pages, mountedPaths])
   const columnOf = useMemo(() => {
     const columns = new Map<string, number>()

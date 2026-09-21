@@ -35,6 +35,14 @@ function isLeafText(element: HTMLElement): boolean {
   return element.children.length === 0 && (element.textContent ?? '').trim().length > 0
 }
 
+const LEAF_KINDS = new Set<string>(['text', 'link', 'button', 'file', 'component'])
+
+function insideExplicitLeaf(element: HTMLElement): boolean {
+  const owner = element.parentElement?.closest<HTMLElement>('[data-vedit-id]:not([data-vedit-auto])')
+  return !!owner && LEAF_KINDS.has(owner.dataset.veditKind ?? '')
+}
+
+/** A name a person would use for the thing, never a tag or a class. */
 function labelFor(element: HTMLElement, kind: NodeKind): string {
   const tag = element.tagName.toLowerCase()
   if (kind === 'text' || kind === 'link' || kind === 'file' || kind === 'button') {
@@ -45,9 +53,14 @@ function labelFor(element: HTMLElement, kind: NodeKind): string {
     const alt = element.getAttribute('alt')
     if (alt) return alt
   }
+  const spoken = element.getAttribute('aria-label') ?? element.getAttribute('title')
+  if (spoken?.trim()) return spoken.trim()
   if (kind === 'box') return boxLabel(element)
-  const className = typeof element.className === 'string' ? element.className.split(/\s+/)[0] : ''
-  return className ? `${tag}.${className}` : tag
+  if (kind === 'image') return tag === 'svg' ? 'Icon' : 'Image'
+  if (kind === 'link') return 'Link'
+  if (kind === 'button') return 'Button'
+  if (kind === 'file') return 'File link'
+  return 'Text'
 }
 
 /**
@@ -141,6 +154,10 @@ export function scanDom({ root, selector, minBoxSize = 8 }: ScanOptions): Regist
     if (element.closest('[data-vedit-skip]')) continue
     // Nodes wrapped in <Editable> register themselves with richer metadata.
     if (element.hasAttribute('data-vedit-id') && element.dataset.veditAuto !== 'true') continue
+    // What is inside an explicit text, link, button or file is that node's
+    // own content — the bold word in a heading, the icon in a download link —
+    // and clicking it should select the node, not a fragment the page never named.
+    if (insideExplicitLeaf(element)) continue
 
     const kind = kindOf(element)
     if (kind === 'text' && !isLeafText(element)) continue

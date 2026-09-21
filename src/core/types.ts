@@ -400,6 +400,12 @@ export interface VeditState {
   /** Id of the node being edited inline right now. */
   inlineEditing: string | null
   /**
+   * How many inline edits each node has finished. Typing into a contenteditable
+   * replaces the text nodes React created, so after one the element is keyed on
+   * this count and remounts — React owns the DOM again and undo can show.
+   */
+  inlineEdited: Record<string, number>
+  /**
    * Whether an edit inside a repeat applies to one item or to all of them.
    *
    * `'all'` writes to the template id, so the change reaches every card — the

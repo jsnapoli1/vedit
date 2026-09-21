@@ -41,6 +41,8 @@ export interface FieldSpec {
   to?: string
   /** For `relation`: the value is a list of ids rather than one. */
   many?: boolean
+  /** Kept on the record but not shown in the Data panel — an import id, a timestamp, a machine field. */
+  hidden?: boolean
 }
 
 /** A field is a spec, or just its type when nothing else needs saying. */
@@ -108,6 +110,8 @@ export interface CollectionSpec {
   versions?: number
   access?: AccessSpec
   hooks?: SourceHooks
+  /** Listed under "Advanced" in the Data panel rather than beside the sources people edit every day. */
+  hidden?: boolean
 }
 
 /** A global is a collection with exactly one record, whose id is `'global'`. */
@@ -116,6 +120,8 @@ export interface GlobalSpec {
   fields: FieldsSpec
   access?: AccessSpec
   hooks?: SourceHooks
+  /** Listed under "Advanced" in the Data panel rather than beside the sources people edit every day. */
+  hidden?: boolean
 }
 
 /* ----------------------------------------------------------------- records */
@@ -165,6 +171,8 @@ export interface SourceField {
   many?: boolean
   /** What a new record starts with; on a `date`, `'now'` means the moment the server saves it. */
   default?: unknown
+  /** Kept on the record but not shown in the Data panel. */
+  hidden?: boolean
 }
 
 /** A source as described to one caller: its fields, and what that caller may do. */
@@ -177,6 +185,8 @@ export interface SourceSchema {
   orderField?: string
   drafts: boolean
   can: Record<AccessAction, boolean>
+  /** Listed under "Advanced" in the Data panel. */
+  hidden?: boolean
 }
 
 /* ----------------------------------------------------------------- queries */

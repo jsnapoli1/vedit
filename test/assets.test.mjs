@@ -134,3 +134,33 @@ test('httpAdapter with mediaEndpoint posts multipart and lists with kind', async
   assert.equal(plain.uploadAsset, undefined)
   assert.equal(plain.listAssets, undefined)
 })
+
+test('a refused upload tells the person why, in plain words', async () => {
+  const store = makeStore({
+    async uploadAsset(file) {
+      if (file.size > 3) throw new Error('"big.png" is 25.1 MB; files are limited to 25 MB')
+      throw new Error('Upload failed (500)')
+    },
+  })
+  await assert.rejects(() => store.uploadAsset(png(), { kind: 'image' }), /25 MB/)
+  assert.equal(store.getState().notice, '"big.png" is 25.1 MB; files are limited to 25 MB')
+})
+
+test('the http adapter turns the server\'s refusal into a message about the file', async () => {
+  const responses = {
+    413: { error: 'Files are limited to 26214400 bytes' },
+    400: { error: 'Files of type application/x-msdownload are not accepted' },
+  }
+  let status = 413
+  const adapter = httpAdapter({
+    endpoint: '/vedit',
+    mediaEndpoint: '/vedit/v1/media',
+    fetch: async () => new Response(JSON.stringify(responses[status]), { status, headers: { 'content-type': 'application/json' } }),
+  })
+  const big = new File([new Uint8Array(30 * 1024 * 1024)], 'photo.png', { type: 'image/png' })
+  await assert.rejects(() => adapter.uploadAsset(big, { accept: ['image/*'] }), /"photo\.png" is 30 MB; files are limited to 25 MB/)
+  status = 400
+  const exe = new File([new Uint8Array(2048)], 'notes.exe', { type: 'application/x-msdownload' })
+  await assert.rejects(() => adapter.uploadAsset(exe, { accept: ['image/*'] }), /"notes\.exe" is not an image/)
+  await assert.rejects(() => adapter.uploadAsset(exe), /"notes\.exe" is not a kind of file this site accepts/)
+})

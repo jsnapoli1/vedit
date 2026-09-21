@@ -139,13 +139,19 @@ function SourceList({ sources, onPick }: { sources: SourceSchema[]; onPick: (nam
 
   // The users table is the auth layer's; it is a source like any other, just
   // one whose password field is the point.
-  const visible = sources.filter((source) => source.can.read)
+  const readable = sources.filter((source) => source.can.read)
+  // Sources a site marks `hidden` — import tables, counters, lookups — sit
+  // behind "Advanced", so the list people open every day is the content.
+  const visible = readable.filter((source) => !source.hidden)
+  const advanced = readable.filter((source) => source.hidden)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const listed = showAdvanced ? [...visible, ...advanced] : visible
 
   return (
     <div className="vedit-panel-body" ref={body}>
-      {visible.length ? (
+      {readable.length ? (
         <div role="listbox" aria-label="Sources" className="vedit-data-list">
-          {visible.map((source, index) => (
+          {listed.map((source, index) => (
             <button
               key={source.name}
               type="button"
@@ -158,9 +164,19 @@ function SourceList({ sources, onPick }: { sources: SourceSchema[]; onPick: (nam
               onClick={() => onPick(source.name)}
             >
               <span className="vedit-data-item-name">{source.label}</span>
-              <span className="vedit-data-kind">{source.kind === 'global' ? 'global' : 'collection'}</span>
+              <span className="vedit-data-kind">{source.hidden ? 'advanced' : source.kind === 'global' ? 'global' : 'collection'}</span>
             </button>
           ))}
+          {advanced.length ? (
+            <button
+              type="button"
+              className="vedit-btn vedit-data-advanced"
+              aria-expanded={showAdvanced}
+              onClick={() => setShowAdvanced((open) => !open)}
+            >
+              {showAdvanced ? 'Hide advanced' : `Advanced (${advanced.length})`}
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="vedit-section vedit-hint">
@@ -351,7 +367,7 @@ function RecordForm({ schema, id, onGone }: { schema: SourceSchema; id: string; 
         <div className="vedit-section vedit-hint">You can look at this record but not change it.</div>
       ) : null}
       <fieldset className="vedit-data-form" disabled={readOnly} aria-label={`${schema.label} record`}>
-        {schema.fields.map((field) => (
+        {schema.fields.filter((field) => !field.hidden).map((field) => (
           <RecordField
             key={field.name}
             field={field}

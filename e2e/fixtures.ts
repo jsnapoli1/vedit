@@ -4,7 +4,12 @@ import { expect, type Frame, type Page } from '@playwright/test'
  * Every test starts from an empty store and a named editor, so nothing depends
  * on what a previous test left behind or on a randomly generated identity.
  */
-export async function openEditor(page: Page, options: { as?: string; path?: string } = {}) {
+/**
+ * Open the editor and, unless told otherwise, show every page side by side —
+ * the editor itself opens on the page it was opened from, but most of these
+ * tests reach across pages.
+ */
+export async function openEditor(page: Page, options: { as?: string; path?: string; focused?: boolean } = {}) {
   const query = new URLSearchParams({ as: options.as ?? 'Sam' })
   const url = `${options.path ?? '/'}?${query}`
 
@@ -15,11 +20,21 @@ export async function openEditor(page: Page, options: { as?: string; path?: stri
   await page.getByRole('button', { name: 'Edit page' }).click()
   await page.waitForSelector('.vedit-toolbar', { timeout: 15_000 })
   await expect(page.locator('.vedit-artboard iframe').first()).toBeVisible()
+  await showEveryPage(page, options.focused)
   // Wait for the artboards to hand over their stores and settle at a stable zoom.
   await expect
     .poll(() => page.locator('.vedit-artboard[data-active="true"]').count(), { timeout: 10_000 })
     .toBe(1)
   await page.waitForTimeout(800)
+}
+
+async function showEveryPage(page: Page, keepFocused?: boolean) {
+  if (keepFocused) return
+  const focus = page.locator('.vedit-toolbar select.vedit-page-focus')
+  if (await focus.count()) {
+    await focus.selectOption('')
+    await expect.poll(() => page.locator('.vedit-artboard iframe').count(), { timeout: 10_000 }).toBeGreaterThan(1)
+  }
 }
 
 /**
@@ -45,6 +60,7 @@ export async function openCatalog(page: Page, options: { as?: string; path?: str
 
   await page.waitForSelector('.vedit-toolbar', { timeout: 15_000 })
   await expect(page.locator('.vedit-artboard iframe').first()).toBeVisible()
+  await showEveryPage(page)
   await expect
     .poll(() => page.locator('.vedit-artboard[data-active="true"]').count(), { timeout: 10_000 })
     .toBe(1)

@@ -185,7 +185,7 @@ const EditableNode = function EditableNode({
   const declared = schema
     ? Object.fromEntries(schema.map((field) => [field.name, rest[field.name]]))
     : undefined
-  const { ref, veditProps, override, props: edited, binding } = useEditable({
+  const { ref, veditProps, override, props: edited, binding, inlineEdited } = useEditable({
     id,
     kind: resolvedKind,
     label,
@@ -254,12 +254,16 @@ const EditableNode = function EditableNode({
     content = interpolate(override.text, vars)
   }
 
+  // Typing into the element replaced the text nodes React made; a new key
+  // after each inline edit hands the DOM back to React, so the committed text
+  // and any undo of it show.
+  const keyed = inlineEdited ? { ...props, key: `inline-${inlineEdited}` } : props
   const element =
     isVoidElement(Component) || props.dangerouslySetInnerHTML
-      ? createElement(Component, props)
+      ? createElement(Component, keyed)
       : createElement(
           Component,
-          props,
+          keyed,
           content,
           isContainer ? <InsertedChildren key="vedit-inserted" parentId={id} scope={scope ?? inherited ?? undefined} /> : null,
         )

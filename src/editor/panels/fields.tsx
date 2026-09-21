@@ -430,7 +430,7 @@ export function RelationField({
   const titleField = schema?.find((source) => source.name === to)?.titleField
   const labelOf = (row: VeditRecord) => {
     const title = titleField ? row[titleField] : undefined
-    return typeof title === 'string' && title ? title : row.id
+    return (typeof title === 'string' && title) || typeof title === 'number' ? String(title) : row.id
   }
 
   const selected = many

@@ -177,6 +177,20 @@ export function Inspector() {
         ) : (
           <>
             <Breadcrumb id={id} />
+            {override?.hidden ? (
+              <div className="vedit-layout-notice" role="status">
+                <div className="vedit-layout-constraint">
+                  <span>Hidden. It stays here, dimmed, so you can find it again; visitors do not see it.</span>
+                  <button
+                    type="button"
+                    className="vedit-btn"
+                    onClick={() => store.updateMany(store.getState().selection, { hidden: false })}
+                  >
+                    Show it
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <RepeatScope id={id} />
             <RowsSection id={id} />
             <StateSwitch id={id} />
@@ -523,11 +537,14 @@ function ContentSection({ id, kind }: { id: string; kind: NodeKind }) {
 
   // A bound node's content is the record's; the document's copy is skipped.
   const locked = !!binding && !canWriteData
+  const sourceLabel = useVeditState((state) =>
+    binding ? state.schema?.find((entry) => entry.name === binding.source)?.label ?? binding.source : '',
+  )
   const boundHint = binding ? (
     <div className="vedit-hint" style={{ marginBottom: 6 }}>
       {locked
-        ? `Comes from the ${binding.source} record, which this site has not let you change.`
-        : `Stored on the ${binding.source} record, so every page showing it changes too.`}
+        ? `Comes from ${sourceLabel}, which this site has not let you change.`
+        : `Stored in ${sourceLabel}, so every page showing it changes too.`}
     </div>
   ) : null
 
@@ -837,6 +854,9 @@ function FileSection({ id }: { id: string }) {
   const [text] = useContentValue(id, 'text')
   const [href] = useContentValue(id, 'href')
   const bound = useVeditState(() => (binding ? store.recordValue(binding) : undefined))
+  const fileSourceLabel = useVeditState((state) =>
+    binding ? state.schema?.find((entry) => entry.name === binding.source)?.label ?? binding.source : '',
+  )
   const field = useVeditState((state) =>
     binding
       ? state.schema?.find((source) => source.name === binding.source)?.fields.find((entry) => entry.name === binding.field)
@@ -885,7 +905,7 @@ function FileSection({ id }: { id: string }) {
       </div>
       {binding ? (
         <div className="vedit-hint" style={{ marginBottom: 6 }}>
-          Stored on the {binding.source} record, so every page showing it changes too.
+          Stored in {fileSourceLabel}, so every page showing it changes too.
         </div>
       ) : null}
       {canUpload ? (

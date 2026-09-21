@@ -53,6 +53,9 @@ export function containerFor(store: VeditStore, id: string): string | null {
 }
 
 export function startInlineEdit(store: VeditStore, target: EditorTarget, id: string) {
+  // The second click of a double-click already started this edit from its
+  // pointerup; starting again would commit the text twice on finish.
+  if (store.getState().inlineEditing === id) return
   const element = store.getNode(id)?.element
   if (!element) return
   const view = target.getWindow()
@@ -79,12 +82,13 @@ export function startInlineEdit(store: VeditStore, target: EditorTarget, id: str
     element.removeAttribute('data-vedit-inline')
     store.setInlineEditing(null)
 
-    if (cancelled) {
-      element.innerHTML = originalHtml
-      return
-    }
     const html = element.innerHTML.trim()
     const text = (element.innerText ?? element.textContent ?? '').replace(/\n+$/, '')
+    // Put the DOM back the way React left it; the element remounts either way
+    // and renders the committed text (or, cancelled, what was there before).
+    element.innerHTML = originalHtml
+    if (cancelled) return
+    if (html === originalHtml.trim()) return
     if (/<[a-z][\s\S]*>/i.test(html)) store.update(id, { html, text: undefined })
     else store.update(id, { text, html: undefined })
   }
@@ -248,6 +252,9 @@ export function bindEditorInteractions(
     const id = nodeIdFrom(event.target)
 
     if (state.inlineEditing && id === state.inlineEditing) return
+    // Selecting something else ends the edit in progress; the pointerdown is
+    // prevented below, so the browser would not move focus (and blur) itself.
+    if (state.inlineEditing) store.getNode(state.inlineEditing)?.element.blur()
 
     if (state.tool === 'hand') {
       // Interact mode: nothing is prevented, so the page's own handlers run. A

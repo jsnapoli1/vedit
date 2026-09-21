@@ -132,6 +132,7 @@ export class VeditStore {
       openComment: null,
       tool: 'select',
       inlineEditing: null,
+      inlineEdited: {},
       repeatScope: 'all',
       notice: null,
       dropIndicator: null,
@@ -239,9 +240,44 @@ export class VeditStore {
   labelOf(id: string): string {
     const own = this.docOf(id).nodes[id]?.label
     if (own) return own
-    const templateId = parseItemId(id)?.templateId
-    const inherited = templateId ? this.docOf(templateId).nodes[templateId]?.label : undefined
-    return inherited || this.registry.get(id)?.label || id
+    const parsed = parseItemId(id)
+    const inherited = parsed ? this.docOf(parsed.templateId).nodes[parsed.templateId]?.label : undefined
+    const base = inherited || this.registry.get(id)?.label || id
+    // Five rows all named "Product card" are five clicks to find the one you
+    // want; the card of a row also carries the row's title.
+    const title = parsed ? this.rowTitleOf(id, parsed.key) : null
+    return title ? `${base} · ${title}` : base
+  }
+
+  /** The row's title for the topmost node of a repeat item, from the source's `titleField`. */
+  private rowTitleOf(id: string, key: string): string | null {
+    const node = this.registry.get(id)
+    if (!node) return null
+    const parent = node.parentId ? this.registry.get(node.parentId) : undefined
+    if (parent && parseItemId(parent.id)?.key === key) return null
+    let source = node.binding?.id === key ? node.binding.source : undefined
+    if (!source) {
+      for (const other of this.registry.values()) {
+        if (other.binding?.id !== key || parseItemId(other.id)?.key !== key || !this.isWithin(other, id)) continue
+        source = other.binding.source
+        break
+      }
+    }
+    if (!source) return null
+    const field = this.state.schema?.find((entry) => entry.name === source)?.titleField
+    if (!field) return null
+    const value = this.recordValue({ source, id: key, field })
+    if (typeof value === 'number') return String(value)
+    return typeof value === 'string' && value.trim() ? value.trim() : null
+  }
+
+  private isWithin(node: RegisteredNode, ancestorId: string): boolean {
+    let current: string | null = node.parentId
+    while (current) {
+      if (current === ancestorId) return true
+      current = this.registry.get(current)?.parentId ?? null
+    }
+    return false
   }
 
   /* ------------------------------------------------------------- documents */
@@ -896,7 +932,20 @@ export class VeditStore {
   async loadRecords(source: string, query: RecordQuery = {}): Promise<VeditRecord[]> {
     if (!this.content) return this.recordsFor(source)
     const stage: DocumentStage = this.can('write') ? 'draft' : 'published'
-    const rows = await this.content.list(source, { ...query, stage })
+    // Every card on a page asks for its source at the same moment; one
+    // request answers them all.
+    const flight = `${recordSetKey(source, query)}@${stage}`
+    const pending = this.loading.get(flight)
+    if (pending) return pending
+    const load = this.fetchRecords(source, query, stage).finally(() => this.loading.delete(flight))
+    this.loading.set(flight, load)
+    return load
+  }
+
+  private loading = new Map<string, Promise<VeditRecord[]>>()
+
+  private async fetchRecords(source: string, query: RecordQuery, stage: DocumentStage): Promise<VeditRecord[]> {
+    const rows = await this.content!.list(source, { ...query, stage })
     // The query keeps its own rows; the source as a whole learns every row any
     // query has seen, the fresher copy winning, so a bound node can still look
     // a record up by id whatever page it was fetched for.
@@ -996,9 +1045,11 @@ export class VeditStore {
 
   /** True while something saved has not reached visitors: a document, or committed records. */
   get unpublished(): boolean {
-    if (this.state.doc !== this.state.published) return true
+    // Compared by content: after a load `published` is a separate object, and
+    // an editor should see "Published" when the draft says the same thing.
+    if (this.state.published !== undefined && differs(this.state.doc, this.state.published ?? undefined)) return true
     if (Object.keys(this.state.pendingPublish).length) return true
-    return this.sharedKeys.some((key) => this.state.shared[key] !== this.state.sharedPublished[key])
+    return this.sharedKeys.some((key) => differs(this.state.shared[key], this.state.sharedPublished[key]))
   }
 
   /* ------------------------------------------------------------ persistence */
@@ -1022,6 +1073,12 @@ export class VeditStore {
         this.set({ saved: this.state.doc, status: 'ready', past: [], future: [] })
       } else {
         this.adopt(loaded, before)
+      }
+      // Opening the draft: also learn what visitors see, so the editor can say
+      // whether there is anything to publish.
+      if (stage === 'draft' && this.supportsPublishing) {
+        const live = await this.adapter.load(this.state.doc.key, { stage: 'published' })
+        this.set({ published: live == null ? emptyDocument(this.state.doc.key) : this.inspect(live, this.state.doc.key) })
       }
     } catch (error) {
       this.set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
@@ -1048,6 +1105,14 @@ export class VeditStore {
         const shared = { ...this.state.shared }
         for (const key of this.sharedKeys) shared[key] = rebase(loaded[key], before[key], this.state.shared[key])
         this.set({ shared, sharedSaved: { ...this.state.sharedSaved, ...loaded } })
+        if (stage === 'draft' && this.supportsPublishing) {
+          const sharedPublished = { ...this.state.sharedPublished }
+          for (const key of this.sharedKeys) {
+            const live = await this.adapter.load(key, { stage: 'published' })
+            sharedPublished[key] = live == null ? emptyDocument(key) : this.inspect(live, key)
+          }
+          this.set({ sharedPublished })
+        }
       } catch (error) {
         this.set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
         return
@@ -1110,7 +1175,11 @@ export class VeditStore {
     this.set({ status: 'saving', error: null })
     try {
       if (this.content && this.hasRecordChanges) {
-        const stage: DocumentStage = this.can('publish') ? 'draft' : 'published'
+        // The stage is the site's, not the person's: with drafts, an author's
+        // save is a draft for an editor to publish; without them, live is all
+        // there is. (A source declared without drafts is published by the
+        // server whichever stage is asked for.)
+        const stage: DocumentStage = this.supportsPublishing ? 'draft' : 'published'
         const data = this.state.data
         const result = await this.content.commit(data, { stage })
         this.remapAfterCommit(data, result.idMap, stage)
@@ -1220,7 +1289,7 @@ export class VeditStore {
       const sharedPublished = { ...this.state.sharedPublished }
       for (const { key, doc } of this.documents()) {
         const live = key === this.state.doc.key ? published : sharedPublished[key]
-        if (doc === live) continue
+        if (!differs(doc, live ?? undefined)) continue
         await this.adapter.publish(doc)
         if (key === this.state.doc.key) published = doc
         else sharedPublished[key] = doc
@@ -1281,7 +1350,14 @@ export class VeditStore {
    */
   async uploadAsset(file: File, { kind }: { kind: 'image' | 'file' | 'video' }): Promise<VeditAsset | null> {
     if (this.adapter.uploadAsset) {
-      return this.adapter.uploadAsset(file, { accept: kind === 'image' ? ['image/*'] : undefined })
+      try {
+        return await this.adapter.uploadAsset(file, { accept: kind === 'image' ? ['image/*'] : undefined })
+      } catch (error) {
+        // A refused upload has to be said out loud: a button that flickers and
+        // leaves the old file in place reads as the editor being broken.
+        this.notify(error instanceof Error ? error.message : String(error), 7000)
+        throw error
+      }
     }
     if (kind !== 'image') {
       this.notify('This site cannot store files')
@@ -1312,11 +1388,11 @@ export class VeditStore {
   /* ------------------------------------------------------------------- ui */
 
   /** Flash a short message in the editor, e.g. to explain why nothing happened. */
-  notify(message: string | null) {
+  notify(message: string | null, forMs = 3200) {
     if (this.noticeTimer) clearTimeout(this.noticeTimer)
     this.set({ notice: message })
     if (message) {
-      this.noticeTimer = setTimeout(() => this.set({ notice: null }), 3200)
+      this.noticeTimer = setTimeout(() => this.set({ notice: null }), forMs)
     }
   }
 
@@ -1360,7 +1436,12 @@ export class VeditStore {
   }
 
   setInlineEditing(id: string | null) {
-    this.set({ inlineEditing: id })
+    const previous = this.state.inlineEditing
+    const patch: Partial<VeditState> = { inlineEditing: id }
+    if (id === null && previous) {
+      patch.inlineEdited = { ...this.state.inlineEdited, [previous]: (this.state.inlineEdited[previous] ?? 0) + 1 }
+    }
+    this.set(patch)
   }
 
   kindOf(id: string): NodeKind {

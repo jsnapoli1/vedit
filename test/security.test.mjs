@@ -434,3 +434,17 @@ test('a missing viewBox is taken from width and height, then from the box', () =
   const bare = sanitizeSvg('<svg><rect/></svg>')
   assert.equal(bare?.viewBox, '0 0 100 100')
 })
+
+test('a link in rich text may open in a new tab, and nothing else rides along', () => {
+  // `target` is how an editor sends a reader elsewhere without losing the
+  // page; `rel` is what keeps the opened page from reaching back. The rest
+  // of the attribute bag is still dropped.
+  const kept = inBrowser(() =>
+    sanitizeHtml('<p><a href="https://example.com" target="_blank" rel="noopener" onclick="x()" style="color:red">out</a></p>', {
+      profile: 'block',
+    }),
+  )
+  assert.equal(kept, '<p><a href="https://example.com" target="_blank" rel="noopener">out</a></p>')
+  const odd = inBrowser(() => sanitizeHtml('<a href="/x" target="frame1" rel="stylesheet">x</a>', { profile: 'block' }))
+  assert.equal(odd, '<a href="/x">x</a>')
+})

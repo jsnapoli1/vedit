@@ -92,7 +92,14 @@ export function sanitizeHtml(html: string, options: SanitizeHtmlOptions = {}): s
  */
 function keepHtmlAttribute(profile: SanitizeProfile, tag: string, name: string, value: string): boolean {
   if (profile === 'inline') return name === 'href' && !/^\s*javascript:/i.test(value)
-  if (tag === 'a') return name === 'href' && safeUrl(value) !== undefined
+  if (tag === 'a') {
+    if (name === 'href') return safeUrl(value) !== undefined
+    // A new tab is the one target an editor means; `rel` only in the forms
+    // that keep the opened page from reaching back to this one.
+    if (name === 'target') return value === '_blank'
+    if (name === 'rel') return /^(noopener|noreferrer|nofollow)(\s+(noopener|noreferrer|nofollow))*$/.test(value.trim())
+    return false
+  }
   if (tag === 'img') return name === 'alt' || (name === 'src' && safeUrl(value, { allowDataImage: true }) !== undefined)
   return false
 }

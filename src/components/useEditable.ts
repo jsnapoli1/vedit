@@ -53,6 +53,8 @@ export interface UseEditableResult<P = Record<string, unknown>> {
   override: NodeOverride
   /** True while this node is being typed into. */
   inlineEditing: boolean
+  /** How many inline edits have finished on it; key the element on this so React owns the DOM again after one. */
+  inlineEdited: number
   /** Your props with the editor's overrides applied. Render with these. */
   props: P
   /** The record field this node shows, once `bind` has been resolved; undefined when unbound. */
@@ -180,11 +182,14 @@ export function useEditable<P extends Record<string, unknown> = Record<string, u
     [propsKey, stored.props],
   )
 
+  const inlineEdited = useVeditState((state) => state.inlineEdited[id] ?? 0)
+
   return {
     ref,
     veditProps: { 'data-vedit-id': id, 'data-vedit-kind': kind },
     override,
     inlineEditing,
+    inlineEdited,
     props,
     binding,
   }

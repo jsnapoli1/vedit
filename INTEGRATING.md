@@ -691,7 +691,11 @@ Field types are `text`, `textarea`, `richtext`, `number`, `boolean`, `date`,
 `json`, `select` (with `options`), `image`, `file`, `video`, `relation` (with
 `to`, and `many` for a list of ids) and `password`, which is write-only: the
 server hashes it and never reads it back. A field carries `label`, `required`,
-`help` and `default` when it needs them. `InferRecord<typeof collections.products>`
+`help` and `default` when it needs them (`default: 'now'` on a `date` stamps
+the moment a record is created), and `hidden: true` keeps a field on the record
+but out of the Data panel — an import id, a timestamp, a machine field. A
+source can be `hidden` too: it is listed under "Advanced" in Data rather than
+beside the content people edit every day. `InferRecord<typeof collections.products>`
 is the record type; nothing is generated.
 
 Access is per source, per action — `read`, `create`, `update`, `delete`,

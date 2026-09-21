@@ -163,3 +163,26 @@ test('the unsafe local handler writes for anyone', async () => {
   assert.equal(response.status, 200)
   assert.equal(store.documents.size, 1)
 })
+
+test('a draft, a version list and a version are for editors only', async () => {
+  // A draft is what an editor has not shown anyone yet; the published document
+  // is the only one a visitor may read.
+  const store = {
+    docs: new Map([['home:draft', { ...emptyDocument('home'), nodes: { a: { text: 'secret' } } }]]),
+    async read(key, stage = 'published') { return this.docs.get(`${key}:${stage}`) ?? null },
+    async write() {},
+    async listVersions() { return [{ id: 'v1', savedAt: '2026-08-23T10:00:00.000Z', published: false }] },
+    async readVersion() { return { ...emptyDocument('home'), nodes: { a: { text: 'older secret' } } } },
+  }
+  const anonymous = createVeditHandler({ store, authorize: () => false })
+  for (const query of ['stage=draft', 'versions=1', 'version=v1']) {
+    const response = await anonymous(new Request(`https://s.test/api?key=home&${query}`))
+    assert.equal(response.status, 403, query)
+  }
+  const live = await (await anonymous(new Request('https://s.test/api?key=home'))).json()
+  assert.deepEqual(live.nodes, {})
+
+  const editor = createVeditHandler({ store, authorize: () => true })
+  assert.equal((await (await editor(new Request('https://s.test/api?key=home&stage=draft'))).json()).nodes.a.text, 'secret')
+  assert.equal((await (await editor(new Request('https://s.test/api?key=home&versions=1'))).json()).items.length, 1)
+})

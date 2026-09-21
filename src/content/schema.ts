@@ -78,6 +78,7 @@ function describeFields(spec: FieldsSpec): SourceField[] {
     if (field.to !== undefined) described.to = field.to
     if (field.many !== undefined) described.many = field.many
     if (field.default !== undefined && typeof field.default !== 'function') described.default = field.default
+    if (field.hidden) described.hidden = true
     return described
   })
 }
@@ -110,6 +111,7 @@ export function schemaFor(
     }
     if (spec.titleField !== undefined) source.titleField = spec.titleField
     if (spec.orderField !== undefined) source.orderField = spec.orderField
+    if (spec.hidden) source.hidden = true
     sources.push(source)
   }
   for (const [name, spec] of Object.entries(globals ?? {})) {
@@ -121,6 +123,7 @@ export function schemaFor(
       // A global is stored like a one-record collection, drafts included.
       drafts: true,
       can: canFor(spec.access, role),
+      ...(spec.hidden ? { hidden: true } : {}),
     })
   }
   return sources

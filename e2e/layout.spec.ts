@@ -79,3 +79,40 @@ test.describe('layout the editor has to explain', () => {
     await expect(page.locator('.vedit-right .vedit-layout-notice')).toContainText('floats over the page')
   })
 })
+
+test.describe('what the scanner names', () => {
+  test('nothing inside a named text, link, button or component is a node of its own', async ({ page }) => {
+    await openEditor(page)
+    // The hero button carries an icon span; the heading's copy is the heading's.
+    const inside = await artboard(page).locator('[data-vedit-id]:not([data-vedit-auto]) [data-vedit-auto]').evaluateAll(
+      (nodes) =>
+        nodes
+          .filter((node) => {
+            const owner = node.parentElement?.closest('[data-vedit-id]:not([data-vedit-auto])') as HTMLElement | null
+            return ['text', 'link', 'button', 'file', 'component'].includes(owner?.dataset.veditKind ?? '')
+          })
+          .map((node) => (node as HTMLElement).dataset.veditId),
+    )
+    expect(inside).toEqual([])
+    // Clicking the icon selects the button it belongs to.
+    await artboard(page).locator('[data-vedit-id="home.hero.cta"] span').first().click({ force: true })
+    await expect(page.locator('.vedit-right .vedit-panel-head span').first()).toHaveText('Button')
+  })
+
+  test('a scanner-found node is named for a person, never by its tag or class', async ({ page }) => {
+    await openEditor(page)
+    const names = await page.locator('.vedit-layer .vedit-layer-name').allTextContents()
+    const raw = names.filter((name) => /^(a|button|svg|span|div|img|li|ul|p)(\.|$)/.test(name.trim()))
+    expect(raw).toEqual([])
+  })
+})
+
+test('hiding an element says so, and offers to show it', async ({ page }) => {
+  await openEditor(page)
+  await artboard(page).locator('[data-vedit-id="home.hero.body"]').click({ force: true })
+  await page.keyboard.press('Backspace')
+  const notice = page.locator('.vedit-right .vedit-layout-notice')
+  await expect(notice).toContainText('visitors do not see it')
+  await notice.getByRole('button', { name: 'Show it' }).click()
+  await expect(notice).toHaveCount(0)
+})

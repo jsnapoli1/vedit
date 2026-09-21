@@ -220,12 +220,19 @@ test.describe('editing on the canvas', () => {
 test.describe('focusing one page', () => {
   const focus = (page: Page) => page.locator('.vedit-toolbar select.vedit-page-focus')
 
-  test('the dropdown lists every page, and starts on all of them', async ({ page }) => {
-    await openEditor(page)
+  test('the editor opens on the page it was opened from, and the dropdown lists every page', async ({ page }) => {
+    await openEditor(page, { path: '/pricing', focused: true })
 
-    await expect(focus(page)).toHaveValue('')
+    // One readable artboard, not a 5% overview of everything; the rest load on demand.
+    await expect(focus(page)).toHaveValue('/pricing')
     await expect(focus(page).locator('option')).toHaveText(['All pages', 'Home', 'Pricing', 'Campaign'])
+    await expect(page.locator('.vedit-artboard:visible')).toHaveCount(1)
+    await expect(page.locator('.vedit-artboard iframe')).toHaveCount(1)
+    await expect(page.locator('.vedit-artboard[data-active="true"] .vedit-artboard-label')).toContainText('Pricing')
+
+    await focus(page).selectOption('')
     await expect(page.locator('.vedit-artboard:visible')).toHaveCount(3)
+    await expect(page.locator('.vedit-artboard iframe')).toHaveCount(3)
   })
 
   test('picking a page hides the others but keeps them loaded', async ({ page }) => {
@@ -413,5 +420,50 @@ test.describe('removing and reverting', () => {
       return display
     })
     expect(hiddenForVisitors).toBe('none')
+  })
+})
+
+/**
+ * Typing straight into the page. The browser rewrites the element's text
+ * nodes while you type, so the editor has to take the DOM back afterwards or
+ * nothing it does later — the commit, an undo — would show.
+ */
+test.describe('inline editing', () => {
+  const title = (page: Page) => artboard(page).locator('[data-vedit-id="home.hero.title"]')
+
+  test('one edit is one undo step, and undo shows on the page', async ({ page }) => {
+    await openEditor(page)
+    const before = (await title(page).textContent()) ?? ''
+    await title(page).click({ force: true })
+    await title(page).dblclick({ force: true })
+    await page.keyboard.type('Retyped headline')
+    await page.keyboard.press('Enter')
+    await expect(title(page)).toHaveText('Retyped headline')
+
+    await page.keyboard.press('Meta+z')
+    await expect(title(page)).toHaveText(before)
+    await expect(page.locator('.vedit-toolbar button', { hasText: 'Discard' })).toBeDisabled()
+  })
+
+  test('Escape throws the typing away and leaves nothing to save', async ({ page }) => {
+    await openEditor(page)
+    const before = (await title(page).textContent()) ?? ''
+    await title(page).click({ force: true })
+    await title(page).dblclick({ force: true })
+    await page.keyboard.type('Never mind')
+    await page.keyboard.press('Escape')
+    await expect(title(page)).toHaveText(before)
+    await expect(page.locator('.vedit-toolbar button', { hasText: 'Discard' })).toBeDisabled()
+  })
+
+  test('clicking elsewhere commits what was typed', async ({ page }) => {
+    await openEditor(page)
+    await title(page).click({ force: true })
+    await title(page).dblclick({ force: true })
+    await page.keyboard.type('Committed by a click')
+    await artboard(page).locator('[data-vedit-id="home.hero.body"]').click({ force: true })
+    await expect(title(page)).toHaveText('Committed by a click')
+    await expect(page.locator('.vedit-toolbar button', { hasText: 'Discard' })).toBeEnabled()
+    await expect(page.locator('.vedit-right .vedit-panel-head span').first()).toHaveText('Body')
   })
 })

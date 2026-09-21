@@ -131,3 +131,35 @@ test('an item of a repeat takes its name from the template unless it has its own
   assert.equal(store.labelOf('cards.title~b'), 'Second card')
   assert.equal(store.labelOf('cards.title~a'), 'Card title')
 })
+
+test('the topmost node of a row is named after the row, so cards can be told apart', async () => {
+  // Five "Product card" rows in the tree are five clicks to find zPDS; the
+  // row's title, after the template's name, is what tells them apart.
+  const rows = [
+    { id: 'p1', title: 'zLock+' },
+    { id: 'p2', title: 'zPDS' },
+  ]
+  const client = {
+    async schema() { return [{ name: 'products', kind: 'collection', label: 'Products', titleField: 'title', fields: [{ name: 'title', type: 'text', label: 'Title' }], drafts: true, can: { read: true, create: true, update: true, delete: true, publish: true } }] },
+    async list() { return rows },
+    async get(_s, id) { return rows.find((r) => r.id === id) ?? null },
+    async commit() { return { idMap: {}, updatedAt: '' } },
+    async capabilities() { return { user: null, login: false, can: { write: true, publish: true, upload: true, data: { write: true, delete: true } } } },
+  }
+  const store = new VeditStore({ key: 'home', adapter: memoryAdapter(), content: client })
+  await store.load()
+  await store.loadRecords('products')
+  const node = (id, parentId, binding) => ({ id, kind: binding ? 'text' : 'box', label: binding ? 'Title' : 'Product card', element: {}, parentId, auto: false, container: !binding, binding })
+  for (const key of ['p1', 'p2']) {
+    store.register(node(`products.card~${key}`, 'products.list'))
+    store.register(node(`products.card.title~${key}`, `products.card~${key}`, { source: 'products', id: key, field: 'title' }))
+  }
+  assert.equal(store.labelOf('products.card~p2'), 'Product card · zPDS')
+  assert.equal(store.labelOf('products.card~p1'), 'Product card · zLock+')
+  // The leaves inside keep their plain names.
+  assert.equal(store.labelOf('products.card.title~p2'), 'Title')
+  // A name given to the card itself wins.
+  store.setRepeatScope('item')
+  store.update('products.card~p2', { label: 'Flagship card' })
+  assert.equal(store.labelOf('products.card~p2'), 'Flagship card')
+})

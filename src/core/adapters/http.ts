@@ -29,6 +29,34 @@ export interface HttpAdapterOptions {
 }
 
 /** Talks to your own backend. Pair it with `createVeditHandler` from `vedit/server`. */
+const megabytes = (bytes: number) => `${Math.round(bytes / 1048576 * 10) / 10} MB`.replace('.0 MB', ' MB')
+
+/**
+ * What to tell the person whose upload the server refused: the file by name,
+ * and the rule it broke — a size limit, or a kind this site does not take.
+ */
+async function uploadRefusal(response: Response, file: File, accept?: string[]): Promise<string> {
+  let detail = ''
+  try {
+    detail = String(((await response.json()) as { error?: string }).error ?? '')
+  } catch {
+    detail = ''
+  }
+  const limit = /limited to (\d+) bytes/.exec(detail)
+  if (response.status === 413 || limit) {
+    const cap = limit ? megabytes(Number(limit[1])) : 'the site allows'
+    return `"${file.name}" is ${megabytes(file.size)}; files are limited to ${cap}`
+  }
+  if (response.status === 400 || response.status === 415) {
+    if (accept?.every((entry) => entry.startsWith('image/'))) {
+      return `"${file.name}" is not an image. Use a JPG, PNG, WebP, GIF or SVG file`
+    }
+    return `"${file.name}" is not a kind of file this site accepts (images, PDFs, Office documents, zip, text, MP4/WebM)`
+  }
+  if (response.status === 401 || response.status === 403) return `You are not allowed to upload here — sign in again and retry`
+  return `"${file.name}" could not be uploaded (${response.status}${detail ? `: ${detail}` : ''})`
+}
+
 export function httpAdapter(options: HttpAdapterOptions): VeditAdapter {
   const doFetch = options.fetch ?? globalThis.fetch
   const resolveHeaders = async () =>
@@ -118,10 +146,7 @@ export function httpAdapter(options: HttpAdapterOptions): VeditAdapter {
               body: form,
               credentials: 'same-origin',
             })
-            if (response.status === 400 && uploadOptions?.accept) {
-              throw new Error(`Upload refused: expected ${uploadOptions.accept.join(', ')}`)
-            }
-            if (!response.ok) throw new Error(`Upload failed (${response.status})`)
+            if (!response.ok) throw new Error(await uploadRefusal(response, file, uploadOptions?.accept))
             const body = (await response.json()) as Partial<VeditAsset>
             if (!body.url) throw new Error('Media endpoint did not return a url')
             return { ...body, url: body.url }

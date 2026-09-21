@@ -211,6 +211,13 @@ function handler(
     const key = url.searchParams.get('key') ?? 'default'
 
     if (request.method === 'GET') {
+      // A draft, and the history that leads to it, is an editor's work in
+      // progress; only the published document is a visitor's to read.
+      const wantsDraft =
+        url.searchParams.get('stage') === 'draft' || url.searchParams.get('versions') || url.searchParams.get('version')
+      if (wantsDraft && !(await authorize(request))) {
+        return json({ error: 'Not allowed' }, 403)
+      }
       if (url.searchParams.get('versions')) {
         const items = store.listVersions ? await store.listVersions(key) : []
         return json({ items })
