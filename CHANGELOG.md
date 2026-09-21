@@ -9,6 +9,20 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.13.1 — 2026-09-21
+
+The document format is unchanged at version 1. One fix; a site that already
+uses vedit has nothing to do.
+
+### Fixed
+
+- **A size holds inside a column too.** Pinning a flex child only covered the
+  row case (`flex-grow`); a card in a column, stretched across by
+  `align-items`, ignored a typed width. The pin now lives in the store, so it
+  applies whichever way a size is written — typed, dragged, or by a script —
+  and covers both axes: `flex: 0 0 auto` along the parent's direction,
+  `align-self: flex-start` across it.
+
 ## 0.13.0 — 2026-09-21
 
 The document format is unchanged at version 1. This release comes out of
