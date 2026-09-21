@@ -9,6 +9,72 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.13.0 — 2026-09-21
+
+The document format is unchanged at version 1. This release comes out of
+putting the editor in front of people who do not write code: what they could
+not do, what they could not find, and what said nothing when it failed. One
+thing to do: a site whose drafts were readable by anyone who knew the URL is
+not any more, so a page that fetched `?stage=draft` without a session has to
+sign in first.
+
+### Added
+
+- **`hidden` on a field or a source.** A field marked `hidden: true` stays on
+  the record but out of the Data panel — an import id, a timestamp, a machine
+  field. A source marked `hidden` is listed under "Advanced" in Data rather
+  than beside the content people edit every day.
+- **A row's name in the Layers panel.** The card of a repeat row carries the
+  row's title after the template's name — `Product card · zPDS` — so five
+  cards can be told apart without clicking each.
+- **Hidden says so.** Hiding an element (Backspace, the trash) now shows a
+  notice in the inspector — it stays on the page, dimmed, visitors do not see
+  it — with *Show it* beside it.
+- **Links in rich text may open in a new tab.** The block sanitizer keeps
+  `target="_blank"` and a `rel` of `noopener`/`noreferrer`/`nofollow` on an
+  `<a>`; everything else on it is still dropped.
+
+### Changed
+
+- **The editor opens on the page it was opened from,** at a readable size, and
+  loads only that artboard. "All pages" is one pick away in the toolbar and
+  loads the first few, the rest on demand. A site with twenty long pages no
+  longer spends its first half minute painting all twenty at 5 %.
+- **Scanner-found nodes are named for a person.** An icon-only link or button
+  is *Link*/*Button* (or its `aria-label`), an inline `<svg>` is *Icon*, an
+  `<img>` without alt is *Image*; never `a`, `button.w-2` or `svg`. And the
+  scanner no longer descends into an explicit text, link, button, file or
+  component: the bold word in a heading selects the heading, the icon in a
+  download link selects the link.
+- **The inspector names sources by their label** — "Stored in Datasheets",
+  not "Stored on the product-sheets record".
+- **A relation picker labels a record whose title is a number.**
+
+### Fixed
+
+- **An upload that is refused says why.** Too big, the wrong kind, not signed
+  in: the message names the file and the rule (`"photo.png" is 30 MB; files are
+  limited to 25 MB`). Before, the button flickered and the old file stayed.
+- **Inline editing.** A double-click started the edit twice (the second click's
+  pointerup had already started it), so every commit happened twice and undo
+  needed two presses; and the browser's own rewriting of the text nodes meant
+  undo never showed on the page. The edit starts once, the element hands its
+  DOM back to React when the edit ends, one edit is one undo step, Escape
+  leaves nothing to save, and a click elsewhere commits what was typed.
+- **Publish only when there is something to publish.** The button was on for
+  every page because the store never knew what visitors were seeing; opening
+  a draft now also loads the published copy, and a draft that says the same
+  thing is "Published".
+- **Drafts and history need a session.** `GET ?stage=draft`, `?versions=1`
+  and `?version=` go through `authorize`; the published document is the only
+  one a visitor may read.
+- **An author's save no longer fails.** Record edits were committed as
+  `published` when the person could not publish — which the server refuses on
+  a source with drafts. The commit stage is the site's (draft when the adapter
+  publishes, live otherwise), not the person's.
+- **One request per query.** Thirty cards asking for the same rows at the same
+  moment send one request.
+
 ## 0.12.1 — 2026-09-18
 
 The document format is unchanged at version 1. One fix; a site that already
