@@ -505,7 +505,38 @@ export class VeditStore {
   /** Set style declarations in the active state and breakpoint. */
   setStyle(id: string, styles: StyleMap, opts: { history?: boolean } = {}) {
     const { state, breakpoint } = this.cell
-    this.writeNode(id, (override) => mergeStyles(override, state, breakpoint, styles), opts)
+    const pinned = { ...this.flexPin(id, styles), ...styles }
+    this.writeNode(id, (override) => mergeStyles(override, state, breakpoint, pinned), opts)
+  }
+
+  /**
+   * A width or height on a child its flex parent sizes is a wish until the
+   * parent is told to stop: along the main axis it grows or shrinks the child
+   * regardless, across it `align-items: stretch` fills the line. So a size
+   * written to such a child pins it, whichever way it was written — typed,
+   * dragged or set by a script — and the number means what it says.
+   */
+  private flexPin(id: string, styles: StyleMap): StyleMap {
+    const width = styles.width !== undefined
+    const height = styles.height !== undefined
+    if (!width && !height) return {}
+    const element = this.registry.get(id)?.element
+    const view = element?.ownerDocument?.defaultView
+    const parent = element?.parentElement
+    if (!element || !view || !parent || typeof view.getComputedStyle !== 'function') return {}
+    const parentStyle = view.getComputedStyle(parent)
+    if (!parentStyle.display.includes('flex')) return {}
+    const own = view.getComputedStyle(element)
+    if (own.position === 'absolute' || own.position === 'fixed') return {}
+    const column = parentStyle.flexDirection.startsWith('column')
+    const pin: StyleMap = {}
+    const alongMain = column ? height : width
+    const acrossMain = column ? width : height
+    if (alongMain && (parseFloat(own.flexGrow) > 0 || parseFloat(own.flexShrink) > 0)) pin.flex = '0 0 auto'
+    if (acrossMain && (own.alignSelf === 'auto' || own.alignSelf === 'stretch' || own.alignSelf === 'normal')) {
+      pin.alignSelf = 'flex-start'
+    }
+    return pin
   }
 
   /**
@@ -520,7 +551,7 @@ export class VeditStore {
     this.editNodes(
       this.oncePerTarget(entries, opts.redirect).map(([id, styles]) => [
         id,
-        (override) => mergeStyles(override, state, breakpoint, styles),
+        (override) => mergeStyles(override, state, breakpoint, { ...this.flexPin(id, styles), ...styles }),
       ]),
       opts,
     )

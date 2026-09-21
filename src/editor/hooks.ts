@@ -97,7 +97,7 @@ export function useStyleValue(id: string | null, property: string): StyleValue {
       const ids = targetsKey ? targetsKey.split('|') : []
       if (!ids.length) return
       if (next === undefined || next === '') store.clearStylesMany(ids, [property])
-      else store.setStyleMany(ids.map((target) => [target, { ...flexPin(store, target, property), [property]: next }]))
+      else store.setStyleMany(ids.map((target) => [target, { [property]: next }]))
     },
     [store, targetsKey, property],
   )
@@ -115,23 +115,6 @@ export function useStyleValue(id: string | null, property: string): StyleValue {
     set,
     clear,
   }
-}
-
-/**
- * A width or height on a child its flex row sizes is a wish until the row is
- * told to stop: the row grows or shrinks the child regardless. So a size set
- * on such a child pins it (`flex: 0 0 auto`), the same as the resize handles do.
- */
-export function flexPin(store: VeditStore, id: string, property: string): StyleMap {
-  if (property !== 'width' && property !== 'height') return {}
-  const element = store.getNode(id)?.element
-  const view = element?.ownerDocument.defaultView
-  if (!element || !view || !element.parentElement) return {}
-  if (!view.getComputedStyle(element.parentElement).display.includes('flex')) return {}
-  const own = view.getComputedStyle(element)
-  if (own.position === 'absolute' || own.position === 'fixed') return {}
-  if (parseFloat(own.flexGrow) > 0 || parseFloat(own.flexShrink) > 0) return { flex: '0 0 auto' }
-  return {}
 }
 
 /** Read/write a non-style override field such as `text`, `src` or `href`. */

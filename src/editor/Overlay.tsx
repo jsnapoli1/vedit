@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useVeditState, useVeditStore } from '../core/context'
 import type { VeditStore } from '../core/store'
-import type { StyleMap } from '../core/types'
-import { flexPin } from './hooks'
 import { toScreen, useEditorTarget, type EditorTarget, type Rect } from './target'
 import { warnOnce } from '../core/env'
 
@@ -160,9 +158,6 @@ function startResize(
   handleElement.setPointerCapture(event.pointerId)
 
   const rect = element.getBoundingClientRect()
-  // A card its flex row sizes keeps the row's size until told otherwise, so a
-  // resize also pins it — the drag then does what it looks like it does.
-  const pin: StyleMap = flexPin(store, id, 'width')
   const startX = event.clientX
   const startY = event.clientY
   const horizontal = handle.includes('e') ? 1 : handle.includes('w') ? -1 : 0
@@ -181,7 +176,7 @@ function startResize(
       const height = Math.max(8, rect.height + ((moveEvent.clientY - startY) / zoom) * vertical)
       styles.height = `${Math.round(height)}px`
     }
-    if (Object.keys(styles).length) store.setStyle(id, { ...pin, ...styles }, { history: false })
+    if (Object.keys(styles).length) store.setStyle(id, styles, { history: false })
   }
   const up = () => {
     handleElement.removeEventListener('pointermove', move)

@@ -378,6 +378,12 @@ function Pricing() {
         <div className="badge" style={{ position: 'absolute', top: 8, right: 8, padding: '4px 8px', background: '#fde68a' }}>
           <span>New</span>
         </div>
+        <div className="stack" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
+          <div className="plan stacked">
+            <h3>Stacked card</h3>
+            <p>A column stretches its children across; a width typed here has to hold.</p>
+          </div>
+        </div>
       </section>
       <footer className="footer">
         <p>© Northwind. Prices shown in USD.</p>

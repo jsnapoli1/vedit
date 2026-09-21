@@ -73,6 +73,23 @@ test.describe('layout the editor has to explain', () => {
     await expect.poll(() => card.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(120)
   })
 
+  test('a width typed for a card in a column holds, though the column would stretch it', async ({ page }) => {
+    await openTraps(page)
+    const card = traps(page).locator('.stacked')
+    await card.click({ force: true, position: { x: 4, y: 4 } })
+    const width = inspectorField(page, 'Layout', 'W')
+    await width.fill('160')
+    await width.press('Enter')
+    await expect.poll(() => card.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(160)
+    // And a script writing straight to the store gets the same pin.
+    await artboard(page, '/pricing').evaluate(() => {
+      const store = (window as unknown as { __veditCanvas: { store: { getNode(id: string): { element: HTMLElement } | undefined; setStyle(id: string, s: Record<string, string>): void } } }).__veditCanvas.store
+      const el = document.querySelector('.stacked') as HTMLElement
+      store.setStyle(el.dataset.veditId!, { width: '200px' })
+    })
+    await expect.poll(() => card.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(200)
+  })
+
   test('an absolute box says it floats', async ({ page }) => {
     await openTraps(page)
     await traps(page).locator('.badge').click({ force: true, position: { x: 2, y: 2 } })
