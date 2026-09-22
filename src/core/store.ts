@@ -348,7 +348,11 @@ export class VeditStore {
    * edits, or several at once — as one undo step.
    */
   private commitEntry(next: Partial<HistoryEntry>, opts: { history?: boolean } = {}) {
-    const history = opts.history !== false
+    // Inside a gesture only the first write records history: the snapshot it
+    // takes is the state before the gesture, and every later write is the same
+    // drag still going. A caller that asked for no history keeps that either way.
+    const history = opts.history !== false && this.gesture !== 'recorded'
+    if (history && this.gesture === 'open') this.gesture = 'recorded'
     const stamp = new Date().toISOString()
     const patch: Partial<VeditState> = {
       past: history ? [...this.state.past, this.entry()].slice(-HISTORY_LIMIT) : this.state.past,
@@ -669,6 +673,34 @@ export class VeditStore {
   /** Snapshot the document so a drag gesture collapses into one undo step. */
   beginHistory() {
     this.set({ past: [...this.state.past, this.entry()].slice(-HISTORY_LIMIT), future: [] })
+  }
+
+  /**
+   * Where a gesture stands: closed, open with nothing written yet, or open and
+   * already holding its one history entry. Not part of the state — nothing
+   * renders it, and a scrub must not re-render the inspector on every move.
+   */
+  private gesture: 'closed' | 'open' | 'recorded' = 'closed'
+
+  /**
+   * Open a gesture: until `endGesture`, the writes made through the ordinary
+   * methods count as one undo step. Unlike `beginHistory` nothing is snapshotted
+   * here — the first write takes it — so a press that moves nothing leaves no
+   * step behind, and the entry is the state the value is undone back to no
+   * matter how many moves follow, whereas a snapshot per move would push it out
+   * of the history limit.
+   *
+   * Always starts afresh: a gesture that somehow escaped its `endGesture` is
+   * replaced by the next one rather than swallowing its first write, so one
+   * missed release cannot silence the history for good.
+   */
+  beginGesture() {
+    this.gesture = 'open'
+  }
+
+  /** Close the gesture. Safe to call again: a pointer release arrives more than once. */
+  endGesture() {
+    this.gesture = 'closed'
   }
 
   /** Remove a declaration from the active cell, falling back to the site's styling. */

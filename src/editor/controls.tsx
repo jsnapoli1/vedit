@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useVeditStore } from '../core/context'
 import { IconChevron, IconReset } from './icons'
 
 export function Section({
@@ -170,17 +171,24 @@ export function LengthField({
   /** Unit appended to bare numbers. Pass `''` for unitless values like `opacity`. */
   defaultUnit?: string
 }) {
+  const store = useVeditStore()
   const [draft, setDraft] = useState(value === undefined ? '' : String(value))
   const focused = useRef(false)
   // What was last handed to `onChange`. A draft that has been committed is not
   // being typed any more, so an undo or a new selection may replace it even
   // while the field still has focus.
   const committed = useRef<string | null>(null)
+  // Ends the scrub in progress, if there is one. Kept on a ref so that a field
+  // re-rendered away mid-drag still closes its gesture: with the element gone
+  // no pointer event reaches the handlers below, and a gesture left open would
+  // keep every later write out of the undo history.
+  const release = useRef<(() => void) | null>(null)
   const name = useFieldName(spoken ?? label)
   useEffect(() => {
     if (!focused.current || committed.current === draft) setDraft(value === undefined ? '' : String(value))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
+  useEffect(() => () => release.current?.(), [])
 
   const commit = (raw: string) => {
     committed.current = raw
@@ -200,6 +208,11 @@ export function LengthField({
     const unit = parsed.unit || defaultUnit
     const target = event.currentTarget as HTMLElement
     target.setPointerCapture(event.pointerId)
+    // Every move writes through `onChange`, which for a style field is a store
+    // write; the gesture makes the whole drag one undo step. Opened here and
+    // closed on release rather than snapshotted, so a press that never moves
+    // leaves nothing to undo.
+    store.beginGesture()
 
     const move = (moveEvent: PointerEvent) => {
       const delta = Math.round((moveEvent.clientX - startX) / 2) * step
@@ -209,12 +222,26 @@ export function LengthField({
       setDraft(text)
       onChange(text)
     }
+    // The release arrives as `pointerup`, or as `pointercancel` when the browser
+    // takes the pointer for a scroll, and losing capture reports both. A pointer
+    // let go outside the window reports nothing, but the window loses focus, so
+    // blur ends the drag too. Each is handled and the handler runs once, so the
+    // gesture is never left open.
     const up = () => {
+      release.current = null
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      window.removeEventListener('blur', up)
+      target.removeEventListener('lostpointercapture', up)
+      store.endGesture()
     }
+    release.current = up
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    window.addEventListener('blur', up)
+    target.addEventListener('lostpointercapture', up)
   }
 
   return (

@@ -43,6 +43,57 @@ test('a drag collapses into a single undo step', () => {
   assert.equal(store.getOverride('a').text, 'start')
 })
 
+test('a gesture collapses its writes into one undo step', () => {
+  const store = makeStore()
+  store.setStyle('a', { width: '5px' })
+  store.beginGesture()
+  store.setStyle('a', { width: '10px' })
+  store.setStyle('a', { width: '20px' })
+  store.setStyle('a', { width: '30px' })
+  store.endGesture()
+  assert.equal(store.getOverride('a').style.width, '30px')
+  store.undo()
+  assert.equal(store.getOverride('a').style.width, '5px')
+})
+
+test('a gesture longer than the history limit still undoes to where it started', () => {
+  const store = makeStore()
+  store.setStyle('a', { width: '5px' })
+  store.beginGesture()
+  for (let i = 1; i <= 150; i++) store.setStyle('a', { width: `${i}px` })
+  store.endGesture()
+  assert.equal(store.getOverride('a').style.width, '150px')
+  store.undo()
+  assert.equal(store.getOverride('a').style.width, '5px')
+})
+
+test('a gesture that writes nothing leaves no undo step', () => {
+  const store = makeStore()
+  store.setStyle('a', { width: '5px' })
+  const before = store.getState().past.length
+  store.beginGesture()
+  store.endGesture()
+  assert.equal(store.getState().past.length, before)
+  store.undo()
+  assert.equal(store.getOverride('a').style, undefined)
+})
+
+test('a write outside a gesture is its own undo step', () => {
+  const store = makeStore()
+  store.beginGesture()
+  store.setStyle('a', { width: '10px' })
+  store.setStyle('a', { width: '20px' })
+  store.endGesture()
+  store.setStyle('a', { width: '30px' })
+  store.setStyle('a', { width: '40px' })
+  store.undo()
+  assert.equal(store.getOverride('a').style.width, '30px')
+  store.undo()
+  assert.equal(store.getOverride('a').style.width, '20px')
+  store.undo()
+  assert.equal(store.getOverride('a').style, undefined)
+})
+
 test('dirty tracking survives a save round trip', async () => {
   const store = makeStore()
   assert.equal(store.dirty, false)
