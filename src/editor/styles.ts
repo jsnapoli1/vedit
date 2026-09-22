@@ -263,6 +263,10 @@ export const EDITOR_CSS = `
 }
 .vedit-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
 .vedit-row:last-child { margin-bottom: 0; }
+/* The two centring actions share the space a single control would have. */
+.vedit-center { display: flex; flex: 1; gap: 4px; }
+.vedit-center .vedit-btn { flex: 1; padding: 0 6px; background: var(--vedit-panel-2); }
+.vedit-center .vedit-btn:hover:not(:disabled) { border-color: var(--vedit-accent); }
 .vedit-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .vedit-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .vedit-label { color: var(--vedit-muted); flex: none; width: 58px; }

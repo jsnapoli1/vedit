@@ -49,6 +49,8 @@ export { scanDom } from './auto/scanner'
 export { computeAutoId } from './auto/ids'
 export { auditPage, contrastRatio, effectiveBackground, parseColor, luminance } from './editor/a11y'
 export { bindEditorInteractions } from './editor/interactions'
+export { centerActions, centeringStyles, parentLayout } from './editor/centering'
+export type { CenterAction, CenterAxis, CenterTarget, ParentLayout } from './editor/centering'
 export type { A11yIssue } from './editor/a11y'
 
 export { canvasUrl, keepCanvasParams, CANVAS_PARAM } from './core/canvas'

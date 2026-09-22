@@ -56,6 +56,7 @@ import {
   IconUndo,
 } from '../icons'
 import { BoxSides, ColorRow, LengthRow, SegmentRow, SelectRow } from './rows'
+import { centerActions, parentLayout } from '../centering'
 import { layoutConstraints, type LayoutConstraint } from '../layoutConstraints'
 import { SVG_REFUSED } from './Insert'
 import { dragModeFor, reorderBlocker } from '../interactions'
@@ -1290,6 +1291,75 @@ function LayoutNotice({ id }: { id: string }) {
   )
 }
 
+/**
+ * `align-self` and `justify-self` as the parent understands them. The flex list
+ * says `flex-start`/`flex-end` — the same words the Align row above uses, and
+ * the value a sized flex child is pinned with, so a pin shows up here as
+ * "Start" rather than as nothing.
+ */
+const FLEX_SELF = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'flex-start', label: 'Start' },
+  { value: 'center', label: 'Center' },
+  { value: 'flex-end', label: 'End' },
+  { value: 'stretch', label: 'Fill' },
+]
+const GRID_SELF = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'start', label: 'Start' },
+  { value: 'center', label: 'Center' },
+  { value: 'end', label: 'End' },
+  { value: 'stretch', label: 'Fill' },
+]
+
+/**
+ * Centring the selection in its parent, in one click per axis, plus the
+ * property that click writes so the value stays visible and editable. Which
+ * property that is depends on the parent — see `centering.ts` — and an axis its
+ * parent has no answer for is not offered.
+ */
+function CenterControl({ id }: { id: string }) {
+  const store = useVeditStore()
+  const targets = useSelectionTargets(id)
+  // Any document change can move this: making the parent a flex column changes
+  // what centring the child even means.
+  useVeditState((state) => state.doc)
+  const parent = parentLayout(store.getNode(id)?.element)
+  const actions = centerActions(
+    targets.map((target) => ({ id: target, parent: parentLayout(store.getNode(target)?.element) })),
+  )
+  const grid = !!parent?.display.includes('grid')
+  const flex = !!parent?.display.includes('flex')
+  if (!actions.length && !flex && !grid) return null
+
+  return (
+    <>
+      {actions.length ? (
+        <Row label="Center">
+          <div className="vedit-center">
+            {actions.map((action) => (
+              <button
+                key={action.axis}
+                type="button"
+                className="vedit-btn"
+                aria-label={action.name}
+                title={action.title}
+                onClick={() => store.setStyleMany(action.entries)}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        </Row>
+      ) : null}
+      {flex || grid ? (
+        <SegmentRow id={id} label="Align self" property="alignSelf" options={grid ? GRID_SELF : FLEX_SELF} />
+      ) : null}
+      {grid ? <SegmentRow id={id} label="Justify self" property="justifySelf" options={GRID_SELF} /> : null}
+    </>
+  )
+}
+
 function LayoutSection({ id }: { id: string }) {
   const display = useStyleValue(id, 'display')
   const computed = useComputedStyle(id)
@@ -1301,6 +1371,7 @@ function LayoutSection({ id }: { id: string }) {
     <Section title="Layout">
       <LayoutNotice id={id} />
       <PositionControl id={id} />
+      <CenterControl id={id} />
       <SelectRow
         id={id}
         label="Display"
