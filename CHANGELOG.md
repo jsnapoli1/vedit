@@ -9,6 +9,41 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.14.0 — 2026-09-22
+
+The document format is unchanged at version 1. Two things: a drag no longer
+leaves a trail of undo steps behind it, and a selected element can be put in the
+middle of its parent in one click.
+
+### Added
+
+- **Centring a box in its parent.** The Layout section gains a **Center** row —
+  one action per axis — and an **Align self** row beside it (with **Justify
+  self** for a grid parent), so an element that has a width can be moved to the
+  middle of whatever holds it without finding the property by hand.
+  Which property is written comes from the parent: auto margins for a block, or
+  for a flex line's main axis; `align-self` and `justify-self` across it. An axis
+  CSS has no answer for — vertical in a block — is not offered rather than
+  written and left doing nothing. A multi-selection is written per node, each
+  with its own parent's answer, and the values it writes stay visible in the
+  rows and the per-side margin fields.
+- **`beginGesture()` and `endGesture()` on the store.** Between the two, writes
+  made through the ordinary methods count as one undo step instead of one each.
+  The first write takes the history entry, so a gesture that changes nothing
+  leaves nothing to undo. The editor's numeric fields use it for a drag; a host
+  can use it for a gesture of its own.
+
+### Fixed
+
+- **A dragged field undoes back to where the drag started.** A scrub called the
+  field's `onChange` on every pointer move, and every one of those was its own
+  history entry, so Undo stepped back through the intermediate values one click
+  at a time instead of returning the value the drag began from. Worse, a drag of
+  more than a hundred moves pushed that value past the history limit and it could
+  not be reached at all. A scrub is now one gesture — opened when the pointer
+  goes down and closed on release, cancel, lost capture, blur or unmount — so one
+  Undo puts the field back. Typing and the arrow keys are still one step each.
+
 ## 0.13.1 — 2026-09-21
 
 The document format is unchanged at version 1. One fix; a site that already

@@ -228,7 +228,7 @@ with the panels floating over the page. `canvas={false}` picks that mode outrigh
 | --- | --- |
 | **Content** | Text (inline on the page, or in the panel), rich text via `⌘B`/`⌘I`/`⌘U`, link destination and target |
 | **Component props** | Whatever your components declare — variants, sizes, booleans, numbers, colors (see below) |
-| **Layout** | Display, flex direction / justify / align / wrap / gap, grid columns, width, height, min/max width, padding and margin per side |
+| **Layout** | Display, flex direction / justify / align / wrap / gap, grid columns, width, height, min/max width, padding and margin per side, self alignment and one-click centring in the parent |
 | **Typography** | Font stack, size, weight, leading, tracking, alignment, transform, decoration, color |
 | **Appearance** | Solid fill or a gradient with editable stops, corner radius, border, opacity, shadow presets, rotation, scale, transitions |
 | **Shapes** | Six presets and imported SVG; fill, stroke, width, cap, dash, and the geometry itself |
