@@ -9,6 +9,22 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.14.1 — 2026-10-22
+
+The document format is unchanged at version 1. One fix; a site that already
+uses vedit has nothing to do.
+
+### Fixed
+
+- **Double-clicking text inside a host button or link starts the edit without
+  pressing the control.** The click that begins an inline edit was still reaching
+  the page, so editing the label of an **Accept** cookie button accepted the
+  cookies, a submit button ran form validation and ended the edit it had just
+  started, and a link navigated away mid-edit. The click is now kept from the
+  page when it lands on text inside a host button, link, label, `summary`, or
+  any element with `role="button"`; the edit opens, and the control does not
+  fire.
+
 ## 0.14.0 — 2026-09-22
 
 The document format is unchanged at version 1. Two things: a drag no longer
