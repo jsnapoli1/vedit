@@ -9,8 +9,11 @@ import { expect, type Frame, type Page } from '@playwright/test'
  * the editor itself opens on the page it was opened from, but most of these
  * tests reach across pages.
  */
-export async function openEditor(page: Page, options: { as?: string; path?: string; focused?: boolean } = {}) {
-  const query = new URLSearchParams({ as: options.as ?? 'Sam' })
+export async function openEditor(
+  page: Page,
+  options: { as?: string; path?: string; focused?: boolean; params?: Record<string, string> } = {},
+) {
+  const query = new URLSearchParams({ ...options.params, as: options.as ?? 'Sam' })
   const url = `${options.path ?? '/'}?${query}`
 
   await page.goto(url, { waitUntil: 'domcontentloaded' })

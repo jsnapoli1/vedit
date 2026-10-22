@@ -385,7 +385,15 @@ export function bindEditorInteractions(
   // Stop the host site reacting to clicks it should not see while editing.
   const swallow = (event: Event) => {
     if (isEditorSurface(event.target)) return
-    if (store.getState().inlineEditing && nodeIdFrom(event.target) === store.getState().inlineEditing) return
+    // Clicks inside the text being edited place the caret, unless that text sits
+    // in a host control: the second click of the double-click that started the
+    // edit would otherwise press the button, follow the link or submit the form.
+    if (
+      store.getState().inlineEditing &&
+      nodeIdFrom(event.target) === store.getState().inlineEditing &&
+      !asElement(event.target)?.closest('a[href],button,label,summary,[role="button"]')
+    )
+      return
     event.preventDefault()
     event.stopPropagation()
   }

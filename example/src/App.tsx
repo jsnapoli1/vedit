@@ -411,10 +411,38 @@ function Nav() {
   )
 }
 
+/**
+ * Editable text inside one of the host's own controls, shown with `?cookies`
+ * so the screenshots never see it. Accepting sets a flag the tests read: the
+ * double-click that starts editing the label must not press the button.
+ */
+function CookieBanner() {
+  const [accepted, setAccepted] = useState(false)
+  if (accepted) return null
+  return (
+    <aside className="hero">
+      {/* Large, so the label stays clear of the selection handles at the canvas's zoom. */}
+      <button
+        type="button"
+        style={{ fontSize: 64 }}
+        onClick={() => {
+          Object.assign(window, { __hostClicked: true })
+          setAccepted(true)
+        }}
+      >
+        <EditableText id="home.cookies.accept" as="span">
+          Accept cookies
+        </EditableText>
+      </button>
+    </aside>
+  )
+}
+
 function Site() {
   return (
     <>
       <Nav />
+      {new URLSearchParams(window.location.search).has('cookies') ? <CookieBanner /> : null}
 
       <EditableBox id="home.hero" as="section" className="hero">
         <div>

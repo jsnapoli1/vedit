@@ -15,9 +15,10 @@ function element({ tag = 'div', attrs = {}, parent = null } = {}) {
     getAttribute: (name) => attrs[name] ?? null,
     matches(selector) {
       return selector.split(',').some((part) => {
-        const [, selectorTag, attribute] = /^([a-z]*)(?:\[([^\]=]+)(?:="([^"]*)")?\])?$/.exec(part.trim()) ?? []
+        const [, selectorTag, attribute, value] = /^([a-z]*)(?:\[([^\]=]+)(?:="([^"]*)")?\])?$/.exec(part.trim()) ?? []
         if (selectorTag && selectorTag !== tag) return false
         if (attribute && attrs[attribute] === undefined) return false
+        if (value !== undefined && attrs[attribute] !== value) return false
         return true
       })
     },
@@ -128,4 +129,52 @@ test('the tool is read when the click happens, not when the listeners were bound
   page.dispatch('click', button, () => (reached += 1))
 
   assert.equal(reached, 1)
+})
+
+/** Given an inline edit in progress on a label inside `parent`, where does click two of the double-click go? */
+function clickWhileInlineEditing(parent) {
+  const store = makeStore()
+  const page = fakeDocument()
+  bindEditorInteractions(store, page.target)
+  const label = element({ tag: 'span', attrs: { 'data-vedit-id': 'banner.accept' }, parent })
+
+  store.setInlineEditing('banner.accept')
+  let reached = false
+  const event = page.dispatch('click', label, () => (reached = true))
+  return { reached, event }
+}
+
+for (const [name, control] of [
+  ['a button', () => element({ tag: 'button' })],
+  ['a link', () => element({ tag: 'a', attrs: { href: '/accept' } })],
+  ['a [role="button"]', () => element({ attrs: { role: 'button' } })],
+]) {
+  test(`while inline-editing a label inside ${name}, the click does not reach the host`, () => {
+    const { reached, event } = clickWhileInlineEditing(control())
+
+    assert.equal(reached, false)
+    assert.equal(event.defaulted, false)
+  })
+}
+
+test('while inline-editing plain text, the click still reaches the page to place the caret', () => {
+  const { reached, event } = clickWhileInlineEditing(element({ tag: 'div' }))
+
+  assert.equal(reached, true)
+  assert.equal(event.defaulted, true)
+})
+
+test('a click on a control in the editor chrome is untouched during an inline edit', () => {
+  const store = makeStore()
+  const page = fakeDocument()
+  bindEditorInteractions(store, page.target)
+  const chrome = element({ attrs: { 'data-vedit-ui': '' } })
+  const control = element({ tag: 'button', parent: chrome })
+
+  store.setInlineEditing('banner.accept')
+  let reached = false
+  const event = page.dispatch('click', control, () => (reached = true))
+
+  assert.equal(reached, true)
+  assert.equal(event.defaulted, true)
 })

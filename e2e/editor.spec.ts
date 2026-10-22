@@ -466,4 +466,15 @@ test.describe('inline editing', () => {
     await expect(page.locator('.vedit-toolbar button', { hasText: 'Discard' })).toBeEnabled()
     await expect(page.locator('.vedit-right .vedit-panel-head span').first()).toHaveText('Body')
   })
+
+  test('double-clicking a label inside a host button edits it without pressing the button', async ({ page }) => {
+    await openEditor(page, { params: { cookies: '' } })
+    const label = artboard(page).locator('[data-vedit-id="home.cookies.accept"]')
+    await label.click({ force: true })
+    await label.dblclick({ force: true })
+
+    const pressed = await artboard(page).evaluate(() => (window as unknown as { __hostClicked?: boolean }).__hostClicked)
+    expect(pressed).toBeFalsy()
+    await expect(label).toHaveAttribute('contenteditable', 'true')
+  })
 })
