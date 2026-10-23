@@ -9,6 +9,38 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.14.2 — 2026-10-23
+
+The document format is unchanged at version 1. One fix; a site that already
+uses vedit has nothing to do, but see the note on styles already saved.
+
+### Fixed
+
+- **Styles meant for an element no longer end up in its Hover state by
+  accident.** The inspector's state switch (Normal / Hover / Focus / Active)
+  stayed where it was left when another element was chosen, and every edit —
+  including dragging, resizing and nudging on the page — went to that state.
+  Leave it on Hover, pick something else and resize it, and the new size
+  applied only while the element was hovered: the box changed under the
+  pointer, the hover ended, it snapped back, and it jittered for as long as the
+  pointer stayed there. Now:
+  - choosing a different element (or none, or closing the editor) puts the
+    switch back to **Normal**; clicking the element already selected keeps the
+    state you are styling;
+  - a drag, a resize handle, an arrow-key nudge and a drag-to-reorder always
+    write the element's own style, whatever the switch is on. Hover, focus and
+    pressed styles are set from the inspector's fields.
+
+  Styles already saved to a state stay where they are. To find them, select
+  the element and switch to the state in the inspector; its reset buttons
+  remove them.
+
+### Added
+
+- `setStyle`, `setStyleMany`, `clearStyles` and `clearStylesMany` take an
+  optional `state` that overrides the switch for that write, and `styleValue`
+  an optional third argument that reads from a given state.
+
 ## 0.14.1 — 2026-10-22
 
 The document format is unchanged at version 1. One fix; a site that already
