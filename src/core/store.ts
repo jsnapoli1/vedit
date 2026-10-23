@@ -490,9 +490,15 @@ export class VeditStore {
     this.updateMany([rawId], patch, opts)
   }
 
-  /** The cell of the state × breakpoint matrix the editor is currently writing to. */
-  private get cell(): { state: StyleState; breakpoint: Breakpoint } {
-    return { state: this.state.styleState, breakpoint: this.state.breakpoint }
+  /**
+   * The cell of the state × breakpoint matrix a write lands in: the state the
+   * inspector's switch is on, unless the write names one. A gesture on the page
+   * (drag, resize, nudge) names `default`: it moves or sizes the element itself,
+   * and a hover style written by one moves the element out from under the
+   * pointer that is hovering it.
+   */
+  private cell(state?: StyleState): { state: StyleState; breakpoint: Breakpoint } {
+    return { state: state ?? this.state.styleState, breakpoint: this.state.breakpoint }
   }
 
   /** Apply a change to one node's override and commit it. */
@@ -507,8 +513,8 @@ export class VeditStore {
   }
 
   /** Set style declarations in the active state and breakpoint. */
-  setStyle(id: string, styles: StyleMap, opts: { history?: boolean } = {}) {
-    const { state, breakpoint } = this.cell
+  setStyle(id: string, styles: StyleMap, opts: { history?: boolean; state?: StyleState } = {}) {
+    const { state, breakpoint } = this.cell(opts.state)
     const pinned = { ...this.flexPin(id, styles), ...styles }
     this.writeNode(id, (override) => mergeStyles(override, state, breakpoint, pinned), opts)
   }
@@ -550,8 +556,11 @@ export class VeditStore {
    * edit to what they share. `redirect: false` is for writes that name each
    * item itself — re-ordering siblings sets each one's own `order`.
    */
-  setStyleMany(entries: Array<[string, StyleMap]>, opts: { history?: boolean; redirect?: boolean } = {}) {
-    const { state, breakpoint } = this.cell
+  setStyleMany(
+    entries: Array<[string, StyleMap]>,
+    opts: { history?: boolean; redirect?: boolean; state?: StyleState } = {},
+  ) {
+    const { state, breakpoint } = this.cell(opts.state)
     this.editNodes(
       this.oncePerTarget(entries, opts.redirect).map(([id, styles]) => [
         id,
@@ -579,7 +588,7 @@ export class VeditStore {
 
   /** Replace every declaration in the active cell (used by the CSS editor). */
   setStyleBucket(id: string, styles: StyleMap) {
-    const { state, breakpoint } = this.cell
+    const { state, breakpoint } = this.cell()
     this.writeNode(id, (override) => replaceStyles(override, state, breakpoint, styles))
   }
 
@@ -709,13 +718,13 @@ export class VeditStore {
   }
 
   /** Remove several declarations from the active cell in one change. */
-  clearStyles(id: string, properties: string[]) {
-    this.clearStylesMany([id], properties)
+  clearStyles(id: string, properties: string[], opts: { state?: StyleState } = {}) {
+    this.clearStylesMany([id], properties, opts)
   }
 
   /** Remove declarations from several nodes at once, for a multi-selection edit; follows the scope. */
-  clearStylesMany(ids: string[], properties: string[], opts: { redirect?: boolean } = {}) {
-    const { state, breakpoint } = this.cell
+  clearStylesMany(ids: string[], properties: string[], opts: { redirect?: boolean; state?: StyleState } = {}) {
+    const { state, breakpoint } = this.cell(opts.state)
     this.editNodes(
       this.oncePerTarget(
         ids.map((id): [string, null] => [id, null]),
@@ -761,10 +770,10 @@ export class VeditStore {
     else if (data) this.commitEntry({ data }, opts)
   }
 
-  /** Read a declaration from the active cell. */
-  styleValue(id: string, property: string): string | number | undefined {
-    const { state, breakpoint } = this.cell
-    return readStyleValue(this.docOf(id).nodes[id], state, breakpoint, property)
+  /** Read a declaration from the active cell, or from `state` in the active breakpoint. */
+  styleValue(id: string, property: string, state?: StyleState): string | number | undefined {
+    const { state: cellState, breakpoint } = this.cell(state)
+    return readStyleValue(this.docOf(id).nodes[id], cellState, breakpoint, property)
   }
 
   /**
@@ -1460,18 +1469,23 @@ export class VeditStore {
   }
 
   setEditing(editing: boolean) {
-    this.set({ editing, selection: [], hovered: null, inlineEditing: null })
+    this.set({ editing, selection: [], hovered: null, inlineEditing: null, styleState: 'default' })
   }
 
+  /**
+   * Choosing something else puts the state switch back to Normal. Left on
+   * Hover, every later edit to whatever is picked next — a resize, a width, an
+   * order — would quietly apply only while that element is hovered.
+   * Re-choosing the element already selected keeps the state being styled.
+   */
   select(id: string | null, opts: { additive?: boolean } = {}) {
-    if (id === null) return this.set({ selection: [], inlineEditing: null })
-    if (opts.additive) {
-      const selection = this.state.selection.includes(id)
-        ? this.state.selection.filter((s) => s !== id)
-        : [...this.state.selection, id]
-      return this.set({ selection, inlineEditing: null })
-    }
-    this.set({ selection: [id], inlineEditing: null })
+    const current = this.state.selection
+    let selection: string[]
+    if (id === null) selection = []
+    else if (opts.additive) selection = current.includes(id) ? current.filter((s) => s !== id) : [...current, id]
+    else selection = [id]
+    const same = selection.length === current.length && selection.every((s, i) => s === current[i])
+    this.set(same ? { selection, inlineEditing: null } : { selection, inlineEditing: null, styleState: 'default' })
   }
 
   hover(id: string | null) {

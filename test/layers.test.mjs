@@ -34,6 +34,44 @@ test('clearing the last declaration in a state removes the state', () => {
   assert.deepEqual(store.getState().doc.nodes, {})
 })
 
+test('choosing another element puts the state switch back to Normal', () => {
+  const store = makeStore()
+  store.select('a')
+  store.setStyleState('hover')
+  store.select('a')
+  assert.equal(store.getState().styleState, 'hover', 'clicking the element being styled keeps its state')
+  store.select('b')
+  assert.equal(store.getState().styleState, 'default')
+
+  store.setStyleState('focus')
+  store.select('a', { additive: true })
+  assert.equal(store.getState().styleState, 'default', 'adding to the selection is a new selection')
+
+  store.setStyleState('hover')
+  store.select(null)
+  assert.equal(store.getState().styleState, 'default')
+
+  store.select('a')
+  store.setStyleState('active')
+  store.setEditing(false)
+  assert.equal(store.getState().styleState, 'default')
+})
+
+test('a write that names its state lands there, whatever the switch is on', () => {
+  const store = makeStore()
+  store.setStyleState('hover')
+  store.setStyle('a', { width: '200px', transform: 'translate(4px, 0px)' }, { state: 'default' })
+  store.setStyleMany([['a', { order: 2 }], ['b', { order: 1 }]], { redirect: false, state: 'default' })
+  assert.deepEqual(store.getOverride('a').style, { width: '200px', transform: 'translate(4px, 0px)', order: 2 })
+  assert.deepEqual(store.getOverride('b').style, { order: 1 })
+  assert.equal(store.getOverride('a').states, undefined)
+  assert.equal(store.styleValue('a', 'transform', 'default'), 'translate(4px, 0px)')
+  assert.equal(store.styleValue('a', 'transform'), undefined, 'without a state the switch still decides')
+
+  store.clearStyles('a', ['transform'], { state: 'default' })
+  assert.deepEqual(store.getOverride('a').style, { width: '200px', order: 2 })
+})
+
 test('tokens get unique slugs and can be renamed and removed', () => {
   const store = makeStore()
   const first = store.addToken({ name: 'Brand Blue', kind: 'color', value: '#00f' })

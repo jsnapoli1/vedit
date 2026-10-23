@@ -200,7 +200,7 @@ function applyOrder(store: VeditStore, siblings: HTMLElement[], dragged: HTMLEle
     const id = element.getAttribute('data-vedit-id')
     if (id) entries.push([id, { order: position + 1 }])
   })
-  store.setStyleMany(entries, { history: false, redirect: false })
+  store.setStyleMany(entries, { history: false, redirect: false, state: 'default' })
 }
 
 export interface InteractionOptions {
@@ -329,7 +329,7 @@ export function bindEditorInteractions(
     const startY = event.clientY
     const mode = dragModeFor(store, id, element)
     const siblings = mode === 'reorder' ? reorderableSiblings(element) : null
-    const baseTransform = store.styleValue(id, 'transform')
+    const baseTransform = store.styleValue(id, 'transform', 'default')
     const base = parseTransform(baseTransform)
     const startLeft = element.offsetLeft
     const startTop = element.offsetTop
@@ -355,7 +355,7 @@ export function bindEditorInteractions(
         store.setStyle(
           id,
           { left: `${Math.round(startLeft + dx)}px`, top: `${Math.round(startTop + dy)}px` },
-          { history: false },
+          { history: false, state: 'default' },
         )
         return
       }
@@ -364,7 +364,7 @@ export function bindEditorInteractions(
         translateX: Math.round(base.translateX + dx),
         translateY: Math.round(base.translateY + dy),
       })
-      store.setStyle(id, { transform: transform ?? 'none' }, { history: false })
+      store.setStyle(id, { transform: transform ?? 'none' }, { history: false, state: 'default' })
     }
 
     const up = () => {
@@ -509,17 +509,17 @@ export function bindEditorInteractions(
         const style = store.getOverride(id).style ?? {}
         const left = Number.parseFloat(String(style.left ?? node.element.offsetLeft))
         const top = Number.parseFloat(String(style.top ?? node.element.offsetTop))
-        store.setStyle(id, { left: `${left + dx}px`, top: `${top + dy}px` })
+        store.setStyle(id, { left: `${left + dx}px`, top: `${top + dy}px` }, { state: 'default' })
         return
       }
-      const current = store.styleValue(id, 'transform')
+      const current = store.styleValue(id, 'transform', 'default')
       const parts = parseTransform(current)
       const transform = withTransform(current, {
         translateX: parts.translateX + dx,
         translateY: parts.translateY + dy,
       })
-      if (transform) store.setStyle(id, { transform })
-      else store.clearStyles(id, ['transform'])
+      if (transform) store.setStyle(id, { transform }, { state: 'default' })
+      else store.clearStyles(id, ['transform'], { state: 'default' })
     }
   }
 

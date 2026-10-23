@@ -176,7 +176,7 @@ function startResize(
       const height = Math.max(8, rect.height + ((moveEvent.clientY - startY) / zoom) * vertical)
       styles.height = `${Math.round(height)}px`
     }
-    if (Object.keys(styles).length) store.setStyle(id, styles, { history: false })
+    if (Object.keys(styles).length) store.setStyle(id, styles, { history: false, state: 'default' })
   }
   const up = () => {
     handleElement.removeEventListener('pointermove', move)

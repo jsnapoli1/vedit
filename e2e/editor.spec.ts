@@ -92,6 +92,46 @@ test.describe('editing on the canvas', () => {
     await expect.poll(() => cta.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(255, 0, 0)')
   })
 
+  test('choosing another element puts the state switch back to Normal', async ({ page }) => {
+    await openEditor(page)
+    await select(page, 'home.hero.cta')
+    const states = page.locator('.vedit-right .vedit-segmented')
+    await states.locator('button:has-text("Hover")').click()
+    await expect(states.locator('button:has-text("Hover")')).toHaveAttribute('data-active', 'true')
+
+    await select(page, 'home.hero.title')
+    await expect(states.locator('button:has-text("Normal")')).toHaveAttribute('data-active', 'true')
+    await expect(artboard(page).locator('[data-vedit-id="home.hero.cta"]')).not.toHaveAttribute('data-vedit-force', 'hover')
+  })
+
+  test('with Hover on, a resize and a nudge on the page still change the element itself', async ({ page }) => {
+    await openEditor(page)
+    const cta = artboard(page).locator('[data-vedit-id="home.hero.cta"]')
+    const box = () => cta.evaluate((el) => ({ left: Math.round(el.getBoundingClientRect().left), width: Math.round(el.getBoundingClientRect().width) }))
+    const before = await box()
+    await select(page, 'home.hero.cta')
+    await page.locator('.vedit-right .vedit-segmented button:has-text("Hover")').click()
+    // Clicking the element being styled keeps its state. The arrow keys belong to
+    // the switch while it has focus, so hand the keyboard back to the canvas.
+    await cta.click()
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight')
+
+    const zoom = await page.locator('.vedit-artboard[data-active="true"] iframe').evaluate((f) => f.getBoundingClientRect().width / (f as HTMLIFrameElement).offsetWidth)
+    const handle = await page.locator('.vedit-handle').nth(3).boundingBox() // east
+    const x = handle!.x + handle!.width / 2
+    const y = handle!.y + handle!.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 12, y)
+    await page.mouse.move(x + 40 * zoom, y, { steps: 8 })
+    await page.mouse.up()
+
+    await page.locator('.vedit-right .vedit-segmented button:has-text("Normal")').click()
+    await page.mouse.move(0, 0)
+    await expect.poll(box).toEqual({ left: before.left + 3, width: before.width + 40 })
+  })
+
   test('a component prop is offered as its declared choices', async ({ page }) => {
     await openEditor(page)
     await select(page, 'home.hero.cta')
