@@ -454,8 +454,9 @@ only into a source you declared.** Without one there is no submissions store
 and nothing in the editor to read them in, because the data is the visitor's
 and belongs in your backend, next to whatever you already use for email and
 retention. With [step 11](#11-optional-let-vedit-own-the-content) your endpoint
-can write it into a collection whose access says `create: 'public'`, and it
-turns up in the Data panel for whoever may read that source.
+can write it into a collection whose access says `create: 'public'` and
+`onPage: false`, and it turns up in the toolbar's Records for whoever may read
+that source.
 
 `action` must be same-origin or an absolute `https:` URL. An `action` comes out of
 the stored document, so an unrestricted one would be a way to redirect every
@@ -643,8 +644,8 @@ stops at step 10 is unchanged.
 
 What you get for it: rows edited on the page they appear on, a file replaced
 from the inspector, a nav that is one document for every page, sign-in and roles
-without a second system, a Data panel for the tables nobody wants a page for,
-and the same records reachable from an agent.
+without a second system, a Records dialog for the tables nobody wants a page
+for, and the same records reachable from an agent.
 
 ### The schema
 
@@ -693,9 +694,14 @@ Field types are `text`, `textarea`, `richtext`, `number`, `boolean`, `date`,
 server hashes it and never reads it back. A field carries `label`, `required`,
 `help` and `default` when it needs them (`default: 'now'` on a `date` stamps
 the moment a record is created), and `hidden: true` keeps a field on the record
-but out of the Data panel — an import id, a timestamp, a machine field. A
-source can be `hidden` too: it is listed under "Advanced" in Data rather than
-beside the content people edit every day. `InferRecord<typeof collections.products>`
+but out of the editor — an import id, a timestamp, a machine field.
+
+A source is edited on the pages that show it. One that no page renders — form
+submissions, a lookup table, counters — is declared `onPage: false`, and the
+toolbar's **Records** lists it; that is the only place it can be edited, so a
+source left out of every page and not marked is out of reach. Such a source can
+be `hidden` too: it is listed under "Advanced" in Records rather than beside
+the ones people open every day. `InferRecord<typeof collections.products>`
 is the record type; nothing is generated.
 
 Access is per source, per action — `read`, `create`, `update`, `delete`,
@@ -777,7 +783,7 @@ read.
 email, name, role, and a `password` field the handler hashes with PBKDF2-SHA256
 through `crypto.subtle`, so it runs on Workers as it does on Node. `bootstrap`
 creates the first admin on the first request when there are no users; from
-then on users are rows in the Data panel, admin-only. `secret` signs the
+then on users are rows in the toolbar's Records, admin-only. `secret` signs the
 session token and has to be at least 16 characters; keep it out of the repo.
 A sign-in sets an `HttpOnly`, `SameSite=Lax` cookie, `Secure` when the request
 came over https, and returns the same token for a script to send as
@@ -893,12 +899,23 @@ edited on every other. Children inherit it. The key has to be in `sharedKeys`.
 
 ### What the editor shows
 
-With `content` set, the left panel gains a **Data** tab: every source as a
-table (title, status, last change), every record as a form built from the
-schema, with New and Delete. Edits there go through the same Save and Publish
-as the page and are one undo step each. A source the caller may not update
-renders read-only; Delete is hidden without the `data:delete` capability.
-`_users` is there for an admin, with a password field that stores hashed.
+With `content` set, what a record holds is edited where it is shown. A bound
+element is edited like any other — double-click the text, replace the image or
+file in the inspector — and the edit goes to the record. A card of a bound
+repeat gets **Rows** in the inspector: add, duplicate, remove, move. The fields
+of the selected element's record that no element on the page shows (a slug, a
+date, the category a row is filed under) are in the inspector's **Details**,
+built from the schema; the order field is left to Rows.
+
+The sources declared `onPage: false` are in the toolbar's **Records**: each as
+a table (title, status, last change), each record as a form built from the
+schema, with New and Delete. `_users` is there for an admin, with a password
+field that stores hashed. The button only appears when there is such a source
+the person may read.
+
+Edits anywhere go through the same Save and Publish as the page and are one
+undo step each. A source the caller may not update renders read-only; Delete
+is hidden without the `data:delete` capability.
 
 Save commits the record changes first, in one request, then saves the page and
 every shared document that changed; the ids the server chose for new rows are

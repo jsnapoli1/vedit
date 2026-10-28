@@ -7,8 +7,8 @@ const ROLES: ReadonlyArray<VeditUser['role']> = ['admin', 'editor', 'author']
 
 /**
  * The `_users` collection. The host merges this into its own spec (or the
- * content handler does it for them) so users get the same store, Data panel
- * and versions as everything else. `password` is write-only: the handler hashes
+ * content handler does it for them) so users get the same store, Records
+ * dialog and versions as everything else. `password` is write-only: the handler hashes
  * it into `passwordHash` and reads never return either.
  */
 export const usersCollection: CollectionSpec = {
@@ -20,6 +20,8 @@ export const usersCollection: CollectionSpec = {
     password: { type: 'password', help: 'Stored hashed. Leave blank to keep the current one.' },
   },
   titleField: 'email',
+  // No page shows the users; they are edited in Records.
+  onPage: false,
   // A user is either live or not; a "draft" account would be a way to sign in
   // that nobody had approved.
   drafts: false,

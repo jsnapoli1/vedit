@@ -477,7 +477,7 @@ export class VeditStore {
   }
 
   /** Whether the schema calls a bound field rich text. False until the schema is known. */
-  private isRichtext(binding: RecordBinding): boolean {
+  isRichtext(binding: RecordBinding): boolean {
     return (
       this.state.schema
         ?.find((source) => source.name === binding.source)
@@ -1016,8 +1016,17 @@ export class VeditStore {
 
   private loading = new Map<string, Promise<VeditRecord[]>>()
 
+  private recordTickets = new Map<string, number>()
+
   private async fetchRecords(source: string, query: RecordQuery, stage: DocumentStage): Promise<VeditRecord[]> {
+    // Two fetches of one query can be in flight — the live rows a visitor saw,
+    // then the draft once the capabilities say this is an editor — and they can
+    // land in either order. Only the latest one asked for may write its rows.
+    const setKey = recordSetKey(source, query)
+    const ticket = (this.recordTickets.get(setKey) ?? 0) + 1
+    this.recordTickets.set(setKey, ticket)
     const rows = await this.content!.list(source, { ...query, stage })
+    if (this.recordTickets.get(setKey) !== ticket) return this.recordsFor(source, this.state.recordSets[setKey] ?? rows)
     // The query keeps its own rows; the source as a whole learns every row any
     // query has seen, the fresher copy winning, so a bound node can still look
     // a record up by id whatever page it was fetched for.

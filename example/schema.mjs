@@ -27,6 +27,9 @@ export const collections = defineCollections({
   categories: {
     label: 'Categories',
     titleField: 'name',
+    // No page renders the categories themselves, only the products filed
+    // under one, so they are edited in the toolbar's Records.
+    onPage: false,
     fields: {
       name: { type: 'text', required: true },
     },

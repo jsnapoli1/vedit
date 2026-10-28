@@ -89,7 +89,12 @@ export function startInlineEdit(store: VeditStore, target: EditorTarget, id: str
     element.innerHTML = originalHtml
     if (cancelled) return
     if (html === originalHtml.trim()) return
-    if (/<[a-z][\s\S]*>/i.test(html)) store.update(id, { html, text: undefined })
+    // A field bound to a record that is not rich text keeps plain text: the
+    // markup a browser leaves behind (a <br>, a stray <div>) would otherwise be
+    // stored as html the field cannot hold.
+    const binding = store.getNode(id)?.binding
+    if (binding && !store.isRichtext(binding)) store.update(id, { text, html: undefined })
+    else if (/<[a-z][\s\S]*>/i.test(html)) store.update(id, { html, text: undefined })
     else store.update(id, { text, html: undefined })
   }
 

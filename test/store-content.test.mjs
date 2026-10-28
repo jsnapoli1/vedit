@@ -646,3 +646,26 @@ test('the same query asked twice at once is fetched once', async () => {
   await store.loadRecords('cards', { orderBy: 'title' })
   assert.equal(calls.filter((call) => call[0] === 'list').length, 2)
 })
+
+test('a slow fetch of a query never overwrites the rows of a later one', async () => {
+  // A visitor's fetch of what is live can still be in flight when the
+  // capabilities say this is an editor and the draft is fetched; whichever
+  // lands last, the draft is what the page keeps.
+  const { client } = fakeClient({ capabilities: { ...EDITOR, user: null, can: { ...EDITOR.can, write: false } } })
+  const pending = []
+  client.list = (source, query) => new Promise((resolve) => pending.push({ stage: query.stage, resolve }))
+  const store = new VeditStore({ key: 'home', adapter: memoryAdapter(), content: client })
+  await store.refreshCapabilities()
+  const live = store.loadRecords('cards')
+  client.capabilities = async () => EDITOR
+  await store.refreshCapabilities()
+  const draft = store.loadRecords('cards')
+  assert.deepEqual(pending.map((call) => call.stage), ['published', 'draft'])
+
+  pending[1].resolve([{ id: 'a', title: 'Draft' }])
+  await draft
+  pending[0].resolve([{ id: 'a', title: 'Live' }])
+  await live
+  assert.equal(store.recordSet('cards').find((row) => row.id === 'a').title, 'Draft')
+  assert.equal(store.getState().records.cards.find((row) => row.id === 'a').title, 'Draft')
+})

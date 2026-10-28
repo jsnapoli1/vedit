@@ -355,7 +355,8 @@ update live afterwards, so nobody is scolded halfway through typing their email.
 **Submissions go to your endpoint.** vedit stores a submission only into a
 source the host declared: your endpoint can write it into a `vedit/content`
 collection with `access: { create: 'public', read: 'admin' }` (see
-[Content](#content)), and then it shows in the Data panel. Without one there is
+[Content](#content)) declared `onPage: false`, and then it shows in the
+toolbar's Records. Without one there is
 no submissions store and nothing in the editor to read them in, because the data
 is the visitor's and belongs in your backend. `action` must be same-origin or an
 absolute `https:` URL, since it comes out of the stored document.
@@ -671,8 +672,9 @@ in the store as a `_users` collection, signs sessions into an `HttpOnly` cookie
 with a bearer fallback, and gives each role what it needs — an author writes
 drafts, an editor publishes, an admin manages users. The editor shows a sign-in
 form before any page loads when the server wants one, hides Publish from an
-author, and adds a **Data** tab: every source as a table, every record as a form
-built from the schema.
+author, edits records where the page shows them — bound text and files, Rows
+for a card, Details for the fields the page does not show — and lists the
+sources no page renders (`onPage: false`, the users) in the toolbar's Records.
 
 The store is three tables that keep each record as JSON, so adding a field is a
 code change and never a migration; `sqlContentStore` takes Node's built-in

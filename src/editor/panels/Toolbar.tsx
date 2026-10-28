@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { RecordsPanel, offPageSources } from './Records'
 import { useVeditContext, useVeditSession, useVeditState, useVeditStore } from '../../core/context'
 import { initialsOf } from '../../core/realtime'
 import { BREAKPOINT_ORDER, type Breakpoint, type EditorTool } from '../../core/types'
@@ -56,10 +57,14 @@ export function Toolbar({
   const unpublished = useVeditState(() => store.unpublished)
   const canPublish = useVeditState(() => store.can('publish'))
   const width = useViewportWidth()
+  const records = useOffPageSources()
+  const [recordsOpen, setRecordsOpen] = useState(false)
+  const closeRecords = useCallback(() => setRecordsOpen(false), [])
 
   return (
-    // `tabIndex={-1}` so the editor can put focus here when it opens: it is a
-    // landing point for the tab sequence, not a control, so it takes no ring.
+    <>
+    {/* `tabIndex={-1}` so the editor can put focus here when it opens: it is a
+        landing point for the tab sequence, not a control, so it takes no ring. */}
     <div className="vedit-panel vedit-toolbar" data-vedit-ui="" role="toolbar" aria-label="vedit" tabIndex={-1}>
       <button
         type="button"
@@ -97,6 +102,22 @@ export function Toolbar({
       ) : null}
 
       <Avatars />
+
+      {records ? (
+        <>
+          <span className="vedit-divider" />
+          <button
+            type="button"
+            className="vedit-btn"
+            title="Records no page shows, such as form submissions and users"
+            aria-pressed={recordsOpen}
+            data-active={recordsOpen ? 'true' : 'false'}
+            onClick={() => setRecordsOpen((open) => !open)}
+          >
+            Records
+          </button>
+        </>
+      ) : null}
 
       <span className="vedit-divider" />
 
@@ -193,7 +214,25 @@ export function Toolbar({
         <IconClose />
       </button>
     </div>
+    {recordsOpen ? <RecordsPanel onClose={closeRecords} /> : null}
+    </>
   )
+}
+
+/**
+ * Whether there is anything for Records to list. The schema says which sources
+ * no page renders and which of them this person may read, so it is fetched as
+ * soon as the editor opens, and again once someone signs in.
+ */
+function useOffPageSources(): boolean {
+  const store = useVeditStore()
+  const schema = useVeditState((state) => state.schema)
+  const user = useVeditState((state) => state.capabilities?.user?.id ?? null)
+  useEffect(() => {
+    if (!store.supportsContent) return
+    store.loadSchema().catch(() => undefined)
+  }, [store, user])
+  return offPageSources(schema).length > 0
 }
 
 /** Who else is here. Hovering one says which page they are on. */

@@ -1,4 +1,4 @@
-import { createElement, forwardRef, useEffect, useMemo, type ElementType, type ReactNode, type Ref } from 'react'
+import { createElement, forwardRef, useEffect, useMemo, type CSSProperties, type ElementType, type ReactNode, type Ref } from 'react'
 import { useEditable } from './useEditable'
 import { useVeditContext, useVeditState } from '../core/context'
 import { findComponent, type AnyComponentDefinition } from '../core/registry'
@@ -246,6 +246,8 @@ const EditableNode = function EditableNode({
       content = undefined
     } else {
       content = textOf(boundText)
+      // Plain text typed over several lines keeps its line breaks.
+      if (typeof content === 'string' && content.includes('\n')) props.style = { whiteSpace: 'pre-line', ...(props.style as CSSProperties | undefined) }
     }
   } else if (override.html !== undefined) {
     props.dangerouslySetInnerHTML = { __html: sanitizeHtml(interpolate(override.html, vars)) }

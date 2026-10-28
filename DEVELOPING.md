@@ -113,8 +113,8 @@ src/
     interactions.ts every page-level gesture
     Overlay/Presence/CommentsLayer   things drawn over the page
     panels/        toolbar, layers, insert, inspector, tokens, checks, notes, history
-      Data.tsx     every source as a table, every record as a form from the schema
-      fields.tsx   PropField: one control per field type, shared by the inspector and Data
+      Records.tsx  the `onPage: false` sources as tables and forms, and RecordField for Details
+      fields.tsx   PropField: one control per field type, shared by the inspector and Records
     SignIn.tsx     the form shown instead of the chrome while the server wants a login
     a11y.ts        the contrast and structure checks
 
@@ -338,7 +338,7 @@ what the editor draws.
    is refused with the field's name, and anything that must be cleaned on the
    way in is cleaned there (`richtext` is the worked example)
 3. `editor/panels/fields.tsx` — a case in `PropField`, which is the one control
-   the inspector and the Data panel share; `core/types.ts` `EditableFieldType`
+   the inspector and Records share; `core/types.ts` `EditableFieldType`
    if a component prop may be of it too
 4. `components/Editable.tsx` — only if a bound node should render it in some
    way other than as text; image and file resolve an asset to its URL there
@@ -436,19 +436,19 @@ site. Breaking one is a bug even if the tests pass.
 
 ## Testing
 
-**`npm test`** — 537 unit tests, run against `dist/` rather than `src/`, so they
+**`npm test`** — 539 unit tests, run against `dist/` rather than `src/`, so they
 check what actually ships. Pure logic lives here: the CSS emitter, the layer
 matrix, the store, migration, the operations vocabulary, the open API, the MCP
 server, diffing, contrast maths, the relay, the escaping rules, and the content
 layer: the store over memory and SQL, the handler, media, auth, binding.
 
-**`npm run test:e2e`** — 105 browser tests over the real editor. 90 of them cover
+**`npm run test:e2e`** — 106 browser tests over the real editor. 91 of them cover
 behaviour: selection, breakpoints, states, component props, re-ordering,
 publishing, composing a page out of registered components, placing and styling
 shapes and importing an SVG that tries to run a script, filling in and submitting
 a form, two people collaborating, driving it all from a keyboard, what happens
 when the editor throws, and the catalog: signing in, replacing a datasheet,
-editing bound rows and the Data panel against a real content server. The remaining 15 are the visual suite below.
+editing bound rows, Details and Records against a real content server. The remaining 15 are the visual suite below.
 
 **`npm run test:frameworks`** — the matrix `INTEGRATING.md` promises. One minimal
 app per framework under `examples/` (Next App Router, Next Pages Router, Remix,

@@ -431,3 +431,16 @@ test('a field default is described to the client', () => {
     ],
   )
 })
+
+test('a source no page renders says so in the schema, and the rest say nothing', () => {
+  const schema = schemaFor(
+    { posts: { fields: { title: 'text' } }, inquiries: { fields: { email: 'text' }, onPage: false } },
+    { counters: { fields: { visits: 'number' }, onPage: false, hidden: true } },
+    'admin',
+  )
+  const of = (name) => schema.find((source) => source.name === name)
+  assert.equal('onPage' in of('posts'), false)
+  assert.equal(of('inquiries').onPage, false)
+  assert.equal(of('counters').onPage, false)
+  assert.equal(of('counters').hidden, true)
+})

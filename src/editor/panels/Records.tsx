@@ -5,27 +5,32 @@ import type { SourceField, SourceSchema, VeditRecord } from '../../content/types
 import { isTempId } from '../../content/ids'
 import { Row } from '../controls'
 import { moveFocus } from '../focus'
-import { IconPlus, IconTrash } from '../icons'
+import { IconClose, IconPlus, IconTrash } from '../icons'
 import { PropField } from './fields'
 
 /**
- * The site's records, edited away from the page: a list of sources, the rows
- * in one, and a form for one row. Every edit goes through the store's record
- * methods, so it is one undo step like anything else and the toolbar's Save
- * and Publish carry it to the server with the document.
+ * The records no page shows: form submissions, lookup tables, the users. A
+ * source is listed here only when the site declares it `onPage: false`; every
+ * other source is edited on the page that renders it, through the bound
+ * elements, the inspector's Rows and its Details. Every edit goes through the
+ * store's record methods, so it is one undo step like anything else and the
+ * toolbar's Save and Publish carry it to the server with the document.
  */
 
 const GLOBAL_ID = 'global'
 
-export function DataPanel() {
+/** The sources Records lists: those the site says no page renders, that this person may read. */
+export function offPageSources(schema: SourceSchema[] | null): SourceSchema[] {
+  return (schema ?? []).filter((source) => source.onPage === false && source.can.read)
+}
+
+export function RecordsPanel({ onClose }: { onClose: () => void }) {
   const store = useVeditStore()
   const schema = useVeditState((state) => state.schema)
   const [error, setError] = useState<string | null>(null)
   const [source, setSource] = useState<string | null>(null)
   const [row, setRow] = useState<string | null>(null)
 
-  // The schema is fetched once for the whole editor; whichever panel asks first
-  // pays for it. A relation field in the inspector may already have.
   useEffect(() => {
     if (!store.supportsContent || store.getState().schema) return
     let cancelled = false
@@ -35,75 +40,103 @@ export function DataPanel() {
     }
   }, [store])
 
-  const current = schema?.find((candidate) => candidate.name === source)
+  const current = offPageSources(schema).find((candidate) => candidate.name === source)
   // The trail names the open row the way the list did, and follows its title
   // as it is typed.
   useVeditState((state) => state.data)
   useVeditState((state) => (source ? state.records[source] : undefined))
   const open = current && row !== null ? store.recordsFor(current.name).find((candidate) => candidate.id === row) : undefined
 
-  if (error) {
-    return (
-      <div className="vedit-panel-body">
-        <div className="vedit-section vedit-hint">Could not load the sources: {error}</div>
-      </div>
-    )
-  }
-  if (!schema) {
-    return (
-      <div className="vedit-panel-body">
-        <div className="vedit-section vedit-hint">Loading…</div>
-      </div>
-    )
-  }
-
-  if (!current) {
-    return (
-      <SourceList
-        sources={schema}
-        onPick={(name) => {
-          setSource(name)
-          setRow(null)
-        }}
-      />
-    )
-  }
+  // Escape closes the dialog wherever focus is in the editor's chrome — a
+  // click on a row unmounts the button that had it — and before the canvas's
+  // own Escape, which would otherwise step the selection out a level.
+  const panel = useRef<HTMLElement>(null)
+  useEffect(() => {
+    panel.current?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.stopPropagation()
+      onClose()
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [onClose])
 
   const back = () => {
     setSource(null)
     setRow(null)
   }
 
-  // A global is one record; there is no list to pick it from.
-  if (current.kind === 'global') {
-    return (
+  let body: JSX.Element
+  if (error) {
+    body = (
+      <div className="vedit-panel-body">
+        <div className="vedit-section vedit-hint">Could not load the sources: {error}</div>
+      </div>
+    )
+  } else if (!schema) {
+    body = (
+      <div className="vedit-panel-body">
+        <div className="vedit-section vedit-hint">Loading…</div>
+      </div>
+    )
+  } else if (!current) {
+    body = (
+      <SourceList
+        sources={offPageSources(schema)}
+        onPick={(name) => {
+          setSource(name)
+          setRow(null)
+        }}
+      />
+    )
+  } else if (current.kind === 'global') {
+    // A global is one record; there is no list to pick it from.
+    body = (
       <>
-        <Crumbs trail={[{ label: 'Sources', onClick: back }, { label: current.label }]} />
+        <Crumbs trail={[{ label: 'Records', onClick: back }, { label: current.label }]} />
         <RecordForm key={current.name} schema={current} id={GLOBAL_ID} onGone={back} />
       </>
     )
-  }
-
-  if (row === null) {
-    return (
+  } else if (row === null) {
+    body = (
       <>
-        <Crumbs trail={[{ label: 'Sources', onClick: back }, { label: current.label }]} />
+        <Crumbs trail={[{ label: 'Records', onClick: back }, { label: current.label }]} />
         <RowList key={current.name} schema={current} onPick={setRow} />
+      </>
+    )
+  } else {
+    body = (
+      <>
+        <Crumbs
+          trail={[
+            { label: 'Records', onClick: back },
+            { label: current.label, onClick: () => setRow(null) },
+            { label: open ? titleOf(open, current) : row },
+          ]}
+        />
+        <RecordForm key={`${current.name}/${row}`} schema={current} id={row} onGone={() => setRow(null)} />
       </>
     )
   }
 
   return (
-    <>
-      <Crumbs
-        trail={[
-          { label: 'Sources', onClick: back },
-          { label: current.label, onClick: () => setRow(null) },
-          { label: open ? titleOf(open, current) : row },
-        ]}
-      />
-      <RecordForm key={`${current.name}/${row}`} schema={current} id={row} onGone={() => setRow(null)} />
-    </>
+    <section
+      className="vedit-panel vedit-records"
+      data-vedit-ui=""
+      role="dialog"
+      aria-label="Records"
+      ref={panel}
+      tabIndex={-1}
+    >
+      <div className="vedit-panel-head">
+        <span>Records</span>
+        <button type="button" className="vedit-btn vedit-btn-icon" title="Close Records" aria-label="Close Records" onClick={onClose}>
+          <IconClose />
+        </button>
+      </div>
+      {body}
+    </section>
   )
 }
 
@@ -112,7 +145,7 @@ export function DataPanel() {
 /** Where you are, and the way back. The last crumb is the place itself. */
 function Crumbs({ trail }: { trail: Array<{ label: string; onClick?: () => void }> }) {
   return (
-    <nav className="vedit-breadcrumb vedit-data-crumbs" aria-label="Data">
+    <nav className="vedit-breadcrumb vedit-data-crumbs" aria-label="Records">
       {trail.map((crumb, index) => (
         <span key={index} style={{ display: 'contents' }}>
           {index ? <span className="vedit-breadcrumb-sep">›</span> : null}
@@ -139,17 +172,16 @@ function SourceList({ sources, onPick }: { sources: SourceSchema[]; onPick: (nam
 
   // The users table is the auth layer's; it is a source like any other, just
   // one whose password field is the point.
-  const readable = sources.filter((source) => source.can.read)
-  // Sources a site marks `hidden` — import tables, counters, lookups — sit
-  // behind "Advanced", so the list people open every day is the content.
-  const visible = readable.filter((source) => !source.hidden)
-  const advanced = readable.filter((source) => source.hidden)
+  // Sources a site marks `hidden` — import tables, counters — sit behind
+  // "Advanced", so the list people open every day is the one they need.
+  const visible = sources.filter((source) => !source.hidden)
+  const advanced = sources.filter((source) => source.hidden)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const listed = showAdvanced ? [...visible, ...advanced] : visible
 
   return (
     <div className="vedit-panel-body" ref={body}>
-      {readable.length ? (
+      {sources.length ? (
         <div role="listbox" aria-label="Sources" className="vedit-data-list">
           {listed.map((source, index) => (
             <button
@@ -180,8 +212,7 @@ function SourceList({ sources, onPick }: { sources: SourceSchema[]; onPick: (nam
         </div>
       ) : (
         <div className="vedit-section vedit-hint">
-          This site has no sources yet. Declare some with <code>defineCollections</code> and pass
-          the client to the provider.
+          Nothing to list: everything on this site is edited on the page that shows it.
         </div>
       )}
     </div>
@@ -401,7 +432,7 @@ function RecordForm({ schema, id, onGone }: { schema: SourceSchema; id: string; 
   )
 }
 
-function same(a: unknown, b: unknown): boolean {
+export function same(a: unknown, b: unknown): boolean {
   if (a === b) return true
   // A cleared field arrives as null and an unset one reads as undefined; both
   // mean "nothing here".
@@ -412,11 +443,11 @@ function same(a: unknown, b: unknown): boolean {
 /* ---------------------------------------------------------------- fields */
 
 /**
- * One record field. The types the inspector already edits go through
+ * One record field, here and in the inspector's Details. The types the inspector already edits go through
  * `PropField`; the three it has no reason to know — a date, raw JSON, and a
  * password that is written but never read — are drawn here.
  */
-function RecordField({
+export function RecordField({
   field,
   value,
   onChange,

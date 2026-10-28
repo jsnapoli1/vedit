@@ -131,7 +131,7 @@ export interface VeditProviderProps {
   enabled?: boolean | 'auth'
   /**
    * Where records live, when the site lets vedit own its content. Turns on the
-   * Data panel, record bindings and sign-in. See `vedit/content`.
+   * Records dialog, record bindings and sign-in. See `vedit/content`.
    */
   content?: VeditContentClient
   /**

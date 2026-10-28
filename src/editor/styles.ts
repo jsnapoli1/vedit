@@ -564,6 +564,12 @@ html.vedit-editing .vedit-inserted-button {
 .vedit-signin-actions .vedit-btn:not(.vedit-btn-primary) { border-color: var(--vedit-border); }
 
 /* ------------------------------------------------------------------- data */
+/* Records: floats under the toolbar, over the page, until it is closed. */
+.vedit-records {
+  top: 64px; left: 50%; transform: translateX(-50%);
+  width: min(440px, calc(100% - 24px)); max-height: calc(100% - 88px);
+}
+.vedit-records:focus { outline: none; }
 .vedit-data-crumbs { flex: none; }
 .vedit-data-crumbs button:disabled { cursor: default; }
 .vedit-data-crumbs button:disabled:hover { background: none; }
@@ -596,6 +602,7 @@ html.vedit-editing .vedit-inserted-button {
 .vedit-data-toolbar .vedit-btn { border-color: var(--vedit-border); }
 .vedit-data-form { margin: 0; padding: 10px 12px 6px; border: 0; min-width: 0; }
 .vedit-data-form:disabled { opacity: .55; }
+.vedit-details { padding: 0; }
 .vedit-data-field { margin-bottom: 8px; }
 .vedit-data-field .vedit-label { width: 72px; }
 /* A record value is not an override of anything; the accent bar would say it was. */

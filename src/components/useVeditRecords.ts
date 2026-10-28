@@ -44,6 +44,9 @@ export function useVeditRecords(source: string, options: UseVeditRecordsOptions 
   // Editing in place sets `editing`; on the canvas the page is framed and the
   // editor lives in the parent window, so the frame has to know it is one.
   const editor = editing || isCanvasChild()
+  // The draft is only readable once the capabilities say this person may
+  // write; the first fetch, made before they arrive, reads what is live.
+  const draftable = useVeditState((state) => state.capabilities?.can?.write === true) && editor
   // Objects are rebuilt on every render; what matters is whether they changed.
   const queryKey = JSON.stringify({ where, orderBy, populate })
   // This query's own rows: two hooks on one source with different queries
@@ -65,7 +68,7 @@ export function useVeditRecords(source: string, options: UseVeditRecordsOptions 
       warnOnce(`records:${source}`, `could not load the rows of "${source}"`, error)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, source, queryKey, editor, rows === undefined])
+  }, [store, source, queryKey, editor, draftable, rows === undefined])
 
   return useMemo(() => {
     if (!store.supportsContent) return rows ?? fallback ?? NONE

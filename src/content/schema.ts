@@ -111,6 +111,7 @@ export function schemaFor(
     }
     if (spec.titleField !== undefined) source.titleField = spec.titleField
     if (spec.orderField !== undefined) source.orderField = spec.orderField
+    if (spec.onPage === false) source.onPage = false
     if (spec.hidden) source.hidden = true
     sources.push(source)
   }
@@ -123,6 +124,7 @@ export function schemaFor(
       // A global is stored like a one-record collection, drafts included.
       drafts: true,
       can: canFor(spec.access, role),
+      ...(spec.onPage === false ? { onPage: false } : {}),
       ...(spec.hidden ? { hidden: true } : {}),
     })
   }

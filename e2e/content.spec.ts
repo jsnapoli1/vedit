@@ -167,23 +167,57 @@ test.describe('editing content on the catalog', () => {
     expect(await rowCount()).toBe(onServer)
   })
 
-  test('the Data panel edits a record that Save sends to the server', async ({ page, request }) => {
+  test('Details in the inspector edits the fields of a row that the page does not show', async ({ page, request }) => {
     await openCatalog(page)
-    await page.getByRole('tab', { name: 'Data' }).click()
-    await page.getByRole('option', { name: /Categories/ }).click()
-    await page.getByRole('option', { name: /^Power/ }).click()
+    // There is no Data tab: what a record holds is edited from the page.
+    await expect(page.getByRole('tab', { name: 'Data' })).toHaveCount(0)
+    await select(page, 'products.title~p-relay', '/catalog')
+
+    const details = page.getByRole('group', { name: 'Products details' })
+    // The title, blurb and datasheet are on the card, and the order is Rows'
+    // to move, so only what the card does not show is offered.
+    await expect(details.getByText('Title', { exact: true })).toHaveCount(0)
+    await expect(details.getByText('Position', { exact: true })).toHaveCount(0)
+    const price = details.locator('.vedit-data-field', { hasText: 'Price' }).locator('input')
+    await expect(price).toBeVisible()
+
+    const value = String(Date.now() % 100000)
+    await price.fill(value)
+    await price.press('Enter')
+    await saveDraft(page)
+    await publish(page)
+    expect((await record(request, 'products', 'p-relay')).price).toBe(Number(value))
+  })
+
+  test('Records edits a source no page shows, and Save sends it to the server', async ({ page, request }) => {
+    await openCatalog(page)
+    await page.locator('.vedit-toolbar').getByRole('button', { name: 'Records' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Records' })
+    // Only the sources declared `onPage: false` are listed; products are edited on the page.
+    await expect(dialog.getByRole('option', { name: /Products/ })).toHaveCount(0)
+    await dialog.getByRole('option', { name: /Categories/ }).click()
+    await dialog.getByRole('option', { name: /^Power/ }).click()
 
     const name = `Power ${Date.now()}`
-    const field = page.getByRole('group', { name: 'Categories record' }).locator('input').first()
+    const field = dialog.getByRole('group', { name: 'Categories record' }).locator('input').first()
     await field.fill(name)
     await field.press('Enter')
 
-    // The panel writes through the same store as the page, so the toolbar's
+    // Records writes through the same store as the page, so the toolbar's
     // Save and Publish carry the record like any edit made on the canvas.
     await saveDraft(page)
     expect((await record(request, 'categories', 'cat-power')).name).not.toBe(name)
     await publish(page)
     expect((await record(request, 'categories', 'cat-power')).name).toBe(name)
+
+    await dialog.getByRole('button', { name: 'Close Records' }).click()
+    await expect(dialog).toHaveCount(0)
+
+    // Escape closes it too, after a click inside has moved focus about.
+    await page.locator('.vedit-toolbar').getByRole('button', { name: 'Records' }).click()
+    await dialog.getByRole('option', { name: /Categories/ }).click()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
   })
 
   test('a nav edit made on the catalog shows on the sheet page after save', async ({ page, request }) => {

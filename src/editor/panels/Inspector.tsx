@@ -31,12 +31,15 @@ import {
 import { parseFilter, withFilter, type FilterParts } from '../../runtime/filter'
 import { sanitizeSvg } from '../../runtime/sanitize'
 import { assetUrl, isAsset } from '../../content/assets'
+import { isTempId } from '../../content/ids'
 import type { SourceField, VeditRecord } from '../../content/types'
 import type { VeditStore } from '../../core/store'
 import { SHAPE_PRESETS, parseShape } from '../../runtime/shape'
 import { TokenPicker } from './Tokens'
 import { AssetLibrary, PropField, fileNameOf, formatBytes } from './fields'
+import { RecordField, same } from './Records'
 import {
+  boundRepeatOf,
   useBoundRepeat,
   useComputedStyle,
   useContentValue,
@@ -194,6 +197,7 @@ export function Inspector() {
             ) : null}
             <RepeatScope id={id} />
             <RowsSection id={id} />
+            <DetailsSection id={id} />
             <StateSwitch id={id} />
             <PropsSection id={id} />
             <ContentSection id={id} kind={kind} />
@@ -442,6 +446,102 @@ function rowFields(row: VeditRecord | undefined, repeat: BoundRepeat, store: Ved
     if (value !== undefined) fields[node.binding.field] = value
   }
   return fields
+}
+
+/**
+ * The record the selection shows: the one its own binding names, else the row
+ * of the bound repeat it sits in, else the one an ancestor is bound to.
+ */
+function recordOf(store: VeditStore, nodes: RegisteredNode[], id: string): { source: string; id: string } | null {
+  const own = store.getNode(id)?.binding
+  if (own) return { source: own.source, id: own.id }
+  const repeat = boundRepeatOf(store, nodes, id)
+  if (repeat) return { source: repeat.source, id: repeat.rowId }
+  const seen = new Set<string>([id])
+  let current = store.getNode(id)?.parentId ?? null
+  while (current && !seen.has(current)) {
+    seen.add(current)
+    const node = store.getNode(current)
+    if (!node) break
+    if (node.binding) return { source: node.binding.source, id: node.binding.id }
+    current = node.parentId
+  }
+  return null
+}
+
+/**
+ * The fields of the selection's record that no element on the page shows: a
+ * post's address, a date, the category a row is filed under, a link's target.
+ * The fields the page does show are edited where they are, so they are not
+ * repeated here. A field the site marks `hidden` is bookkeeping and never shown.
+ */
+function DetailsSection({ id }: { id: string }) {
+  const store = useVeditStore()
+  const nodes = useVeditNodes()
+  const target = useMemo(() => recordOf(store, nodes, id), [store, nodes, id])
+  const source = target?.source ?? ''
+  const schema = useVeditState((state) => state.schema)
+  const fetched = useVeditState((state) => state.records[source])
+  const data = useVeditState((state) => state.data)
+  const canWrite = useVeditState(() => store.can('data:write'))
+  const spec = schema?.find((entry) => entry.name === source)
+
+  useEffect(() => {
+    if (!target || !store.supportsContent) return
+    if (!store.getState().schema) store.loadSchema().catch(() => undefined)
+  }, [store, target])
+  // The page may have been handed its rows rather than fetching them; the
+  // record is fetched then, so its other fields have values to show.
+  const missing = !!target && !isTempId(target.id) && !fetched?.some((row) => row.id === target.id)
+  useEffect(() => {
+    if (missing && store.supportsContent) store.loadRecords(source).catch(() => undefined)
+  }, [store, missing, source])
+
+  const record = useMemo(
+    () => {
+      if (!target) return undefined
+      const row = store.recordsFor(source, fetched ?? []).find((candidate) => candidate.id === target.id)
+      // A global that has never been written has no row yet; the server makes
+      // one on the first commit.
+      return row ?? (spec?.kind === 'global' ? { id: target.id } : undefined)
+    },
+    // `recordsFor` reads `data` and `schema`, so they are dependencies too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [store, target, source, fetched, data, schema, spec],
+  )
+  if (!target || !spec || !record) return null
+
+  const shown = new Set(
+    nodes
+      .filter((node) => node.binding?.source === source && node.binding.id === target.id)
+      .map((node) => node.binding!.field),
+  )
+  // The order field is what Rows' Move up and Move down write.
+  const fields = spec.fields.filter((field) => !field.hidden && !shown.has(field.name) && field.name !== spec.orderField)
+  if (!fields.length) return null
+  const readOnly = !spec.can.update || !canWrite
+
+  return (
+    <Section title="Details">
+      <div className="vedit-hint" style={{ marginBottom: 6 }}>
+        Not shown on the page: the rest of this {spec.kind === 'global' ? 'content' : 'row'} of {spec.label}.
+        {readOnly ? ' You can look at it but not change it.' : ''}
+      </div>
+      <fieldset className="vedit-data-form vedit-details" disabled={readOnly} aria-label={`${spec.label} details`}>
+        {fields.map((field) => (
+          <RecordField
+            key={field.name}
+            field={field}
+            value={record[field.name]}
+            onChange={(next) => {
+              if (same(next, record[field.name])) return
+              store.setRecord(source, target.id, { [field.name]: next })
+            }}
+          />
+        ))}
+      </fieldset>
+    </Section>
+  )
 }
 
 /** The path down to the selection — click a step to select that ancestor (or Esc). */

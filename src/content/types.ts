@@ -41,7 +41,7 @@ export interface FieldSpec {
   to?: string
   /** For `relation`: the value is a list of ids rather than one. */
   many?: boolean
-  /** Kept on the record but not shown in the Data panel — an import id, a timestamp, a machine field. */
+  /** Kept on the record but not shown in the editor — an import id, a timestamp, a machine field. */
   hidden?: boolean
 }
 
@@ -110,7 +110,13 @@ export interface CollectionSpec {
   versions?: number
   access?: AccessSpec
   hooks?: SourceHooks
-  /** Listed under "Advanced" in the Data panel rather than beside the sources people edit every day. */
+  /**
+   * `false` for a source no page renders — form submissions, lookup tables, the
+   * users. It is listed in the toolbar's Records, which is the only place it is
+   * edited. Every other source is edited on the pages that show it.
+   */
+  onPage?: boolean
+  /** Listed under "Advanced" in Records rather than beside the others. Only meaningful with `onPage: false`. */
   hidden?: boolean
 }
 
@@ -120,7 +126,13 @@ export interface GlobalSpec {
   fields: FieldsSpec
   access?: AccessSpec
   hooks?: SourceHooks
-  /** Listed under "Advanced" in the Data panel rather than beside the sources people edit every day. */
+  /**
+   * `false` for a source no page renders — form submissions, lookup tables, the
+   * users. It is listed in the toolbar's Records, which is the only place it is
+   * edited. Every other source is edited on the pages that show it.
+   */
+  onPage?: boolean
+  /** Listed under "Advanced" in Records rather than beside the others. Only meaningful with `onPage: false`. */
   hidden?: boolean
 }
 
@@ -171,7 +183,7 @@ export interface SourceField {
   many?: boolean
   /** What a new record starts with; on a `date`, `'now'` means the moment the server saves it. */
   default?: unknown
-  /** Kept on the record but not shown in the Data panel. */
+  /** Kept on the record but not shown in the editor. */
   hidden?: boolean
 }
 
@@ -185,7 +197,9 @@ export interface SourceSchema {
   orderField?: string
   drafts: boolean
   can: Record<AccessAction, boolean>
-  /** Listed under "Advanced" in the Data panel. */
+  /** `false` when no page renders it: listed in the toolbar's Records. */
+  onPage?: boolean
+  /** Listed under "Advanced" in Records. */
   hidden?: boolean
 }
 

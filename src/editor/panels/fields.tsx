@@ -17,7 +17,7 @@ import { sanitizeHtml } from '../../runtime/sanitize'
 
 /**
  * The editors for a declared field, by type. Shared between the Properties
- * section of the inspector (a component's props) and the Data panel (a record's
+ * section of the inspector (a component's props) and its Details and Records (a record's
  * fields), so a `relation` or an `image` is the same control wherever it turns up.
  */
 
