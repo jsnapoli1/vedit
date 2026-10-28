@@ -9,6 +9,51 @@ when a saved document has to be rewritten to keep working.
 
 ---
 
+## 0.15.0 — 2026-10-28
+
+The document format is unchanged at version 1. **The Data tab is gone**: a
+record is edited on the page that shows it. A site using `vedit/content` has
+one thing to do, below.
+
+### Changed
+
+- **No more Data tab.** Everything a page shows was already editable there;
+  what was left over had to be found in a table instead. Now:
+  - the inspector's new **Details** section shows the fields of the selected
+    element's record that no element on the page shows — a post's slug, a
+    date, the category a row is filed under — as the same controls the Data
+    form used. The fields the page does show are edited where they are, and
+    the order field is left to Rows;
+  - sources that no page renders at all — form submissions, lookup tables, the
+    users — are listed in a **Records** dialog opened from the toolbar, with
+    the same tables and forms as before. The button appears only when there is
+    such a source the person may read.
+
+### What to do
+
+- Mark every source that no page renders `onPage: false` in
+  `defineCollections` / `defineGlobals`. Records lists only those (and
+  `_users`, which is marked already); a source left off every page and not
+  marked can no longer be edited from the editor. `hidden: true` on such a
+  source still files it under "Advanced".
+
+### Fixed
+
+- **Two fetches of the same rows can no longer land out of order.** A
+  visitor's fetch of what is live and the editor's fetch of the draft, made
+  once the capabilities arrive, could finish in either order, and the live
+  rows could overwrite the draft. Only the latest fetch of a query writes.
+- `useVeditRecords` fetches the draft again once the capabilities say the
+  person may write, rather than keeping the live rows fetched before they
+  arrived.
+- Typing into a text bound to a field that is not `richtext` stores plain
+  text. The markup a browser leaves in an edited element (a `<br>`, a stray
+  `<div>`) used to be stored as HTML the field cannot hold.
+- A bound plain-text field typed over several lines keeps its line breaks on
+  the page (`white-space: pre-line`).
+
+---
+
 ## 0.14.2 — 2026-10-23
 
 The document format is unchanged at version 1. One fix; a site that already
